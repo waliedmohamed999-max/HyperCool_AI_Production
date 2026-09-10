@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {fail} from './auth.js';
 import {agents} from './domain.js';
+import {isEnabled} from './runtime/feature-flags.js';
 
 export const levels=['L0','L1','L2','L3'];
 const agentIds=agents.map(agent=>agent.id);
@@ -21,7 +22,7 @@ export function currentAutonomy(db) {
  const map=new Map(rows.map(row=>[row.agentId,row]));
  return Object.fromEntries(agentIds.map(id=>[id,map.get(id)||{agentId:id,level:'L0',version:0,reason:null,actorName:null,at:null}]));
 }
-export function setAutonomy(store,agentId,input,user) {
+export function setAutonomy(store,agentId,input,user,env={}) {
  if(!agentIds.includes(agentId))fail(404,'وكيل غير موجود');
  if(!levels.includes(input.level))fail(400,'مستوى صلاحية غير صالح');
  const reason=typeof input.reason==='string'?input.reason.trim():'';
@@ -34,6 +35,14 @@ export function setAutonomy(store,agentId,input,user) {
   if(nextIndex===currentIndex)fail(409,'الوكيل على هذا المستوى بالفعل');
   // Promotion is capped at one step, matching the scope's autonomy ladder. Demotion can drop further in one action — an immediate safety valve needs no ladder.
   if(nextIndex>currentIndex+1)fail(409,'الترقية خطوة واحدة في كل مرة؛ لا يمكن تخطي مستويات');
+  // Launch safety gate (Final Production Safe Launch Phase, Part 93): even an owner's
+  // otherwise-valid, one-step promotion to L2/L3 is refused unless the corresponding env
+  // flag is turned on — "one human action" alone is not enough for the two highest-risk
+  // levels; the operator must ALSO have deliberately unlocked that tier at the deployment
+  // level first. Checked only once the request is otherwise legitimate, so this never
+  // masks a genuine version-conflict or skip-level error with a less specific one.
+  if(nextIndex>currentIndex && ((input.level==='L2'&&!isEnabled(env,'ENABLE_L2_AUTONOMY'))||(input.level==='L3'&&!isEnabled(env,'ENABLE_L3_AUTONOMY'))))
+   fail(403,`الترقية إلى ${input.level} معطّلة على مستوى النظام — فعّل ENABLE_${input.level}_AUTONOMY في إعدادات الخادم أولًا`);
   const direction=nextIndex>currentIndex?'PROMOTED':'DEMOTED';
   const entry={id:randomUUID(),agentId,level:input.level,version:currentVersion+1,direction,reason,actorId:user.id,actorName:user.name,at:new Date().toISOString(),previousLevel:current};
   store.db.prepare('INSERT INTO agent_autonomy VALUES (?,?,?,?,?,?,?,?,?)').run(entry.id,agentId,entry.level,entry.version,direction,reason,user.id,user.name,entry.at);

@@ -4,6 +4,7 @@ import {saveWeeklyReport,currentWeekStart} from '../reporting.js';
 import {listLeads} from '../crm.js';
 import {getCredentialsMeta,updateCredentialsMetadata,isExpiringSoon} from './credentials.js';
 import {renewMailSubscription} from './microsoft-graph.js';
+import {isEnabled} from './feature-flags.js';
 
 export const SCHEDULER_ACTOR={id:'scheduler',name:'الجدولة الآلية',role:'automation'};
 const FOLLOWUP_ELIGIBLE_STAGES=['QUOTE_SENT','DEMO','POST_PURCHASE'];
@@ -20,7 +21,8 @@ function riyadhParts(now) {
  * every manual run) decide what to do. This never sends anything itself; it only
  * triggers the agent, whose own tools stay human-approval-gated exactly as before.
  */
-export async function sweepFollowupGaps({store,agentRuntime}) {
+export async function sweepFollowupGaps({store,agentRuntime,env={}}) {
+ if(!isEnabled(env,'ENABLE_AUTOMATED_FOLLOWUPS'))return {checked:0,triggered:0,errors:0,skipped:'FEATURE_DISABLED'};
  const db=store.db;
  const leads=listLeads(db).filter(lead=>FOLLOWUP_ELIGIBLE_STAGES.includes(lead.stage) && !lead.optOut && !lead.humanHold && !lead.replyHold);
  let triggered=0,checked=0,errors=0;
@@ -77,13 +79,13 @@ export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch,
   if(weekday===0) {
    try{result.weeklyReport=saveWeeklyReport(store,currentWeekStart(now),SCHEDULER_ACTOR,getExtras?.());}catch(error){result.weeklyReportError=error.message;}
   }
-  try{result.followupSweep=await sweepFollowupGaps({store,agentRuntime});}catch(error){result.followupSweepError=error.message;}
+  try{result.followupSweep=await sweepFollowupGaps({store,agentRuntime,env});}catch(error){result.followupSweepError=error.message;}
   try{result.microsoftSubscriptionRenewal=await renewMicrosoftSubscriptionIfNeeded({store,env,fetcher});}catch(error){result.microsoftSubscriptionRenewalError=error.message;}
   // Content Calendar → Publishing pipeline (X/LinkedIn/Meta spec Part O): the internal
   // scheduler is what makes a due, approved, scheduled post actually get published without
   // anyone opening the app — prepareDue flips due jobs to READY_FOR_CONNECTOR and, only on
   // that transition, emits CONTENT_PUBLISH_REQUESTED for the Publishing agent to act on.
-  try{result.schedulePrepare=prepareDue(store,SCHEDULER_ACTOR,now,eventBus);}catch(error){result.schedulePrepareError=error.message;}
+  try{result.schedulePrepare=prepareDue(store,SCHEDULER_ACTOR,now,eventBus,env);}catch(error){result.schedulePrepareError=error.message;}
   return result;
  }
  function start(intervalMs=Number(env.SCHEDULER_INTERVAL_MS)||300000) {

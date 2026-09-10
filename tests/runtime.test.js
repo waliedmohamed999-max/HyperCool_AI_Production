@@ -94,7 +94,7 @@ test('tool call respects permission level: L0 forbids whatsapp_send, L2 allows t
   assert.equal(runL0.toolCalls[0].output.reason,'PERMISSION_LEVEL');
 
   setAutonomy(store,'sales',{level:'L1',reason:'promote',expectedVersion:0},user);
-  setAutonomy(store,'sales',{level:'L2',reason:'promote again',expectedVersion:1},user);
+  setAutonomy(store,'sales',{level:'L2',reason:'promote again',expectedVersion:1},user,{ENABLE_L2_AUTONOMY:'true'});
   const runtime2=createAgentRuntime({store,env,fetcher:sequencedFetcher([
    toolUseTurn('whatsapp_send',{leadId:'x',text:'hi'}),
    textTurn(salesDecision())

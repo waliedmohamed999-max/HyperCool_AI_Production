@@ -13,6 +13,7 @@ import {resolveXAccessToken} from './x-oauth.js';
 import {publishLinkedInPost} from './linkedin-publishing.js';
 import {resolveLinkedInAccessToken} from './linkedin-oauth.js';
 import {createEscalation} from './escalations.js';
+import {isEnabled,featureDisabled} from './feature-flags.js';
 
 export function integrationStatus(env,db=null) {
  // A Meta/WhatsApp OAuth connection (see runtime/meta-oauth.js) counts as configured too —
@@ -146,6 +147,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
   // Names use underscores, not dots: Anthropic tool names must match ^[a-zA-Z0-9_-]{1,128}$.
   {name:'whatsapp_send',description:'Send a WhatsApp message to a customer. Free text only within 24h of their last message; a templateName is required outside that window.',inputSchema:obj({leadId:string,text:string,templateName:string,templateLanguage:string},['leadId']),minLevel:'L2',integration:'whatsapp',
    handler:async({leadId,text,templateName,templateLanguage},ctx)=>{
+    if(!isEnabled(env,'ENABLE_EXTERNAL_MESSAGING'))return featureDisabled('ENABLE_EXTERNAL_MESSAGING');
     if(!whatsappConfigured({store,env}))return blocked('whatsapp','send_message');
     const lead=getLead(db,leadId);
     if(lead.optOut)return {status:'BLOCKED',reason:'OPT_OUT'};
@@ -164,6 +166,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
   // be able to trigger a real post as a side effect of unrelated reasoning.
   {name:'meta_publish',description:'Publish an approved content item to Instagram or Facebook (platform decided by the content item itself). Refuses anything not APPROVED, already published, or missing a required asset.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'meta',allowedAgents:['publishing'],
    handler:async({contentId},ctx)=>{
+    if(!isEnabled(env,'ENABLE_EXTERNAL_PUBLISHING'))return featureDisabled('ENABLE_EXTERNAL_PUBLISHING');
     const resolved=resolveMetaAccessToken({store,env},'page');
     if(!resolved)return blocked('meta','publish_post');
     const state=store.read();
@@ -180,6 +183,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
    }},
   {name:'x_publish',description:'Publish an approved content item to X. Refuses anything not APPROVED, already published, or unsupported for this platform.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'x',allowedAgents:['publishing'],
    handler:async({contentId},ctx)=>{
+    if(!isEnabled(env,'ENABLE_EXTERNAL_PUBLISHING'))return featureDisabled('ENABLE_EXTERNAL_PUBLISHING');
     const state=store.read();
     const item=state.content.find(c=>c.id===contentId);
     if(!item)return {status:'ERROR',error:'CONTENT_NOT_FOUND'};
@@ -194,6 +198,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
    }},
   {name:'linkedin_publish',description:'Publish an approved content item to the connected LinkedIn Company Page (never a personal profile). Refuses anything not APPROVED, already published, or without a resolved organization.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'linkedin',allowedAgents:['publishing'],
    handler:async({contentId},ctx)=>{
+    if(!isEnabled(env,'ENABLE_EXTERNAL_PUBLISHING'))return featureDisabled('ENABLE_EXTERNAL_PUBLISHING');
     const state=store.read();
     const item=state.content.find(c=>c.id===contentId);
     if(!item)return {status:'ERROR',error:'CONTENT_NOT_FOUND'};
@@ -224,6 +229,10 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
       riskLevel:category==='legal'?'HIGH':'MEDIUM',reason:`Agent-drafted ${category} email to ${lead.email} requires owner approval before sending.`});
      return {status:'WAITING_APPROVAL',approvalId:approval.id};
     }
+    // Drafting/requesting approval above is never gated by ENABLE_EXTERNAL_MESSAGING —
+    // only the immediate real send below is (spec Phase 83: "AI drafts: ON" while
+    // "automatic send: OFF initially" are independent switches).
+    if(!isEnabled(env,'ENABLE_EXTERNAL_MESSAGING'))return featureDisabled('ENABLE_EXTERNAL_MESSAGING');
     const configured=await resolveMicrosoftAccessToken({store,env,fetcher});
     if(!configured)return blocked('microsoft365','send_email');
     const result=await sendMail({store,env,fetcher},{to:lead.email,cc,subject,bodyHtml});

@@ -1,5 +1,6 @@
 import {createHash,randomUUID,timingSafeEqual} from 'node:crypto';
 import {fail} from './auth.js';
+import {isEnabled} from './runtime/feature-flags.js';
 
 export function contentHash(item) {
  return createHash('sha256').update(JSON.stringify({title:item.title,body:item.body,englishCopy:item.englishCopy||'',url:item.url,assetUrl:item.assetUrl||'',platform:item.platform,date:item.date})).digest('hex');
@@ -88,7 +89,7 @@ export function cancelJobs(store,state,contentId,user) {
 // exactly once per SCHEDULED→READY_FOR_CONNECTOR transition (the `job.status!==status`
 // guard below), never re-fired for a job already sitting in READY_FOR_CONNECTOR — a
 // stalled/unknown publish outcome is a reconciliation concern, not a re-trigger loop.
-export function prepareDue(store,user,now=Date.now(),eventBus=null) {
+export function prepareDue(store,user,now=Date.now(),eventBus=null,env={}) {
  return store.mutate(state=>{
   const rows=store.db.prepare("SELECT json FROM schedule_jobs WHERE status IN ('SCHEDULED','READY_FOR_CONNECTOR') AND scheduled_at<=?").all(new Date(now).toISOString());
   let ready=0,blocked=0;
@@ -101,7 +102,7 @@ export function prepareDue(store,user,now=Date.now(),eventBus=null) {
     job.status=status;job.blockReason=valid?null:'APPROVAL_CHANGED';job.preparedAt=new Date(now).toISOString();
     store.db.prepare('UPDATE schedule_jobs SET status=?,json=? WHERE id=?').run(status,JSON.stringify(job),job.id);
     audit(state,status==='BLOCKED'?'SCHEDULE_BLOCKED':'SCHEDULE_PREPARED',job.contentId,user);
-    if(valid&&eventBus)eventBus.emit('CONTENT_PUBLISH_REQUESTED',{contentId:job.contentId,jobId:job.id,platform:item.platform,idempotencyKey:job.idempotencyKey,scheduledAt:job.scheduledAt,current_datetime:new Date(now).toISOString(),timezone:'Asia/Riyadh'});
+    if(valid&&eventBus&&isEnabled(env,'ENABLE_SCHEDULED_PUBLISHING'))eventBus.emit('CONTENT_PUBLISH_REQUESTED',{contentId:job.contentId,jobId:job.id,platform:item.platform,idempotencyKey:job.idempotencyKey,scheduledAt:job.scheduledAt,current_datetime:new Date(now).toISOString(),timezone:'Asia/Riyadh'});
    }
   }
   return {ready,blocked,externalActions:0};

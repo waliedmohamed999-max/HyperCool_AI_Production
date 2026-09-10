@@ -17,18 +17,24 @@
 - **Action**: check the Anthropic account/key. Rotate `ANTHROPIC_API_KEY` in the host's env, restart the process (`SYSTEM_MODE` and everything else is unaffected by a restart — migrations are idempotent).
 - Severity: SEV3 (degraded, not down) unless it blocks a time-sensitive approval — then SEV2.
 
-### WhatsApp/Meta/X/LinkedIn/Microsoft/Canva "down"
-- These have no real connector today (see DEPLOYMENT.md §9) — there is nothing to be "down." If the Integrations page shows an unexpected status, check `.env` for a typo in the variable name; the tool handlers themselves always report `INTEGRATION_REQUIRED` regardless.
-- Severity: SEV4 (not a launch blocker either way).
+### WhatsApp/Meta/Microsoft/X/LinkedIn misbehaving (real connectors — see DEPLOYMENT.md §9)
+- **Fastest mitigation, no credential changes needed**: set `ENABLE_EXTERNAL_MESSAGING=false` (WhatsApp/email sends) and/or `ENABLE_EXTERNAL_PUBLISHING=false` (Meta/X/LinkedIn publishes) in `.env` and restart — this blocks every agent-driven send/publish tool instantly across every platform at once (`src/runtime/feature-flags.js`), without touching any OAuth connection. Manual human sends from the CRM UI are unaffected by this flag on purpose.
+- **X token expired/revoked**: `POST /api/integrations/x/test` returns `AUTH_FAILED`; reconnect via `GET /api/integrations/x/oauth/start`. The static `X_BEARER_TOKEN` cannot substitute for this — it is read-only by design (X's API rejects app-only tokens on `POST /2/tweets`).
+- **LinkedIn permission missing**: `POST /api/integrations/linkedin/test` returns `CONFIGURED_NO_ORGANIZATION` — the identity connected fine but no Company Page was resolved, almost always because the app isn't yet approved for LinkedIn's Community Management API product, or the connected account isn't an admin of the target Page. See `docs/LINKEDIN_INTEGRATION_SETUP.md`.
+- **Microsoft mail stopped arriving**: check `GET /api/integrations/microsoft/oauth/status` for `lastRenewalError` in the stored subscription metadata — the scheduler renews automatically but only if the OAuth connection itself is still valid.
+- If the Integrations page shows an unexpected status for any of these, also check `.env` for a typo in the variable name.
+- Severity: SEV3 (a single channel down); SEV2 if it blocks a time-sensitive B2B quote reply.
 
 ### Salla sync fails
 - **Symptom**: `POST /api/salla/sync` returns an error; Integrations page shows the Salla card in `ERROR`.
-- **Action**: check `SALLA_ACCESS_TOKEN` validity via `POST /api/integrations/salla/test`. Product/price/stock data simply goes stale — nothing else breaks (agents reading `get_current_price`/`get_stock` will serve the last successfully synced snapshot, honestly timestamped).
+- **Action**: check `SALLA_ACCESS_TOKEN`/OAuth validity via `POST /api/integrations/salla/test`. Product/price/stock data simply goes stale — nothing else breaks (agents reading `get_current_price`/`get_stock` will serve the last successfully synced snapshot, honestly timestamped, never a fabricated live value).
 - Severity: SEV3.
 
 ### Publishing fails
-- There is no external publish capability implemented yet (all publish tools are stubs). "Publishing failed" today can only mean the internal scheduling step (`schedule_jobs` table) errored — check `GET /api/planning`'s job list for a `BLOCKED` status and `blockReason`.
-- Severity: SEV3.
+- Check `GET /api/planning`'s job list for a `BLOCKED`/`FAILED`/`STATUS_UNKNOWN` status and `blockReason`/audit entry (`X_PUBLISH_FAILED`, `LINKEDIN_PUBLISH_FAILED`, etc. in Operations Log).
+- **`STATUS_UNKNOWN`**: a genuine timeout/network failure with no confirmed outcome — never blindly retried (would risk a duplicate post). A P2 escalation is opened automatically for human review; check the target platform directly (X/LinkedIn) for whether the post actually went through before manually retrying.
+- **`FAILED`**: a real API rejection — the audit entry's error code (`AUTH_FAILED`/`PERMISSION_MISSING`/`RATE_LIMIT`/`INVALID_CONTENT`) says why; content stays `APPROVED` and safe to re-attempt once fixed (still protected by the same idempotency check — an item that somehow did publish will short-circuit to `ALREADY_PUBLISHED` instead of double-posting).
+- Severity: SEV3; SEV2 if it's a time-sensitive campaign.
 
 ### Queue stuck
 - Not applicable — there is no queue. If background work seems stuck, check the scheduler instead (`GET /api/frost/status` → `schedulerRunning`).

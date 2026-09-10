@@ -73,11 +73,30 @@ node scripts/restore.mjs <backup-file> [dataDir]
 
 **Recommended rollout:** launch with `SYSTEM_MODE=PRODUCTION_SAFE`. After each agent has ≥14 clean days (the app already computes this — `GET /api/agents/:id/health`), an owner can deliberately raise `SYSTEM_MODE` or promote that agent's stored level.
 
+**Feature flags** (`src/runtime/feature-flags.js`) add a second, cross-platform layer of backend
+enforcement, independent of `SYSTEM_MODE` and of any single integration's credentials:
+`ENABLE_EXTERNAL_MESSAGING` and `ENABLE_EXTERNAL_PUBLISHING` gate every agent-driven send/publish
+tool (WhatsApp, email, Meta, X, LinkedIn) in one switch; `ENABLE_SCHEDULED_PUBLISHING` gates
+whether a due, approved calendar item ever triggers the Publishing agent at all;
+`ENABLE_AUTOMATED_FOLLOWUPS` gates the scheduler's follow-up-gap sweep. All four default **ON**
+(unset = enabled) so introducing this module never silently disables an already-configured,
+already-tested deployment — for a genuine first safe-launch day, set them to `false` explicitly.
+`ENABLE_L2_AUTONOMY`/`ENABLE_L3_AUTONOMY` are the one pair that default **OFF**: even an owner's
+otherwise-valid, one-step promotion via the Team/Agents UI is refused with a clear error until the
+matching flag is set `true` on the server — promotion is never silent or automatic. None of these
+gate manual, human-initiated sends from the CRM UI (a logged-in human clicking "send" is its own
+safety boundary); they gate only autonomous agent tool calls and the scheduler.
+
 ## 9. Integration Activation Order
 
 1. **Anthropic** — everything else (compliance checks, content drafts, agent runs) needs this first.
 2. **Salla** — product/price/stock data other agents read.
-3. WhatsApp, Meta, Microsoft 365, X, LinkedIn, Canva — **none have real connector code yet**; setting their tokens only makes the Integrations page's status accurate, it does not enable real sending/publishing (every send/publish tool handler is currently a hard-coded stub — see `src/runtime/tools.js`). Do not deploy expecting these to work; they're honestly reported as `NOT_CONFIGURED`/blocked either way.
+3. **WhatsApp, Meta, Microsoft 365, X, LinkedIn** — all have real connector code (OAuth + real
+   send/publish/webhook handling — see `docs/*_SETUP.md` per integration); each is honestly
+   reported `NOT_CONFIGURED` until its own credentials are supplied, and real sending/publishing
+   additionally requires `ENABLE_EXTERNAL_MESSAGING`/`ENABLE_EXTERNAL_PUBLISHING` above.
+4. **Canva** — the one integration still a stub (`{status:'INTEGRATION_REQUIRED'}` regardless of
+   credentials); no connector code exists for it yet.
 
 ## 10. Known Single-Instance Limits (be aware before scaling out)
 

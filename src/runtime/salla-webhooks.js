@@ -47,7 +47,11 @@ function idempotencyKey(body) {
  if(body?.data?.id!=null)return `${body.event||'unknown'}:${body.data.id}:${body.created_at||''}`;
  return contentHashId(body);
 }
-export function processSallaWebhook({db,eventBus,body}) {
+// `paused` mirrors the same "pause all automation" gate already checked at the WhatsApp and
+// Microsoft webhook routes (see application.js) — the delivery is still stored/deduped
+// either way (never lose real provider data), only the downstream internal event (which
+// could route to an agent later) is suppressed while paused.
+export function processSallaWebhook({db,eventBus,body,paused=false}) {
  const type=typeof body?.event==='string'?body.event:'unknown';
  const externalId=idempotencyKey(body);
  const {stored,id}=storeWebhookEvent(db,{source:'salla',externalEventId:externalId,type,payload:body});
@@ -55,7 +59,7 @@ export function processSallaWebhook({db,eventBus,body}) {
  const internalType=EVENT_MAP[type];
  let emittedEventId=null;
  try {
-  if(internalType && eventBus)emittedEventId=eventBus.emit(internalType,{source:'salla',sallaEvent:type,data:body?.data??null});
+  if(internalType && eventBus && !paused)emittedEventId=eventBus.emit(internalType,{source:'salla',sallaEvent:type,data:body?.data??null});
   markWebhookEventProcessed(db,id,internalType?'PROCESSED':'UNMAPPED');
  } catch(error) {
   markWebhookEventProcessed(db,id,'ERROR',error.message);

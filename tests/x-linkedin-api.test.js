@@ -105,7 +105,7 @@ test('LinkedIn OAuth connect/disconnect over HTTP — resolves the Company Page,
 // --- Full pipeline: Calendar -> Approval -> Scheduler -> Publishing agent -> real X post ---
 
 test('E2E: an approved, due X post flows scheduler -> CONTENT_PUBLISH_REQUESTED -> Publishing agent -> real tweet, and becomes PUBLISHED end to end',async()=>{
- const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',INTEGRATION_ENCRYPTION_KEY:key32,X_CLIENT_ID:'client-1',X_CLIENT_SECRET:'secret-1',X_REDIRECT_URI:'https://hyper-cool.com/cb'};
+ const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',INTEGRATION_ENCRYPTION_KEY:key32,X_CLIENT_ID:'client-1',X_CLIENT_SECRET:'secret-1',X_REDIRECT_URI:'https://hyper-cool.com/cb',ENABLE_L2_AUTONOMY:'true'};
  let tweetCalls=0;
  const fetcher=async(url,opts)=>{
   if(url.includes('/2/oauth2/token'))return new Response(JSON.stringify({access_token:'x-token',refresh_token:'x-refresh',expires_in:7200,scope:'tweet.read tweet.write users.read offline_access'}),{status:200,headers:{'content-type':'application/json'}});
@@ -144,7 +144,7 @@ test('E2E: an approved, due X post flows scheduler -> CONTENT_PUBLISH_REQUESTED 
 });
 
 test('Rejecting an already-scheduled item cancels its job immediately — prepareDue finds nothing due, never reaches the publishing agent or the network',async()=>{
- const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model'};
+ const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',ENABLE_L2_AUTONOMY:'true'};
  const fetcher=async(url)=>{throw new Error('must not call any external API for a cancelled job: '+url);};
  const {call,cleanup}=await harness(env,fetcher);
  try{
@@ -202,7 +202,7 @@ test('L0 (default) autonomy: the Publishing agent runs on the due event but its 
 });
 
 test('A real API rejection (expired/invalid token) classifies as FAILED without crashing the run — content stays safely APPROVED',async()=>{
- const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',INTEGRATION_ENCRYPTION_KEY:key32,X_CLIENT_ID:'client-1',X_CLIENT_SECRET:'secret-1',X_REDIRECT_URI:'https://hyper-cool.com/cb'};
+ const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',INTEGRATION_ENCRYPTION_KEY:key32,X_CLIENT_ID:'client-1',X_CLIENT_SECRET:'secret-1',X_REDIRECT_URI:'https://hyper-cool.com/cb',ENABLE_L2_AUTONOMY:'true'};
  const fetcher=async(url,opts)=>{
   if(url.includes('/2/oauth2/token'))return new Response(JSON.stringify({access_token:'x-token',refresh_token:'x-refresh',expires_in:7200,scope:'tweet.read tweet.write users.read offline_access'}),{status:200,headers:{'content-type':'application/json'}});
   if(url.includes('/2/users/me'))return new Response(JSON.stringify({data:{id:'acct-1',username:'hypercool',name:'HyperCool'}}),{status:200,headers:{'content-type':'application/json'}});

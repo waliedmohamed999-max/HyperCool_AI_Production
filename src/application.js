@@ -176,7 +176,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         // would silently fail to stop this path.
         if(req.method==='POST' && (url.pathname==='/api/automation/daily-brief'||url.pathname==='/api/automation/prepare-due') && isPaused(store.db))return send(200,{skipped:'PAUSED'});
         if(req.method==='POST' && url.pathname==='/api/automation/daily-brief')return send(200,saveDailyBrief(store,riyadhDate(),actor));
-        if(req.method==='POST' && url.pathname==='/api/automation/prepare-due')return send(200,prepareDue(store,actor,Date.now(),eventBus));
+        if(req.method==='POST' && url.pathname==='/api/automation/prepare-due')return send(200,prepareDue(store,actor,Date.now(),eventBus,env));
         if(req.method==='GET' && url.pathname==='/api/automation/status')return send(200,{timezone:'Asia/Riyadh',externalPublishing:false});
         fail(404,'Unknown automation operation');
       }
@@ -188,7 +188,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const raw=await rawBody(req);
         verifySallaWebhook(req,raw,env);
         let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
-        return send(200,processSallaWebhook({db:store.db,eventBus,body:payload}));
+        return send(200,processSallaWebhook({db:store.db,eventBus,body:payload,paused:isPaused(store.db)}));
       }
       // Meta's verification handshake — GET with hub.challenge, no body, no signature (the
       // handshake IS the authentication: only someone holding META_VERIFY_TOKEN can pass it).
@@ -433,7 +433,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const autonomyRoute=url.pathname.match(/^\/api\/agents\/([\w-]+)\/autonomy$/);
       if(autonomyRoute) {
         if(req.method==='GET')return send(200,listAutonomyLog(store.db,autonomyRoute[1]));
-        if(req.method==='POST') {authorize(session,['owner']);return send(201,setAutonomy(store,autonomyRoute[1],await body(req),session.user));}
+        if(req.method==='POST') {authorize(session,['owner']);return send(201,setAutonomy(store,autonomyRoute[1],await body(req),session.user,env));}
       }
       if(req.method==='GET' && url.pathname==='/api/connections') return send(200,connectionStatus(env));
       if(req.method==='GET' && url.pathname==='/api/integrations/dashboard') return send(200,buildIntegrationsDashboard(store,{env,aiRuns:listAiRuns(store.db),complianceRuns:listComplianceChecksSince(store.db,'1970-01-01T00:00:00.000Z'),agentRuns:listRuns(store.db,{limit:2000})}));
@@ -733,7 +733,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(req.method==='POST' && url.pathname==='/api/calendar') {authorize(session,['owner','operator']);return send(201,createCalendar(store,(await body(req)).startDate,session.user));}
       if(req.method==='POST' && url.pathname==='/api/schedule') {authorize(session,['owner']);return send(201,scheduleContent(store,await body(req),session.user));}
-      if(req.method==='POST' && url.pathname==='/api/schedule/prepare') {authorize(session,['owner']);return send(200,prepareDue(store,session.user,Date.now(),eventBus));}
+      if(req.method==='POST' && url.pathname==='/api/schedule/prepare') {authorize(session,['owner']);return send(200,prepareDue(store,session.user,Date.now(),eventBus,env));}
       if(req.method==='POST' && url.pathname==='/api/brief') {authorize(session,['owner']);return send(200,saveDailyBrief(store,riyadhDate(),session.user));}
       if(req.method==='GET' && url.pathname==='/api/reports/weekly')return send(200,{current:buildExecutiveReport(store,currentWeekStart(),reportExtras()),saved:listWeeklyReports(store.db)});
       if(req.method==='POST' && url.pathname==='/api/reports/weekly') {authorize(session,['owner']);const input=await body(req);return send(201,saveWeeklyReport(store,input.weekStart||currentWeekStart(),session.user,reportExtras()));}

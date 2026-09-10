@@ -25,7 +25,8 @@ test('promotion moves one level at a time and is rejected on stale version or sk
   assert.throws(()=>setAutonomy(store,'copy',{level:'L3',reason:'skip ahead',expectedVersion:1},user),/خطوة واحدة/);
   assert.throws(()=>setAutonomy(store,'copy',{level:'L2',reason:'stale',expectedVersion:0},user),/تغيّر/);
   assert.throws(()=>setAutonomy(store,'copy',{level:'L1',reason:'same level',expectedVersion:1},user),/بالفعل/);
-  const second=setAutonomy(store,'copy',{level:'L2',reason:'clean run continues',expectedVersion:1},user);
+  assert.throws(()=>setAutonomy(store,'copy',{level:'L2',reason:'flag off',expectedVersion:1},user),/ENABLE_L2_AUTONOMY/);
+  const second=setAutonomy(store,'copy',{level:'L2',reason:'clean run continues',expectedVersion:1},user,{ENABLE_L2_AUTONOMY:'true'});
   assert.equal(second.version,2);
   assert.equal(listAutonomyLog(store.db,'copy').length,2);
  }finally{store.close();}
@@ -35,7 +36,7 @@ test('demotion can drop more than one level as an immediate safety valve and is 
  const store=fixture();
  try{
   setAutonomy(store,'publishing',{level:'L1',reason:'promote',expectedVersion:0},user);
-  const promoted=setAutonomy(store,'publishing',{level:'L2',reason:'promote again',expectedVersion:1},user);
+  const promoted=setAutonomy(store,'publishing',{level:'L2',reason:'promote again',expectedVersion:1},user,{ENABLE_L2_AUTONOMY:'true'});
   assert.equal(promoted.version,2);
   const demoted=setAutonomy(store,'publishing',{level:'L0',reason:'compliance breach detected',expectedVersion:2},user);
   assert.equal(demoted.direction,'DEMOTED');assert.equal(demoted.level,'L0');
