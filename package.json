@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node app.cjs",
     "build": "node --check app.cjs && node --check src/server.js && node --check src/application.js",
+    "workflows:build": "npm run build",
     "test": "node --test",
     "test:ui": "node scripts/ui-qa.mjs",
     "ui:screenshots": "node scripts/ui-baseline.mjs",
