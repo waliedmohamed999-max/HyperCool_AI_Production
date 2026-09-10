@@ -1,6 +1,7 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {fail} from './auth.js';
 import {createEscalation} from './runtime/escalations.js';
+import {resolveActiveTenantId} from './tenancy.js';
 
 export const stages=['NEW','QUALIFIED','QUOTE_SENT','DEMO','POST_PURCHASE','PARKED','WON','LOST'];
 export const sequences={
@@ -11,14 +12,43 @@ export const sequences={
  DORMANT:{name:'إعادة تفعيل اهتمام سابق',stages:['QUALIFIED','PARKED'],touches:[['هل ما زال تجهيزكم للمنتج ضمن خططكم الحالية؟','Is this product still part of your current plans?'],['هل تغير احتياجكم أو توقيت التجهيز؟','Have your requirements or purchasing timeline changed?'],['هل نوقف المتابعة إلى وقت أنسب لكم؟','Would you like us to pause until a more suitable time?']]},
  BUDGET_CHECK:{name:'دورة الميزانية القادمة',stages:['QUALIFIED','PARKED'],touches:[['هل يناسبكم نراجع الاحتياج مع دورة الميزانية القادمة؟','Would it suit you to revisit this need during the next budget cycle?'],['هل عندكم موعد مفضل لمراجعة خيارات التجهيز؟','Do you have a preferred time to review equipment options?'],['هل تفضلون إغلاق المتابعة مؤقتًا؟','Would you prefer to close the follow-up temporarily?']]}
 };
-export function installCRM(db){db.exec(`
- CREATE TABLE IF NOT EXISTS crm_leads (id TEXT PRIMARY KEY, contact_key TEXT UNIQUE, json TEXT NOT NULL);
+// Multi-Tenant Control Center, Phase 1: `crm_leads` carries a real `tenant_id` — before
+// this, `contact_key` was UNIQUE across the whole database, meaning a phone/email could
+// only ever be a lead for ONE company system-wide (see docs/MULTI_TENANT_ARCHITECTURE.md).
+// Every reader/writer below takes an OPTIONAL trailing `tenantId` so existing callers
+// (agent tools, ~10 test files) don't need to change: omitting it resolves to
+// `resolveActiveTenantId(db)`, the one real tenant that exists today. `crm_messages`/
+// `crm_followups` deliberately do NOT get their own tenant_id column — they are only ever
+// reached through a `lead_id` that a tenant-scoped `getLead()` has already verified, so
+// isolating the lead transitively isolates its messages/followups too.
+export function installCRM(db){
+ const legacy=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='crm_leads'").get();
+ if(legacy) {
+  const columns=db.prepare('PRAGMA table_info(crm_leads)').all().map(c=>c.name);
+  if(!columns.includes('tenant_id')) {
+   // SQLite can't ALTER an inline UNIQUE constraint, so this recreates the table and
+   // backfills every existing lead to the one real tenant that owns it today (lossless,
+   // spec Part 99) — `contact_key`'s uniqueness becomes (tenant_id, contact_key) instead
+   // of global, matching the same partial-uniqueness (NULLs still allowed) as before.
+   const tenantId=resolveActiveTenantId(db);
+   db.exec('ALTER TABLE crm_leads RENAME TO crm_leads_pre_tenant;');
+   db.exec(`CREATE TABLE crm_leads (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, contact_key TEXT, json TEXT NOT NULL);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_leads_tenant_contact ON crm_leads(tenant_id,contact_key) WHERE contact_key IS NOT NULL;`);
+   db.prepare('INSERT INTO crm_leads (id,tenant_id,contact_key,json) SELECT id,?,contact_key,json FROM crm_leads_pre_tenant').run(tenantId);
+   db.exec('DROP TABLE crm_leads_pre_tenant;');
+  }
+ } else {
+  db.exec(`CREATE TABLE IF NOT EXISTS crm_leads (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, contact_key TEXT, json TEXT NOT NULL);
+   CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_leads_tenant_contact ON crm_leads(tenant_id,contact_key) WHERE contact_key IS NOT NULL;`);
+ }
+ db.exec(`
  CREATE TABLE IF NOT EXISTS crm_messages (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL REFERENCES crm_leads(id), event_key TEXT NOT NULL UNIQUE, json TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS crm_followups (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL REFERENCES crm_leads(id), status TEXT NOT NULL, due_at TEXT NOT NULL, json TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS crm_requests (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, json TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS idx_crm_messages_lead_id ON crm_messages(lead_id);
  CREATE INDEX IF NOT EXISTS idx_crm_followups_lead_id ON crm_followups(lead_id);
  CREATE INDEX IF NOT EXISTS idx_crm_followups_status ON crm_followups(status);
+ CREATE INDEX IF NOT EXISTS idx_crm_leads_tenant_id ON crm_leads(tenant_id);
 `);
  // Additive, guarded column — see runtime/registry.js for the same pattern. Needed so an
  // inbound webhook message (WhatsApp wamid) or an outbound message's provider-assigned id
@@ -36,18 +66,21 @@ function iso(value,label){if(typeof value!=='string'||!/(Z|[+-]\d{2}:\d{2})$/.te
 function link(value,storeOnly=false){let url;try{url=new URL(value);}catch{fail(400,'رابط غير صالح');}if(url.protocol!=='https:'||url.username||url.password||(storeOnly&&url.hostname!=='hyper-cool.com'))fail(400,'استخدم رابط HTTPS صحيحًا'+(storeOnly?' من متجر HyperCool':''));return url.href;}
 function audit(state,action,id,user){state.audit.unshift({id:randomUUID(),action,itemId:id,actorId:user.id,actorName:user.name,actorRole:user.role,at:new Date().toISOString()});}
 function writeLead(db,lead){db.prepare('UPDATE crm_leads SET json=? WHERE id=?').run(JSON.stringify(lead),lead.id);}
-export function getLead(db,id){if(typeof id!=='string')fail(400,'معرف العميل مطلوب');const row=db.prepare('SELECT json FROM crm_leads WHERE id=?').get(id);if(!row)fail(404,'العميل غير موجود');return JSON.parse(row.json);}
-export function listLeads(db){return db.prepare('SELECT json FROM crm_leads ORDER BY rowid DESC').all().map(row=>JSON.parse(row.json));}
+// `tenantId` defaults to the one real tenant that exists today (see installCRM's docblock
+// above) — a lead belonging to a DIFFERENT tenant 404s exactly like one that never existed,
+// never a distinguishable error that would let a caller detect "it exists but isn't mine".
+export function getLead(db,id,tenantId=null){if(typeof id!=='string')fail(400,'معرف العميل مطلوب');const row=db.prepare('SELECT json FROM crm_leads WHERE id=? AND tenant_id=?').get(id,tenantId||resolveActiveTenantId(db));if(!row)fail(404,'العميل غير موجود');return JSON.parse(row.json);}
+export function listLeads(db,tenantId=null){return db.prepare('SELECT json FROM crm_leads WHERE tenant_id=? ORDER BY rowid DESC').all(tenantId||resolveActiveTenantId(db)).map(row=>JSON.parse(row.json));}
 export function listFollowups(db){return db.prepare('SELECT json FROM crm_followups ORDER BY due_at').all().map(row=>JSON.parse(row.json));}
 export function listAllMessages(db,limit=500){return db.prepare('SELECT json FROM crm_messages ORDER BY rowid DESC LIMIT ?').all(limit).map(row=>JSON.parse(row.json));}
 // Single source of truth for lead search — used by the REST endpoint and by the
 // search_crm agent tool alike, so the two never drift apart.
-export function searchLeads(db,query,limit=20){
+export function searchLeads(db,query,limit=20,tenantId=null){
  const q=string(query,200).toLowerCase();
  if(!q)return [];
- return listLeads(db).filter(lead=>[lead.name,lead.company,lead.phone,lead.email,lead.productNeed,lead.id].some(value=>value&&String(value).toLowerCase().includes(q))).slice(0,limit);
+ return listLeads(db,tenantId).filter(lead=>[lead.name,lead.company,lead.phone,lead.email,lead.productNeed,lead.id].some(value=>value&&String(value).toLowerCase().includes(q))).slice(0,limit);
 }
-export function leadDetail(db,id){const lead=getLead(db,id);return {lead,messages:db.prepare('SELECT json FROM crm_messages WHERE lead_id=? ORDER BY rowid').all(id).map(row=>JSON.parse(row.json)),followups:listFollowups(db).filter(f=>f.leadId===id),handoff:handoff(lead),quoteIntake:quoteIntake(lead)};}
+export function leadDetail(db,id,tenantId=null){const lead=getLead(db,id,tenantId);return {lead,messages:db.prepare('SELECT json FROM crm_messages WHERE lead_id=? ORDER BY rowid').all(id).map(row=>JSON.parse(row.json)),followups:listFollowups(db).filter(f=>f.leadId===id),handoff:handoff(lead),quoteIntake:quoteIntake(lead)};}
 function quoteIntake(lead){const required=['name','city','productNeed','quantity','timeline',...(lead.customerType==='B2B'?['company']:[])];const missingFields=required.filter(field=>!lead[field]);if(!lead.email&&!lead.phone)missingFields.push('contact');return {status:missingFields.length?'NEEDS_DATA':'READY_FOR_HUMAN_QUOTE',missingFields,pricingVerified:false,quoteCreated:false};}
 function handoff(lead){return {leadId:lead.id,company:lead.company||null,need:lead.productNeed||null,city:lead.city||null,quantity:lead.quantity,timeline:lead.timeline||null,assignedTo:lead.assignedTo,temperature:lead.temperature,reason:lead.handoffReason||null,nextAction:lead.humanHold?'HUMAN_REVIEW':lead.temperature==='HOT'?'CONTACT_LEAD':'QUALIFY'};}
 function qualification(input){
@@ -57,7 +90,8 @@ function qualification(input){
  if(valueSAR!==null&&(!Number.isFinite(valueSAR)||valueSAR<0||valueSAR>1e10))fail(400,'قيمة تقديرية غير صالحة');
  return {city:string(input.city),productNeed:string(input.productNeed,1000),productUrl:input.productUrl?link(input.productUrl,true):'',quantity,valueSAR,timeline:string(input.timeline),budgetBand:string(input.budgetBand)};
 }
-export function createLead(store,input,user){
+export function createLead(store,input,user,tenantId=null){
+ const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
  const name=required(input.name,'اسم العميل');
  if(!['B2C','B2B'].includes(input.customerType))fail(400,'اختر نوع العميل');
  if(!['INBOUND','RESEARCH'].includes(input.sourceType))fail(400,'اختر مصدر العميل');
@@ -74,20 +108,22 @@ export function createLead(store,input,user){
   research={sourceUrl:link(input.sourceUrl),trigger:required(input.trigger,'محفز الشراء',1000),triggerDate,fitScore,routeIn:required(input.routeIn,'قناة الوصول'),checkedBy:user.id,checkedAt:new Date().toISOString()};
  }
  return store.mutate(state=>{
-  // Detect either contact, not just whichever contact was selected as the index key.
-  const duplicate=listLeads(store.db).find(lead=>(email&&lead.email===email)||(phone&&lead.phone===phone));
+  // Detect either contact, not just whichever contact was selected as the index key —
+  // scoped to this tenant only: the same phone/email is a perfectly valid, separate lead
+  // for a different company.
+  const duplicate=listLeads(store.db,resolvedTenantId).find(lead=>(email&&lead.email===email)||(phone&&lead.phone===phone));
   if(duplicate)fail(409,'وسيلة التواصل موجودة في سجل عميل سابق');
   const lead={id:randomUUID(),name,company,customerType:input.customerType,sourceType:input.sourceType,email,phone,research,...qualification(input),stage:'NEW',temperature:'COLD',consent:{Email:null,WhatsApp:null},optOut:false,humanHold:false,replyHold:false,handoffReason:null,assignedTo:null,version:1,createdAt:new Date().toISOString(),createdBy:user.id,nextCheckAt:null};
   if(lead.valueSAR>100000){lead.humanHold=true;lead.handoffReason='HIGH_VALUE_DEAL';}
-  store.db.prepare('INSERT INTO crm_leads VALUES (?,?,?)').run(lead.id,email?'email:'+email:phone?'phone:'+phone:null,JSON.stringify(lead));audit(state,'CRM_LEAD_CREATED',lead.id,user);return lead;
+  store.db.prepare('INSERT INTO crm_leads (id,tenant_id,contact_key,json) VALUES (?,?,?,?)').run(lead.id,resolvedTenantId,email?'email:'+email:phone?'phone:'+phone:null,JSON.stringify(lead));audit(state,'CRM_LEAD_CREATED',lead.id,user);return lead;
  });
 }
 function stopFollowups(db,leadId,reason){
  for(const row of db.prepare("SELECT json FROM crm_followups WHERE lead_id=? AND status IN ('DRAFT','APPROVED','READY_FOR_CHANNEL')").all(leadId)){const item=JSON.parse(row.json);item.status='HOLD';item.holdReason=reason;item.approval=null;db.prepare('UPDATE crm_followups SET status=?,json=? WHERE id=?').run(item.status,JSON.stringify(item),item.id);}
 }
 function expectedVersion(lead,input){if(input.expectedVersion!==lead.version)fail(409,'تم تحديث العميل؛ حدّث الصفحة ثم حاول مجددًا');}
-export function updateLead(store,id,input,user){return store.mutate(state=>{
- const lead=getLead(store.db,id);expectedVersion(lead,input);
+export function updateLead(store,id,input,user,tenantId=null){return store.mutate(state=>{
+ const lead=getLead(store.db,id,tenantId);expectedVersion(lead,input);
  if(!stages.includes(input.stage))fail(400,'مرحلة غير صالحة');
  if(['WON','LOST'].includes(lead.stage)&&input.stage!==lead.stage&&user.role!=='owner')fail(403,'إعادة فتح الفرصة للمالك فقط');
  const reason=required(input.reason,'سبب تحديث المرحلة',1000);
@@ -129,14 +165,14 @@ export function recordMessage(store,id,input,user){
 // actor is an automated channel connector or an agent, (2) must find-or-create the lead
 // itself since a webhook has no existing lead id to post to, and (3) needs to record real
 // OUTBOUND messages the system sends, which recordMessage() never did.
-export function findLeadByPhone(db,phone){
+export function findLeadByPhone(db,phone,tenantId=null){
  if(!phone)return null;
- return listLeads(db).find(lead=>lead.phone===phone)||null;
+ return listLeads(db,tenantId).find(lead=>lead.phone===phone)||null;
 }
-export function findLeadByEmail(db,email){
+export function findLeadByEmail(db,email,tenantId=null){
  if(!email)return null;
  const normalized=email.trim().toLowerCase();
- return listLeads(db).find(lead=>lead.email && lead.email.toLowerCase()===normalized)||null;
+ return listLeads(db,tenantId).find(lead=>lead.email && lead.email.toLowerCase()===normalized)||null;
 }
 /**
  * Customer matching priority per the integration spec: an explicit existing CRM mapping
@@ -146,16 +182,17 @@ export function findLeadByEmail(db,email){
  * this returns the one matched by the channel's own identifier and leaves the conflict for
  * a human to notice and reconcile manually, rather than guessing which record is "right."
  */
-export function findOrCreateLeadFromChannel(store,{phone,email,name,channel},actor){
+export function findOrCreateLeadFromChannel(store,{phone,email,name,channel},actor,tenantId=null){
+ const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
  const normalizedEmail=email?email.trim().toLowerCase():null;
- const findExisting=()=>(normalizedEmail&&findLeadByEmail(store.db,normalizedEmail))||(phone&&findLeadByPhone(store.db,phone))||null;
+ const findExisting=()=>(normalizedEmail&&findLeadByEmail(store.db,normalizedEmail,resolvedTenantId))||(phone&&findLeadByPhone(store.db,phone,resolvedTenantId))||null;
  const existing=findExisting();
  if(existing)return {lead:existing,created:false};
  return store.mutate(state=>{
   const again=findExisting();if(again)return {lead:again,created:false};
   const contactKey=normalizedEmail?'email:'+normalizedEmail:phone?'phone:'+phone:null;
   const lead={id:randomUUID(),name:string(name,200)||normalizedEmail||phone||'عميل جديد',company:'',customerType:'B2C',sourceType:'INBOUND',email:normalizedEmail||'',phone:phone||'',research:null,city:'',productNeed:'',productUrl:'',quantity:null,valueSAR:null,timeline:'',budgetBand:'',stage:'NEW',temperature:'COLD',consent:{Email:null,WhatsApp:null},optOut:false,humanHold:false,replyHold:false,handoffReason:null,assignedTo:null,version:1,createdAt:new Date().toISOString(),createdBy:actor.id,channelOrigin:channel,nextCheckAt:null};
-  store.db.prepare('INSERT INTO crm_leads VALUES (?,?,?)').run(lead.id,contactKey,JSON.stringify(lead));
+  store.db.prepare('INSERT INTO crm_leads (id,tenant_id,contact_key,json) VALUES (?,?,?,?)').run(lead.id,resolvedTenantId,contactKey,JSON.stringify(lead));
   audit(state,'CRM_LEAD_CREATED',lead.id,actor);
   return {lead,created:true};
  });

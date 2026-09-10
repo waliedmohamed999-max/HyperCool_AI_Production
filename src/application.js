@@ -33,6 +33,7 @@ import {promotionEligibility} from './runtime/permissions.js';
 import {installGate,getGateStatus,setPaused,isPaused} from './runtime/gate.js';
 import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
+import {installTenancy,ensureDefaultTenant,resolveTenantForUser} from './tenancy.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
 import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
 import {verifySallaWebhook,processSallaWebhook} from './runtime/salla-webhooks.js';
@@ -87,6 +88,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   await mkdir(dataDir,{recursive:true});
   const store=openStore(resolve(dataDir,'hypercool.sqlite'),resolve(dataDir,'state.json'));
   const auth=createAuth(store.db);
+  installTenancy(store.db);
+  ensureDefaultTenant(store.db); // real, lossless backfill — see docs/MULTI_TENANT_ARCHITECTURE.md
   installKnowledge(store.db);
   installPlanning(store.db);
   installCRM(store.db);
@@ -271,6 +274,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       const session=auth.current(req);
       userId=session?.user?.id||null;
+      // TenantContext resolution (Multi-Tenant Control Center, Phase 1 — see
+      // docs/MULTI_TENANT_ARCHITECTURE.md). Resolved once per request from the real
+      // TenantMembership table, never trusted from a query string or request body — a
+      // route that wants to scope a query explicitly (rather than relying on a library
+      // function's own default-tenant fallback) uses `session.tenantId` here.
+      if(session)session.tenantId=resolveTenantForUser(store.db,session.user.id);
       if(req.method==='GET' && url.pathname==='/api/auth') return send(200,{needsSetup:auth.needsSetup(),user:session?.user||null,csrf:session?.csrf||null});
       if(req.method==='POST' && ['/api/setup','/api/login'].includes(url.pathname)) {
         const input=await body(req);
@@ -528,7 +537,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && manualWhatsAppSend) {
         authorize(session,['owner','operator']);
         const id=manualWhatsAppSend[1],input=await body(req);
-        const lead=getLead(store.db,id);
+        const lead=getLead(store.db,id,session.tenantId);
         if(lead.optOut)fail(409,'العميل أوقف التواصل (opt-out)');
         if(lead.humanHold)fail(409,'المحادثة موقوفة بانتظار مراجعة بشرية');
         if(!lead.phone)fail(409,'لا يوجد رقم هاتف لهذا العميل');
@@ -647,7 +656,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && manualEmailSend) {
         authorize(session,['owner','operator']);
         const id=manualEmailSend[1],input=await body(req);
-        const lead=getLead(store.db,id);
+        const lead=getLead(store.db,id,session.tenantId);
         if(lead.optOut)fail(409,'العميل أوقف التواصل (opt-out)');
         if(lead.humanHold)fail(409,'المحادثة موقوفة بانتظار مراجعة بشرية');
         if(!lead.email)fail(409,'لا يوجد بريد إلكتروني لهذا العميل');
@@ -694,21 +703,21 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='GET' && url.pathname==='/api/state') return send(200,store.read());
       if(url.pathname.startsWith('/api/crm')) {
         authorize(session,['owner','operator']);
-        if(req.method==='GET' && url.pathname==='/api/crm')return send(200,{leads:listLeads(store.db),followups:listFollowups(store.db),sequences:Object.entries(sequences).map(([id,sequence])=>({id,name:sequence.name,stages:sequence.stages})),staff:store.db.prepare("SELECT id,name,role FROM users WHERE role IN ('owner','operator') ORDER BY name").all(),channelsConnected:false});
+        if(req.method==='GET' && url.pathname==='/api/crm')return send(200,{leads:listLeads(store.db,session.tenantId),followups:listFollowups(store.db),sequences:Object.entries(sequences).map(([id,sequence])=>({id,name:sequence.name,stages:sequence.stages})),staff:store.db.prepare("SELECT id,name,role FROM users WHERE role IN ('owner','operator') ORDER BY name").all(),channelsConnected:false});
         if(req.method==='GET' && url.pathname==='/api/crm/dashboard')return send(200,buildSalesDashboard(store,{agentRuns:listRuns(store.db,{limit:2000}),env}));
-        if(req.method==='GET' && url.pathname==='/api/crm/search')return send(200,searchLeads(store.db,url.searchParams.get('q')));
-        if(req.method==='POST' && url.pathname==='/api/crm/leads'){const lead=createLead(store,await body(req),session.user);eventBus.emit('LEAD_CREATED',{leadId:lead.id,customerType:lead.customerType,sourceType:lead.sourceType});return send(201,lead);}
+        if(req.method==='GET' && url.pathname==='/api/crm/search')return send(200,searchLeads(store.db,url.searchParams.get('q'),20,session.tenantId));
+        if(req.method==='POST' && url.pathname==='/api/crm/leads'){const lead=createLead(store,await body(req),session.user,session.tenantId);eventBus.emit('LEAD_CREATED',{leadId:lead.id,customerType:lead.customerType,sourceType:lead.sourceType});return send(201,lead);}
         if(req.method==='POST' && url.pathname==='/api/crm/followups/prepare'){authorize(session,['owner']);return send(200,prepareFollowups(store,session.user));}
         const approval=url.pathname.match(/^\/api\/crm\/followups\/([\w-]+)\/approve$/);
         if(req.method==='POST' && approval){authorize(session,['owner']);return send(200,approveFollowup(store,approval[1],session.user));}
         const leadRoute=url.pathname.match(/^\/api\/crm\/leads\/([\w-]+)(?:\/(update|messages|contact|followups|stop-followups))?$/);
         if(leadRoute){
-          if(req.method==='GET' && !leadRoute[2])return send(200,leadDetail(store.db,leadRoute[1]));
+          if(req.method==='GET' && !leadRoute[2])return send(200,leadDetail(store.db,leadRoute[1],session.tenantId));
           if(req.method==='POST'){
             const input=await body(req),id=leadRoute[1],user=session.user;
             if(leadRoute[2]==='update'){
-              const before=getLead(store.db,id);
-              const updated=updateLead(store,id,input,user);
+              const before=getLead(store.db,id,session.tenantId);
+              const updated=updateLead(store,id,input,user,session.tenantId);
               maybeEscalateHotLead(store,eventBus,before,updated,{agentId:'human'});
               return send(200,updated);
             }
