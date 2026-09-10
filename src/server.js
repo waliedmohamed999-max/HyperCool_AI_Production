@@ -32,7 +32,10 @@ import {promotionEligibility} from './runtime/permissions.js';
 import {installGate,getGateStatus,setPaused} from './runtime/gate.js';
 import {createScheduler} from './runtime/scheduler.js';
 
-export async function createApp({dataDir=fileURLToPath(new URL('../data/',import.meta.url)),env=process.env,fetcher=fetch}={}) {
+export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLToPath(new URL('../data/',import.meta.url)),fetcher=fetch}={}) {
+  const publicUrl=env.PUBLIC_ORIGIN?new URL(env.PUBLIC_ORIGIN):null;
+  if(publicUrl && (publicUrl.protocol!=='https:' || publicUrl.username || publicUrl.password || publicUrl.pathname!=='/' || publicUrl.search || publicUrl.hash)) throw new Error('PUBLIC_ORIGIN must be an HTTPS origin without a path');
+  const secureCookie=publicUrl?'; Secure':'';
   await mkdir(dataDir,{recursive:true});
   const store=openStore(resolve(dataDir,'hypercool.sqlite'),resolve(dataDir,'state.json'));
   const auth=createAuth(store.db);
@@ -73,8 +76,8 @@ export async function createApp({dataDir=fileURLToPath(new URL('../data/',import
     const send=(status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
     try {
       const host=req.headers.host;
-      if(!host || !/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host)) fail(403,'Local access only');
-      if(req.headers.origin && req.headers.origin!==`http://${host}`) fail(403,'Cross-origin request rejected');
+      if(!host || (publicUrl?host!==publicUrl.host:!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host))) fail(403,'Host not allowed');
+      if(req.headers.origin && req.headers.origin!==(publicUrl?.origin||`http://${host}`)) fail(403,'Cross-origin request rejected');
       if(req.headers['sec-fetch-site']==='cross-site') fail(403,'Cross-site request rejected');
       const url=new URL(req.url,`http://${host}`);
       if(url.pathname.startsWith('/api/automation/')) {
@@ -94,14 +97,14 @@ export async function createApp({dataDir=fileURLToPath(new URL('../data/',import
           if(!auth.needsSetup()) fail(409,'تم إعداد حساب المالك بالفعل');
           result=auth.session(auth.createUser(input,'owner'));
         } else result=auth.login(input,req.socket.remoteAddress);
-        res.setHeader('Set-Cookie',`hc_session=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`);
+        res.setHeader('Set-Cookie',`hc_session=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secureCookie}`);
         return send(200,{user:result.user,csrf:result.csrf});
       }
       if(url.pathname.startsWith('/api/')) {
         authorize(session,['owner','reviewer','operator']);
         if(req.method!=='GET' && req.headers['x-csrf-token']!==session.csrf) fail(403,'رمز حماية الجلسة غير صالح');
       }
-      if(req.method==='POST' && url.pathname==='/api/logout') {auth.logout(session);res.setHeader('Set-Cookie','hc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');return send(200,{ok:true});}
+      if(req.method==='POST' && url.pathname==='/api/logout') {auth.logout(session);res.setHeader('Set-Cookie',`hc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`);return send(200,{ok:true});}
       if(url.pathname==='/api/users') {
         authorize(session,['owner']);
         if(req.method==='GET') return send(200,auth.list());
@@ -339,13 +342,17 @@ export async function createApp({dataDir=fileURLToPath(new URL('../data/',import
   });
   return {server,store,scheduler};
 }
-if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+export async function startServer() {
   try{loadEnvFile(fileURLToPath(new URL('../.env',import.meta.url)));}catch(error){if(error.code!=='ENOENT')throw error;}
   const {server,scheduler}=await createApp();
   const port=Number(process.env.PORT||3000);
-  server.listen(port,'127.0.0.1',()=>{
+  server.on('error',error=>{console.error('Server startup failed:',error);process.exitCode=1;});
+  server.listen(port,process.env.HOST||(process.env.PUBLIC_ORIGIN?'0.0.0.0':'127.0.0.1'),()=>{
     console.log(`HyperCool: http://localhost:${port}`);
     scheduler.start();
     console.log('Agent scheduler running — daily brief 08:00, weekly report Sunday, follow-up gap sweep every tick (Asia/Riyadh).');
   });
+}
+if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+  startServer().catch(error=>{console.error('Server startup failed:',error);process.exitCode=1;});
 }
