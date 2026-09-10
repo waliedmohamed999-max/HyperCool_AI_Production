@@ -18,7 +18,11 @@ export function effectiveLevel(dbLevel,env={}) {
  if(!cap)return dbLevel;
  return levels.indexOf(dbLevel)<=levels.indexOf(cap)?dbLevel:cap;
 }
-export function canUseTool(level,tool) {
+// agentId is optional so every existing call site (permission-level-only checks) keeps
+// working unchanged; pass it whenever a tool might carry an `allowedAgents` restriction
+// (e.g. only Frost/Sales/Follow-up may create calendar events — see runtime/tools.js).
+export function canUseTool(level,tool,agentId) {
+ if(tool.allowedAgents && agentId && !tool.allowedAgents.includes(agentId))return false;
  if(!tool.minLevel)return true;
  return levels.indexOf(level)>=levels.indexOf(tool.minLevel);
 }

@@ -1,5 +1,6 @@
 import {fmtNum,fmtSAR,fmtDateTime,empty,renderBarChart,renderFunnel,stageNames} from './format.js';
 import {t,getLocale} from './i18n.js';
+import {icon} from './components/ui/index.js';
 const $=selector=>document.querySelector(selector);
 const followupNames=new Proxy({},{get:(_,code)=>t('sales.followupStatus.'+code)});
 const reasons=new Proxy({},{get:(_,code)=>t('sales.holdReason.'+code)});
@@ -10,7 +11,44 @@ const field=(name,label,value='',type='text',extra='')=>`<label>${label}<input n
 function dateTime(value){return value?new Date(Date.parse(value)+10800000).toISOString().slice(0,16):'';}
 
 function kpiCard(label,value,context,scrollTo){
- return `<div class="kpi-card${scrollTo?' clickable':''}"${scrollTo?` data-crm-scroll="${scrollTo}"`:''}><span class="kpi-label">${label}</span><span class="kpi-value" dir="ltr">${value}</span>${context?`<span class="kpi-context">${context}</span>`:''}</div>`;
+ return `<button type="button" class="kpi-card sales-metric${scrollTo?' clickable':''}"${scrollTo?` data-crm-scroll="${scrollTo}"`:''}><span class="sales-metric-top"><span>${icon(scrollTo==='crm-forecast'?'chart':scrollTo==='crm-followup-center'?'clock':scrollTo==='crm-quotes'?'file':'users')}</span>${icon('arrow')}</span><span class="kpi-label">${label}</span><span class="kpi-value" dir="ltr">${value}</span>${context?`<span class="kpi-context">${context}</span>`:''}</button>`;
+}
+function styleSalesWorkspace(escape){
+ const L=(ar,en)=>getLocale()==='en'?en:ar;
+ let hero=$('#sales-hero');if(!hero){hero=document.createElement('section');hero.id='sales-hero';$('#crm').prepend(hero);}
+ const active=crm.leads.filter(l=>!['WON','LOST','PARKED'].includes(l.stage));
+ hero.innerHTML=`<div class="sales-hero-copy"><span class="sales-eyebrow">HYPERCOOL / SALES DESK</span><h2>${escape(L('علاقات أقوى. فرص أقرب.','Stronger relationships. Closer opportunities.'))}</h2><p>${escape(L('من أول تواصل إلى إغلاق الصفقة، كل التفاصيل في مساحة واحدة.','From first contact to closing a deal, every detail in one workspace.'))}</p><div class="sales-hero-tags"><span>${icon('users')}${fmtNum(crm.leads.length)} ${escape(L('عميل مسجل','registered customers'))}</span><span>${icon('chart')}${fmtNum(active.length)} ${escape(L('فرصة مفتوحة','open opportunities'))}</span></div></div><div class="sales-hero-aside"><span class="sales-hero-symbol">${icon('users')}</span><span>${escape(L('المتابعات المتأخرة','Overdue follow-ups'))}</span><strong>${dashboard?fmtNum(dashboard.kpis.followupsOverdue.value):'—'}</strong><button type="button" data-crm-scroll="crm-followup-center">${escape(L('افتح مركز المتابعة','Open follow-up center'))}${icon('arrow')}</button></div>`;
+ let nav=$('#sales-section-nav');if(!nav){nav=document.createElement('nav');nav.id='sales-section-nav';$('#crm-summary').after(nav);}nav.setAttribute('aria-label',L('أقسام المبيعات','Sales sections'));
+ nav.innerHTML=[['crm-kanban','users',L('مسار الصفقات','Deal pipeline')],['crm-hot-leads','bell',L('فرص واعدة','Hot leads')],['crm-followup-center','clock',L('المتابعات','Follow-ups')],['crm-inbox','file',L('المحادثات','Conversations')],['crm-forecast','chart',L('توقع الإيرادات','Revenue forecast')],['crm-lead-list','book',L('سجل العملاء','Customers')]].map(([id,glyph,title],index)=>`<button type="button" data-crm-scroll="${id}" class="sales-nav-tile tone-${index}" aria-pressed="false"><span class="sales-nav-glyph">${icon(glyph)}</span><span class="sales-nav-label">${escape(title)}</span><span class="sales-nav-arrow" aria-hidden="true">${icon('arrow')}</span></button>`).join('');
+ $('#crm').querySelectorAll('.report-section').forEach((section,i)=>{let n=section.querySelector('.sales-section-number');if(!n){n=document.createElement('span');n.className='sales-section-number';section.querySelector('.report-section-head')?.prepend(n);}n.textContent=String(i+1).padStart(2,'0');});
+}
+function renderSalesDetailPanels(escape){
+ if(!dashboard)return;
+ const L=(ar,en)=>getLocale()==='en'?en:ar;
+ const avatar=name=>`<span class="sales-contact-avatar">${escape((name||'—').trim().split(/\s+/).slice(0,2).map(s=>Array.from(s)[0]).join(''))}</span>`;
+ const blank=(id,glyph,title,hint,target,cta)=>{const el=$('#'+id);el.innerHTML=`<div class="sales-empty-state"><div class="sales-empty-art">${icon(glyph)}<span></span><span></span></div><h4>${escape(title)}</h4><p>${escape(hint)}</p>${target?`<button type="button" class="sales-text-action" data-quick-action="${target}">${escape(cta)}${icon('arrow')}</button>`:''}</div>`;};
+ // Pair related work areas without hiding their contents or changing existing IDs.
+ for(const [name,ids] of [['work',['crm-hot-leads','crm-followup-center']],['commercial',['crm-b2b','crm-quotes']],['insights',['crm-ai-insights','crm-activity']]]){
+  if(!$('#sales-pair-'+name)){const sections=ids.map(id=>$('#'+id).closest('.report-section'));const pair=document.createElement('div');pair.id='sales-pair-'+name;pair.className='sales-panel-pair';sections[0].before(pair);pair.append(...sections);}
+ }
+ const captions={
+  'crm-hot-leads':L('أولوية التواصل','CONTACT PRIORITY'), 'crm-followup-center':L('إيقاع المتابعة','FOLLOW-UP DESK'),
+  'crm-inbox':L('آخر تواصل مع عملائك','CUSTOMER CONVERSATIONS'), 'crm-b2b':L('فرص الشركات','BUSINESS OPPORTUNITIES'),
+  'crm-quotes':L('قرارات الشراء','PURCHASE DECISIONS'), 'crm-forecast':L('قيمة الفرص الحالية','PIPELINE VALUE'),
+  'crm-ai-insights':L('إشارات من بياناتك','SIGNALS FROM YOUR DATA'), 'crm-activity':L('سجل المبيعات','SALES TIMELINE')};
+ for(const [id,title] of Object.entries(captions)){const section=$('#'+id).closest('.report-section');section.classList.add('sales-detail-panel');section.dataset.salesPanel=id;let subtitle=section.querySelector('.sales-panel-caption');if(!subtitle){subtitle=document.createElement('div');subtitle.className='sales-panel-caption';section.prepend(subtitle);}subtitle.textContent=title;}
+ if(!dashboard.hotLeads.length)blank('crm-hot-leads','bell',L('الفرصة القادمة تبدأ بتواصل','Your next opportunity starts with a conversation'),L('سيظهر هنا العملاء ذوو الاهتمام المرتفع لتعرف بمن تبدأ.','High-interest customers appear here so you know who to contact first.'),'add-lead',L('أضف عميلًا','Add a customer'));
+ if(!dashboard.conversations.hasData)blank('crm-inbox','users',L('كل محادثة لها مكان','Every conversation has a place'),L('آخر رسائل العملاء وحالة الرد ستظهر هنا عند تسجيل المحادثات.','Recent customer messages and response status appear here as conversations are recorded.'),null,'');
+ if(!dashboard.b2b.length)blank('crm-b2b','users',L('ابنِ علاقات مع الشركات','Build business relationships'),L('تابع الجهة والاحتياج وقيمة الفرصة والخطوة التالية في بطاقة واحدة.','Track the company, its needs, opportunity value and next step together.'),'add-b2b',L('إضافة فرصة شركة','Add business opportunity'));
+ else $('#crm-b2b').innerHTML=`<div class="sales-business-cards">${dashboard.b2b.map(o=>`<article class="sales-business-card"><div class="sales-contact-head">${avatar(o.company)}<div><h4>${escape(o.company||'—')}</h4><span class="pill" data-status="${escape(o.stage)}">${escape(stageNames[o.stage]||o.stage)}</span></div></div><p>${escape(o.need||L('لم يُسجل الاحتياج','No need recorded'))}</p><div class="sales-business-value"><strong>${o.valueSAR==null?'—':fmtSAR(o.valueSAR)}</strong><span>${o.probability==null?'—':Math.round(o.probability*100)+'%'} ${escape(L('احتمال مرجح','stage probability'))}</span></div><div class="sales-next-step"><small>${escape(L('الخطوة التالية','NEXT STEP'))}</small><span>${escape(o.nextStep||'—')}</span></div><button type="button" class="sales-text-action" data-open-lead="${escape(o.id)}">${escape(L('ملف الفرصة','Open opportunity'))}${icon('arrow')}</button></article>`).join('')}</div>`;
+ if(!dashboard.quotes.length)blank('crm-quotes','file',L('من الاهتمام إلى قرار الشراء','From interest to a purchase decision'),L('العملاء في مرحلة إرسال عرض السعر يظهرون هنا مع قيمة الفرصة وحالتها.','Customers at the quote stage appear here with their opportunity value and status.'),null,'');
+ else $('#crm-quotes').innerHTML=`<div class="sales-quote-list">${dashboard.quotes.map(q=>`<article class="sales-quote-card"><span class="sales-quote-icon">${icon('file')}</span><div><h4>${escape(q.customer)}</h4><small>${fmtDateTime(q.createdAt)}</small><span class="pill" data-status="${escape(q.status)}">${escape(q.status==='ACCEPTED'?t('sales.quotesSection.statusAccepted'):t('sales.quotesSection.statusSent'))}</span></div><strong>${q.amount==null?'—':fmtSAR(q.amount)}</strong><button type="button" class="sales-text-action" data-open-lead="${escape(q.id)}">${escape(t('sales.quotesSection.open'))}${icon('arrow')}</button></article>`).join('')}</div>`;
+ const f=dashboard.forecast;
+ if(!f.hasData)$('#crm-forecast').innerHTML=`<div class="sales-forecast-empty"><div><span class="sales-panel-caption">${escape(L('الرؤية المالية','FINANCIAL OUTLOOK'))}</span><h4>${escape(L('اعرف قيمة الفرص التي تعمل عليها','See the value of your pipeline'))}</h4><p>${escape(L('تبدأ المؤشرات عند تسجيل فرص بقيمها ومراحلها. التوقع المرجح تقدير بحسب المرحلة، وليس إيرادًا مؤكدًا.','Metrics become available as opportunities are recorded. Weighted forecasts use stage probabilities, not guaranteed revenue.'))}</p></div><div class="sales-forecast-placeholders">${[t('sales.forecastSection.totalPipeline'),t('sales.forecastSection.weightedPipeline'),t('sales.forecastSection.wonRevenue')].map(title=>`<div><span>${escape(title)}</span><strong>—</strong><small>${escape(L('لا توجد بيانات','No data yet'))}</small></div>`).join('')}</div></div>`;
+ const insight=$('#crm-ai-insights');if(!dashboard.aiInsights.hasEnoughData){const notice=insight.querySelector('.notice');blank('crm-ai-insights','agent',L('رؤى تتكوّن من العمل الحقيقي','Insights built from real activity'),L('تظهر أنماط الطلب والصفقات المتعثرة بعد توفر بيانات كافية.','Demand patterns and stalled deals appear when enough data is available.'),null,'');if(notice)insight.prepend(notice);}
+ if(dashboard.recentActivity.length)$('#crm-activity').querySelectorAll('.audit-row').forEach(row=>{const mark=document.createElement('span');mark.className='sales-event-mark';mark.innerHTML=icon('clock');row.prepend(mark);});
+ else blank('crm-activity','clock',L('سجل واضح لكل خطوة','A clear record of every step'),L('إضافة العملاء وتحديث المراحل والمتابعات تظهر هنا بترتيبها الزمني.','Customer creation, stage changes and follow-ups appear here chronologically.'),null,'');
+ $('#crm-lead-list').querySelectorAll('.lead-button').forEach(b=>{const name=b.querySelector('b')?.textContent;b.insertAdjacentHTML('afterbegin',avatar(name));});
 }
 function renderDataStatus(status,escape){
  const rows=[[t('sales.dataStatus.crm'),status.crm==='LOCAL'?'CONNECTED':status.crm,t('sales.dataStatus.crmHint')],[t('sales.dataStatus.whatsapp'),status.whatsapp,t('sales.dataStatus.whatsappHint')],[t('sales.dataStatus.salla'),status.salla,t('sales.dataStatus.sallaHint')],[t('sales.dataStatus.aiAgent'),status.aiSalesAgent,t('sales.dataStatus.aiAgentHint')]];
@@ -109,8 +147,10 @@ export async function renderCRM({api,auth,escape}){
   $('#crm-data-status').innerHTML=`<span class="pill" data-status="ERROR">${t('sales.dataStatus.dashboardLoadError')}</span>`;
  }
  $('#crm-run-frost').hidden=auth.user.role!=='owner';
+ styleSalesWorkspace(escape);
  $('#crm-lead-list').innerHTML=crm.leads.length?crm.leads.map(lead=>`<button class="lead-button" type="button" data-lead-id="${lead.id}"><div class="row-between"><b>${escape(lead.name)}</b><span class="pill" data-status="${escape(lead.stage)}">${stageNames[lead.stage]||lead.stage}</span></div><span>${escape(lead.company||lead.customerType)}</span><small>${lead.temperature==='HOT'?t('sales.leadList.highInterest'):''}${lead.optOut?t('sales.leadList.optedOut'):lead.humanHold||lead.replyHold?t('sales.leadList.followupOnHold'):t('sales.leadList.openFile')}</small></button>`).join(''):`<div class="empty">${t('sales.leadList.empty')}</div>`;
  $('#crm-prepare').hidden=auth.user.role!=='owner';
+ renderSalesDetailPanels(escape);
  if(!selected && crm.leads.length)selected=crm.leads[0].id;
  if(!selected){$('#crm-detail').innerHTML=`<div class="empty">${t('sales.leadDetail.emptyPrompt')}</div>`;return;}
  detail=await api('/api/crm/leads/'+selected);const lead=detail.lead;
@@ -180,7 +220,7 @@ export async function applyStageChange({leadId,newStage,expectedVersion,reason},
 export function installCRMInteractions(){
  document.addEventListener('click',event=>{
   const scrollTarget=event.target.closest('[data-crm-scroll]');
-  if(scrollTarget){document.getElementById(scrollTarget.dataset.crmScroll)?.scrollIntoView({behavior:'smooth',block:'start'});}
+  if(scrollTarget){document.querySelectorAll('#sales-section-nav button').forEach(b=>{const active=b.dataset.crmScroll===scrollTarget.dataset.crmScroll;b.classList.toggle('selected',active);b.setAttribute('aria-pressed',String(active));});document.getElementById(scrollTarget.dataset.crmScroll)?.scrollIntoView({behavior:'smooth',block:'start'});}
  });
  let draggedId=null,draggedVersion=null;
  document.addEventListener('dragstart',event=>{

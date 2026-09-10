@@ -1,16 +1,29 @@
 import {listProducts,currentMemory} from '../knowledge.js';
-import {listLeads,leadDetail,createLead,updateLead,createFollowups,recordMessage,searchLeads} from '../crm.js';
+import {listLeads,leadDetail,getLead,createLead,updateLead,createFollowups,recordMessage,recordChannelMessage,maybeEscalateHotLead,searchLeads} from '../crm.js';
 import {createContent} from '../domain.js';
 import {buildWeeklyReport,currentWeekStart} from '../reporting.js';
 import {createApproval} from './approvals.js';
+import {sendWhatsAppMessage,whatsappConfigured} from './whatsapp.js';
+import {publishToInstagram,publishToFacebook,alreadyPublished} from './meta-publishing.js';
+import {resolveMetaAccessToken} from './meta-oauth.js';
+import {sendMail,findRecentSentMessage,createCalendarEvent,getCalendarAvailability} from './microsoft-graph.js';
+import {resolveMicrosoftAccessToken} from './microsoft-oauth.js';
 
-export function integrationStatus(env) {
+export function integrationStatus(env,db=null) {
+ // A Meta/WhatsApp OAuth connection (see runtime/meta-oauth.js) counts as configured too —
+ // otherwise an agent that only needs whatsapp/meta would show WAITING_INTEGRATION forever
+ // for anyone who connected via OAuth instead of the legacy static-token env vars.
+ let metaConnected=false,microsoftConnected=false;
+ if(db){
+  try{metaConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('meta');}catch{metaConnected=false;}
+  try{microsoftConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('microsoft365');}catch{microsoftConnected=false;}
+ }
  return {
-  whatsapp:{configured:!!env.WHATSAPP_ACCESS_TOKEN},
-  meta:{configured:!!env.META_ACCESS_TOKEN},
+  whatsapp:{configured:!!env.WHATSAPP_ACCESS_TOKEN||metaConnected},
+  meta:{configured:!!env.META_ACCESS_TOKEN||metaConnected},
   x:{configured:!!env.X_BEARER_TOKEN},
   linkedin:{configured:!!env.LINKEDIN_ACCESS_TOKEN},
-  microsoft365:{configured:!!env.MICROSOFT_ACCESS_TOKEN},
+  microsoft365:{configured:!!env.MICROSOFT_ACCESS_TOKEN||microsoftConnected},
   canva:{configured:!!env.CANVA_API_KEY},
   salla_webhooks:{configured:!!env.SALLA_WEBHOOK_SECRET}
  };
@@ -32,7 +45,14 @@ const obj=(properties,required=Object.keys(properties))=>({type:'object',propert
  * INTEGRATION_REQUIRED, regardless of permission level: the level gate and the integration
  * gate are independent and both must pass.
  */
-export function buildToolRegistry({store,env}) {
+// WhatsApp's real policy: free-form text replies are only allowed within 24 hours of the
+// customer's last inbound message; outside that window, only a pre-approved template may
+// be sent. This is Meta's own rule (not a HyperCool invention), enforced here in the
+// backend rather than assumed — see Part P of the WhatsApp integration spec.
+function withinCustomerServiceWindow(lead) {
+ return !!lead.lastInboundAt && Date.now()-Date.parse(lead.lastInboundAt)<=86400000;
+}
+export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
  const db=store.db;
  const tools=[
   {name:'get_products',description:'List all Salla-synced products with price/stock snapshot.',inputSchema:obj({}),minLevel:'L0',
@@ -61,7 +81,12 @@ export function buildToolRegistry({store,env}) {
   {name:'create_lead',description:'Create a new CRM lead record.',inputSchema:obj({name:string,customerType:string,sourceType:string},['name','customerType','sourceType']),minLevel:'L0',
    handler:(input,ctx)=>createLead(store,input,ctx.actor)},
   {name:'update_lead',description:'Update an existing lead qualification/stage.',inputSchema:obj({leadId:string,stage:string,expectedVersion:{type:'integer'}},['leadId']),minLevel:'L0',
-   handler:({leadId,...input},ctx)=>updateLead(store,leadId,input,ctx.actor)},
+   handler:({leadId,...input},ctx)=>{
+    const before=getLead(db,leadId);
+    const updated=updateLead(store,leadId,input,ctx.actor);
+    maybeEscalateHotLead(store,eventBus,before,updated,{agentId:ctx.agentId,runId:ctx.runId});
+    return updated;
+   }},
   {name:'save_message',description:'Record an inbound conversation message against a lead.',inputSchema:obj({leadId:string,channel:string,text:string,intent:string,eventKey:string},['leadId','channel','text','intent','eventKey']),minLevel:'L0',
    handler:({leadId,...input},ctx)=>recordMessage(store,leadId,input,ctx.actor)},
   {name:'create_followup',description:'Draft a follow-up sequence for a lead (drafts only; still requires human approval to send).',inputSchema:obj({leadId:string,sequence:string,channel:string,startAt:string,evidence:string,requestKey:string},['leadId','sequence','channel','startAt','evidence','requestKey']),minLevel:'L0',
@@ -74,23 +99,108 @@ export function buildToolRegistry({store,env}) {
   // --- external actions: always integration-gated. Real credentials flip these on later
   // without any agent code changing — only connectionStatus() and these handlers.
   // Names use underscores, not dots: Anthropic tool names must match ^[a-zA-Z0-9_-]{1,128}$.
-  {name:'whatsapp_send',description:'Send a WhatsApp message to a customer.',inputSchema:obj({leadId:string,text:string},['leadId','text']),minLevel:'L2',integration:'whatsapp',
-   handler:()=>blocked('whatsapp','send_message')},
-  {name:'meta_publish',description:'Publish a post to Instagram or Facebook.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'meta',
-   handler:()=>blocked('meta','publish_post')},
+  {name:'whatsapp_send',description:'Send a WhatsApp message to a customer. Free text only within 24h of their last message; a templateName is required outside that window.',inputSchema:obj({leadId:string,text:string,templateName:string,templateLanguage:string},['leadId']),minLevel:'L2',integration:'whatsapp',
+   handler:async({leadId,text,templateName,templateLanguage},ctx)=>{
+    if(!whatsappConfigured({store,env}))return blocked('whatsapp','send_message');
+    const lead=getLead(db,leadId);
+    if(lead.optOut)return {status:'BLOCKED',reason:'OPT_OUT'};
+    if(lead.humanHold)return {status:'BLOCKED',reason:'HUMAN_HOLD'};
+    if(!lead.phone)return {status:'BLOCKED',reason:'NO_PHONE'};
+    if(!templateName && !withinCustomerServiceWindow(lead))return {status:'BLOCKED',reason:'TEMPLATE_REQUIRED_OUTSIDE_WINDOW'};
+    const result=await sendWhatsAppMessage({store,env,fetcher},{to:lead.phone,text,templateName,templateLanguage});
+    if(result.status==='SENT'){
+     recordChannelMessage(store,{leadId,channel:'WhatsApp',direction:'OUTBOUND',text:text||`[template:${templateName}]`,externalMessageId:result.externalMessageId,messageType:templateName?'template':'text'},ctx.actor);
+    }
+    return result;
+   }},
+  {name:'meta_publish',description:'Publish an approved content item to Instagram or Facebook (platform decided by the content item itself). Refuses anything not APPROVED, already published, or missing a required asset.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'meta',
+   handler:async({contentId},ctx)=>{
+    const resolved=resolveMetaAccessToken({store,env},'page');
+    if(!resolved)return blocked('meta','publish_post');
+    const state=store.read();
+    const item=state.content.find(c=>c.id===contentId);
+    if(!item)return {status:'ERROR',error:'CONTENT_NOT_FOUND'};
+    if(item.status!=='APPROVED')return {status:'BLOCKED',reason:'NOT_APPROVED'};
+    if(alreadyPublished(item))return {status:'OK',reason:'ALREADY_PUBLISHED',externalPostId:item.externalPostId,liveUrl:item.liveUrl};
+    if(!['Instagram','Facebook'].includes(item.platform))return {status:'BLOCKED',reason:'UNSUPPORTED_PLATFORM'};
+    if(item.platform==='Instagram' && !item.assetUrl)return {status:'BLOCKED',reason:'ASSET_REQUIRED'};
+    const result=item.platform==='Instagram'
+     ?await publishToInstagram({store,env,fetcher},{imageUrl:item.assetUrl,caption:item.body})
+     :await publishToFacebook({store,env,fetcher},{message:item.body,link:item.url});
+    if(result.status==='PUBLISHED'){
+     store.mutate(state=>{
+      const target=state.content.find(c=>c.id===contentId);
+      target.status='PUBLISHED';target.externalPostId=result.externalPostId;target.liveUrl=result.liveUrl;target.publishedAt=new Date().toISOString();
+      state.audit.unshift({id:crypto.randomUUID(),action:'CONTENT_PUBLISHED',itemId:contentId,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:new Date().toISOString()});
+     });
+     if(eventBus)eventBus.emit('CONTENT_PUBLISHED',{contentId,platform:item.platform,externalPostId:result.externalPostId});
+    }
+    return result;
+   }},
   {name:'x_publish',description:'Publish a post to X.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'x',
    handler:()=>blocked('x','publish_post')},
   {name:'linkedin_publish',description:'Publish a post to the LinkedIn company page.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'linkedin',
    handler:()=>blocked('linkedin','publish_post')},
-  {name:'microsoft_sendEmail',description:'Send an email via Microsoft 365.',inputSchema:obj({leadId:string,subject:string,body:string},['leadId','subject','body']),minLevel:'L2',integration:'microsoft365',
-   handler:()=>blocked('microsoft365','send_email')},
+  // category values requiring approval are hardcoded here, not left to the model to decide
+  // for itself — a "quote"/"discount"/"large_b2b"/"legal" email always creates a real
+  // agent_approvals row and returns WAITING_APPROVAL, regardless of permission level;
+  // approval is granted via POST /api/approvals/:id/decide (see application.js), which
+  // performs the real send at decide-time using the stored proposed_output.
+  {name:'microsoft_sendEmail',description:'Send an email via Microsoft 365. category in [quote,discount,large_b2b,legal,general] — the first four always require owner approval before sending.',inputSchema:obj({leadId:string,subject:string,bodyHtml:string,category:string,cc:{type:'array',items:string}},['leadId','subject','bodyHtml']),minLevel:'L1',integration:'microsoft365',
+   handler:async({leadId,subject,bodyHtml,category='general',cc},ctx)=>{
+    const lead=getLead(db,leadId);
+    if(lead.optOut)return {status:'BLOCKED',reason:'OPT_OUT'};
+    if(lead.humanHold)return {status:'BLOCKED',reason:'HUMAN_HOLD'};
+    if(!lead.email)return {status:'BLOCKED',reason:'NO_EMAIL'};
+    if(['quote','discount','large_b2b','legal'].includes(category)) {
+     const approval=createApproval(db,{runId:ctx.runId,agentId:ctx.agentId,actionType:'send_marketing_message',
+      proposedOutput:{leadId,to:lead.email,cc:cc||[],subject,bodyHtml,category},
+      riskLevel:category==='legal'?'HIGH':'MEDIUM',reason:`Agent-drafted ${category} email to ${lead.email} requires owner approval before sending.`});
+     return {status:'WAITING_APPROVAL',approvalId:approval.id};
+    }
+    const configured=await resolveMicrosoftAccessToken({store,env,fetcher});
+    if(!configured)return blocked('microsoft365','send_email');
+    const result=await sendMail({store,env,fetcher},{to:lead.email,cc,subject,bodyHtml});
+    if(result.status==='SENT') {
+     const recovered=await findRecentSentMessage({store,env,fetcher},{subject,to:lead.email}).catch(()=>null);
+     recordChannelMessage(store,{leadId,channel:'Email',direction:'OUTBOUND',text:bodyHtml,subject,cc:cc||null,externalMessageId:recovered?.externalMessageId,externalThreadId:recovered?.externalThreadId,internetMessageId:recovered?.internetMessageId,messageType:'email'},ctx.actor);
+    }
+    return result;
+   }},
+  {name:'search_email_conversation',description:'Search this lead\'s email history by keyword.',inputSchema:obj({leadId:string,query:string},['leadId']),minLevel:'L0',
+   handler:({leadId,query})=>{
+    const detail=leadDetail(db,leadId);
+    const emails=detail.messages.filter(m=>m.channel==='Email');
+    if(!query)return emails;
+    const q=query.toLowerCase();
+    return emails.filter(m=>(m.subject||'').toLowerCase().includes(q)||(m.text||'').toLowerCase().includes(q));
+   }},
+  {name:'get_email_thread',description:'Get all messages in one email thread (by externalThreadId) for a lead.',inputSchema:obj({leadId:string,externalThreadId:string},['leadId','externalThreadId']),minLevel:'L0',
+   handler:({leadId,externalThreadId})=>leadDetail(db,leadId).messages.filter(m=>m.channel==='Email'&&m.externalThreadId===externalThreadId)},
+  {name:'get_recent_replies',description:'Get the most recent inbound messages (any channel) for a lead, to check whether they replied since a given point.',inputSchema:obj({leadId:string,sinceIso:string},['leadId']),minLevel:'L0',
+   handler:({leadId,sinceIso})=>leadDetail(db,leadId).messages.filter(m=>m.direction==='INBOUND'&&(!sinceIso||m.recordedAt>sinceIso))},
+  // Calendar tools are restricted to the agents actually responsible for scheduling
+  // (spec Part AC) — enforced below in list()/get(), not left to permission level alone,
+  // since every other agent passing L1+ would otherwise also qualify.
+  {name:'create_calendar_event',description:'Create a Microsoft 365 calendar event (call, demo, follow-up meeting). Asia/Riyadh timezone unless specified.',inputSchema:obj({title:string,start:string,end:string,timezone:string,participants:{type:'array',items:string},location:string,notes:string},['title','start','end']),minLevel:'L1',integration:'microsoft365',allowedAgents:['frost','sales','followup'],
+   handler:async(input,ctx)=>{
+    const configured=await resolveMicrosoftAccessToken({store,env,fetcher});
+    if(!configured)return blocked('microsoft365','create_event');
+    return createCalendarEvent({store,env,fetcher},input);
+   }},
+  {name:'get_calendar_availability',description:'Check free/busy for one or more Microsoft 365 mailboxes to propose a meeting time.',inputSchema:obj({emails:{type:'array',items:string},start:string,end:string,timezone:string},['emails','start','end']),minLevel:'L0',integration:'microsoft365',allowedAgents:['frost','sales','followup'],
+   handler:async(input,ctx)=>{
+    const configured=await resolveMicrosoftAccessToken({store,env,fetcher});
+    if(!configured)return blocked('microsoft365','get_availability');
+    return getCalendarAvailability({store,env,fetcher},input);
+   }},
   {name:'canva_generateAsset',description:'Generate a visual asset via Canva Connect.',inputSchema:obj({brief:string},['brief']),minLevel:'L1',integration:'canva',
    handler:()=>blocked('canva','generate_asset')},
   {name:'salla_syncOrders',description:'Pull new orders / abandoned carts from Salla.',inputSchema:obj({}),minLevel:'L1',integration:'salla_webhooks',
    handler:()=>blocked('salla_webhooks','sync_orders')}
  ];
  return {
-  list:(level)=>tools.filter(tool=>!level||meetsLevel(tool.minLevel,level)),
+  list:(level,agentId)=>tools.filter(tool=>(!level||meetsLevel(tool.minLevel,level))&&(!tool.allowedAgents||!agentId||tool.allowedAgents.includes(agentId))),
   get:(name)=>tools.find(tool=>tool.name===name),
   all:tools
  };

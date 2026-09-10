@@ -20,11 +20,23 @@ export const INTEGRATIONS=[
  // than ai_runs/compliance_runs.
  {id:'openai',name:'OpenAI',category:'AI',description:'مزود ذكاء اصطناعي بديل لتشغيل فريق الوكلاء.',envVars:['OPENAI_API_KEY','OPENAI_DEFAULT_MODEL'],authType:'API Key',connectorImplemented:true,scopes:[]},
  {id:'salla',name:'Salla',category:'Commerce',description:'استيراد كتالوج المنتجات والأسعار والمخزون.',envVars:['SALLA_ACCESS_TOKEN'],webhookVar:'SALLA_WEBHOOK_SECRET',authType:'Bearer Token',connectorImplemented:true,scopes:[]},
- {id:'whatsapp',name:'WhatsApp Business',category:'Messaging',description:'استقبال محادثات العملاء وتشغيل الردود والمتابعات.',envVars:['WHATSAPP_ACCESS_TOKEN'],authType:'Bearer Token',connectorImplemented:false,scopes:[{name:'whatsapp_business_messaging',note:'إرسال واستقبال رسائل واتساب للأعمال'}]},
- {id:'meta',name:'Meta',category:'Social',description:'نشر محتوى على Instagram وFacebook.',envVars:['META_ACCESS_TOKEN'],authType:'OAuth Token',connectorImplemented:false,scopes:[{name:'pages_read_engagement',note:'قراءة تفاعل صفحة فيسبوك'},{name:'instagram_basic',note:'الوصول الأساسي لحساب إنستغرام'},{name:'pages_manage_posts',note:'نشر منشورات على الصفحة'}]},
+ // Real Graph/Cloud API connector (src/runtime/whatsapp.js) — webhook receive, template
+ // sync, and send are all implemented; activity is read from crm_messages (channel=WhatsApp)
+ // and webhook_events (source=meta), not a separate log table.
+ // Real Graph/Cloud API connector (src/runtime/whatsapp.js) — webhook receive, template
+ // sync, and send are all implemented. "configured" is special-cased below (OAuth via the
+ // Meta connection OR the legacy static WHATSAPP_ACCESS_TOKEN), since envVars alone (kept
+ // here only for the visible env-var table) can't express "either/or with OAuth".
+ {id:'whatsapp',name:'WhatsApp Business',category:'Messaging',description:'استقبال محادثات العملاء وتشغيل الردود والمتابعات.',envVars:['WHATSAPP_ACCESS_TOKEN'],webhookVar:'META_WEBHOOK_SECRET',authType:'Bearer Token / OAuth',connectorImplemented:true,scopes:[{name:'whatsapp_business_messaging',note:'إرسال واستقبال رسائل واتساب للأعمال'}]},
+ // Real connector (src/runtime/meta-oauth.js, meta-publishing.js) for Page/Instagram
+ // publishing; messaging webhooks are shared with WhatsApp above (same Meta App subscription).
+ {id:'meta',name:'Meta',category:'Social',description:'نشر محتوى على Instagram وFacebook.',envVars:['META_ACCESS_TOKEN'],webhookVar:'META_WEBHOOK_SECRET',authType:'OAuth Token',connectorImplemented:true,scopes:[{name:'pages_read_engagement',note:'قراءة تفاعل صفحة فيسبوك'},{name:'instagram_basic',note:'الوصول الأساسي لحساب إنستغرام'},{name:'pages_manage_posts',note:'نشر منشورات على الصفحة'},{name:'whatsapp_business_messaging',note:'إرسال واستقبال رسائل واتساب للأعمال'}]},
  {id:'x',name:'X',category:'Social',description:'نشر محتوى على منصة X.',envVars:['X_BEARER_TOKEN'],authType:'Bearer Token',connectorImplemented:false,scopes:[{name:'tweet.write',note:'نشر تغريدات'},{name:'tweet.read',note:'قراءة التغريدات'}]},
  {id:'linkedin',name:'LinkedIn',category:'Social',description:'نشر محتوى الأعمال B2B على لينكدإن.',envVars:['LINKEDIN_ACCESS_TOKEN'],authType:'OAuth Token',connectorImplemented:false,scopes:[{name:'w_organization_social',note:'النشر نيابة عن صفحة الشركة'}]},
- {id:'microsoft365',name:'Microsoft 365',category:'Productivity',description:'إرسال البريد الإلكتروني وأدوات الفريق.',envVars:['MICROSOFT_ACCESS_TOKEN'],authType:'OAuth Token',connectorImplemented:false,scopes:[{name:'Mail.Send',note:'إرسال بريد إلكتروني نيابة عن المستخدم'}]},
+ // Real connector (src/runtime/microsoft-oauth.js, microsoft-graph.js) — mail send/receive
+ // and calendar are implemented; activity is read from crm_messages (channel=Email) and
+ // webhook_events (source=microsoft365), not a separate log table.
+ {id:'microsoft365',name:'Microsoft 365',category:'Productivity',description:'إرسال واستقبال البريد الإلكتروني وجدولة الاجتماعات.',envVars:['MICROSOFT_ACCESS_TOKEN'],webhookVar:'MICROSOFT_WEBHOOK_SECRET',authType:'OAuth Token',connectorImplemented:true,scopes:[{name:'Mail.Read',note:'قراءة البريد الوارد لالتقاط ردود العملاء'},{name:'Mail.Send',note:'إرسال بريد إلكتروني نيابة عن المستخدم'},{name:'User.Read',note:'قراءة الهوية المتصلة (الاسم والبريد)'},{name:'Calendars.ReadWrite',note:'إنشاء اجتماعات المبيعات والعروض التوضيحية (اختياري)'}]},
  {id:'canva',name:'Canva',category:'Productivity',description:'توليد الأصول البصرية للمحتوى.',envVars:['CANVA_API_KEY'],authType:'API Key',connectorImplemented:false,scopes:[{name:'design:content:write',note:'إنشاء تصاميم جديدة'}]}
 ];
 export const ERROR_ACTIONS={
@@ -91,6 +103,55 @@ function sallaActivity(audit) {
  const hasNewerError=lastError&&(!lastSuccess||lastError.at>lastSuccess.at);
  return {events,lastSuccess,lastError,hasNewerError};
 }
+// WhatsApp has no dedicated log table — real activity is the crm_messages history itself
+// (channel='WhatsApp'), inbound and outbound alike, which is genuine evidence the
+// integration is actually working end to end (not just configured).
+function whatsappActivity(db) {
+ let rows=[];
+ try{rows=db.prepare("SELECT json FROM crm_messages ORDER BY rowid DESC LIMIT 500").all().map(r=>JSON.parse(r.json)).filter(m=>m.channel==='WhatsApp');}catch{rows=[];}
+ const events=rows.map(m=>({at:m.recordedAt,status:m.status==='FAILED'?'FAILED':'COMPLETED',errorCode:m.errorCode||null,kind:m.direction==='OUTBOUND'?'رسالة صادرة':'رسالة واردة',durationMs:null}))
+  .filter(e=>e.at).sort((a,b)=>b.at.localeCompare(a.at));
+ const lastSuccess=events.find(e=>e.status==='COMPLETED');
+ const lastError=events.find(e=>e.status==='FAILED');
+ const hasNewerError=lastError&&(!lastSuccess||lastError.at>lastSuccess.at);
+ return {events,lastSuccess,lastError,hasNewerError};
+}
+// Meta (Instagram/Facebook publishing + shared webhook subscription) — real activity is the
+// webhook_events ledger (source='meta') plus CONTENT_PUBLISHED audit entries.
+function metaActivity(db,audit) {
+ let webhookRows=[];
+ try{webhookRows=db.prepare("SELECT * FROM webhook_events WHERE source='meta' ORDER BY received_at DESC LIMIT 200").all();}catch{webhookRows=[];}
+ const events=[
+  ...webhookRows.map(r=>({at:r.received_at,status:r.status==='ERROR'?'FAILED':'COMPLETED',errorCode:r.error||null,kind:r.type,durationMs:null})),
+  ...audit.filter(a=>a.action==='CONTENT_PUBLISHED').map(a=>({at:a.at,status:'COMPLETED',errorCode:null,kind:'نشر محتوى',durationMs:null}))
+ ].filter(e=>e.at).sort((a,b)=>b.at.localeCompare(a.at));
+ const lastSuccess=events.find(e=>e.status==='COMPLETED');
+ const lastError=events.find(e=>e.status==='FAILED');
+ const hasNewerError=lastError&&(!lastSuccess||lastError.at>lastSuccess.at);
+ return {events,lastSuccess,lastError,hasNewerError};
+}
+function metaOAuthConnected(db) {
+ try{return !!db.prepare("SELECT 1 FROM integration_credentials WHERE provider='meta'").get();}catch{return false;}
+}
+// Microsoft 365 — real activity is crm_messages (channel='Email') plus the webhook_events
+// ledger (source='microsoft365') for ingestion/subscription notifications.
+function microsoftActivity(db,audit) {
+ let emailRows=[],webhookRows=[];
+ try{emailRows=db.prepare("SELECT json FROM crm_messages ORDER BY rowid DESC LIMIT 500").all().map(r=>JSON.parse(r.json)).filter(m=>m.channel==='Email');}catch{emailRows=[];}
+ try{webhookRows=db.prepare("SELECT * FROM webhook_events WHERE source='microsoft365' ORDER BY received_at DESC LIMIT 200").all();}catch{webhookRows=[];}
+ const events=[
+  ...emailRows.map(m=>({at:m.recordedAt,status:m.status==='FAILED'?'FAILED':'COMPLETED',errorCode:m.errorCode||null,kind:m.direction==='OUTBOUND'?'بريد صادر':'بريد وارد',durationMs:null})),
+  ...webhookRows.map(r=>({at:r.received_at,status:r.status==='ERROR'?'FAILED':'COMPLETED',errorCode:r.error||null,kind:'إشعار Graph',durationMs:null})),
+  ...audit.filter(a=>a.action==='MICROSOFT_TOKEN_FAILED'||a.action==='EMAIL_INGEST_FAILED').map(a=>({at:a.at,status:'FAILED',errorCode:a.errorCode||null,kind:'خطأ Microsoft',durationMs:null}))
+ ].filter(e=>e.at).sort((a,b)=>b.at.localeCompare(a.at));
+ const lastSuccess=events.find(e=>e.status==='COMPLETED');
+ const lastError=events.find(e=>e.status==='FAILED');
+ const hasNewerError=lastError&&(!lastSuccess||lastError.at>lastSuccess.at);
+ return {events,lastSuccess,lastError,hasNewerError};
+}
+function microsoftOAuthConnected(db) {
+ try{return !!db.prepare("SELECT 1 FROM integration_credentials WHERE provider='microsoft365'").get();}catch{return false;}
+}
 function envRows(integration,env) {
  const rows=integration.envVars.map(name=>({name,configured:!!env[name]}));
  if(integration.webhookVar)rows.push({name:integration.webhookVar,configured:!!env[integration.webhookVar]});
@@ -101,6 +162,11 @@ export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns,agen
  const anthropic=anthropicActivity(aiRuns,complianceRuns);
  const openai=openaiActivity(agentRuns);
  const salla=sallaActivity(state.audit);
+ const whatsapp=whatsappActivity(store.db);
+ const meta=metaActivity(store.db,state.audit);
+ const metaConnected=metaOAuthConnected(store.db);
+ const microsoft=microsoftActivity(store.db,state.audit);
+ const microsoftConnected=microsoftOAuthConnected(store.db);
  const integrations=INTEGRATIONS.map(integration=>{
   const rows=envRows(integration,env);
   const configured=rows.filter(r=>r.name!==integration.webhookVar).every(r=>r.configured)&&integration.envVars.length>0;
@@ -119,6 +185,23 @@ export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns,agen
    status=!configured?'NEEDS_SETUP':salla.hasNewerError?'ERROR':'CONNECTED';
    lastActivity=salla.lastSuccess?{at:salla.lastSuccess.at,by:salla.lastSuccess.actorName,count:salla.lastSuccess.count}:null;
    recentErrors=salla.events.filter(e=>e.action==='SALLA_CATALOG_SYNC_FAILED').slice(0,10).map(e=>({at:e.at,code:e.errorCode,action:ERROR_ACTIONS[e.errorCode]||ERROR_ACTIONS.UNKNOWN}));
+  } else if(integration.id==='whatsapp') {
+   // "Configured" via either the legacy static token OR a connected Meta OAuth session —
+   // WhatsApp rides on the same Meta connection, never a second credential to set up.
+   const wConfigured=configured||metaConnected;
+   status=!wConfigured?'NEEDS_SETUP':whatsapp.hasNewerError?'ERROR':whatsapp.lastSuccess?'CONNECTED':'CONFIGURED_NO_CONNECTOR';
+   lastActivity=whatsapp.lastSuccess?{at:whatsapp.lastSuccess.at,note:whatsapp.lastSuccess.kind}:null;
+   recentErrors=whatsapp.events.filter(e=>e.errorCode).slice(0,10).map(e=>({at:e.at,code:e.errorCode,action:ERROR_ACTIONS[e.errorCode]||ERROR_ACTIONS.UNKNOWN}));
+  } else if(integration.id==='meta') {
+   const mConfigured=configured||metaConnected;
+   status=!mConfigured?'NEEDS_SETUP':meta.hasNewerError?'ERROR':meta.lastSuccess?'CONNECTED':'CONFIGURED_NO_CONNECTOR';
+   lastActivity=meta.lastSuccess?{at:meta.lastSuccess.at,note:meta.lastSuccess.kind}:null;
+   recentErrors=meta.events.filter(e=>e.errorCode).slice(0,10).map(e=>({at:e.at,code:e.errorCode,action:ERROR_ACTIONS[e.errorCode]||ERROR_ACTIONS.UNKNOWN}));
+  } else if(integration.id==='microsoft365') {
+   const msConfigured=configured||microsoftConnected;
+   status=!msConfigured?'NEEDS_SETUP':microsoft.hasNewerError?'ERROR':microsoft.lastSuccess?'CONNECTED':'CONFIGURED_NO_CONNECTOR';
+   lastActivity=microsoft.lastSuccess?{at:microsoft.lastSuccess.at,note:microsoft.lastSuccess.kind}:null;
+   recentErrors=microsoft.events.filter(e=>e.errorCode).slice(0,10).map(e=>({at:e.at,code:e.errorCode,action:ERROR_ACTIONS[e.errorCode]||ERROR_ACTIONS.UNKNOWN}));
   } else {
    // No real connector exists yet — configured or not, nothing in this app can actually use
    // the credential, so "Connected" would be false regardless of the env var's presence.
@@ -141,7 +224,10 @@ export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns,agen
  const recentSyncActivity=[
   ...anthropic.events.slice(0,15).map(e=>({at:e.at,integration:'Anthropic',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
   ...openai.events.slice(0,15).map(e=>({at:e.at,integration:'OpenAI',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
-  ...salla.events.slice(0,15).map(e=>({at:e.at,integration:'Salla',operation:'مزامنة الكتالوج',status:e.action==='SALLA_CATALOG_SYNCED'?'COMPLETED':'ERROR',records:e.count??null,durationMs:null,errorCode:e.errorCode||null}))
+  ...salla.events.slice(0,15).map(e=>({at:e.at,integration:'Salla',operation:'مزامنة الكتالوج',status:e.action==='SALLA_CATALOG_SYNCED'?'COMPLETED':'ERROR',records:e.count??null,durationMs:null,errorCode:e.errorCode||null})),
+  ...whatsapp.events.slice(0,15).map(e=>({at:e.at,integration:'WhatsApp Business',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
+  ...meta.events.slice(0,15).map(e=>({at:e.at,integration:'Meta',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
+  ...microsoft.events.slice(0,15).map(e=>({at:e.at,integration:'Microsoft 365',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode}))
  ].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,20);
  return {summary,integrations,recentSyncActivity};
 }

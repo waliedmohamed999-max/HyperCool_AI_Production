@@ -1,5 +1,6 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {fail} from './auth.js';
+import {createEscalation} from './runtime/escalations.js';
 
 export const stages=['NEW','QUALIFIED','QUOTE_SENT','DEMO','POST_PURCHASE','PARKED','WON','LOST'];
 export const sequences={
@@ -18,7 +19,17 @@ export function installCRM(db){db.exec(`
  CREATE INDEX IF NOT EXISTS idx_crm_messages_lead_id ON crm_messages(lead_id);
  CREATE INDEX IF NOT EXISTS idx_crm_followups_lead_id ON crm_followups(lead_id);
  CREATE INDEX IF NOT EXISTS idx_crm_followups_status ON crm_followups(status);
-`);}
+`);
+ // Additive, guarded column — see runtime/registry.js for the same pattern. Needed so an
+ // inbound webhook message (WhatsApp wamid) or an outbound message's provider-assigned id
+ // can be looked up directly when a later delivery-status webhook arrives, without scanning
+ // every message's JSON blob.
+ const columns=db.prepare("PRAGMA table_info(crm_messages)").all().map(c=>c.name);
+ if(!columns.includes('external_message_id')){
+  db.exec('ALTER TABLE crm_messages ADD COLUMN external_message_id TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_crm_messages_external_id ON crm_messages(external_message_id)');
+ }
+}
 const string=(value,max=200)=>typeof value==='string'?value.trim().slice(0,max):'';
 function required(value,label,max=200){if(typeof value!=='string'||!value.trim()||value.length>max)fail(400,`الحقل مطلوب أو طويل: ${label}`);return value.trim();}
 function iso(value,label){if(typeof value!=='string'||!/(Z|[+-]\d{2}:\d{2})$/.test(value)||!Number.isFinite(Date.parse(value)))fail(400,`تاريخ غير صالح: ${label}`);return new Date(value).toISOString();}
@@ -89,6 +100,11 @@ export function updateLead(store,id,input,user){return store.mutate(state=>{
  lead.version++;lead.updatedAt=new Date().toISOString();lead.lastChangeReason=reason;
  writeLead(store.db,lead);stopFollowups(store.db,id,'LEAD_CHANGED');audit(state,'CRM_LEAD_UPDATED',id,user);return lead;
 });}
+// Shared with recordChannelMessage below — a webhook-ingested "stop"/"unsubscribe" message
+// must be detected by the exact same rule as a manually-entered one, never a second,
+// possibly-drifting copy of this pattern.
+const OPT_OUT_PATTERN=/^(stop|unsubscribe|إلغاء الاشتراك|الغاء الاشتراك|لا تتواصل معي|لا تراسلني)[.!؟?\s]*$/i;
+export function isOptOutText(text){return OPT_OUT_PATTERN.test(text||'');}
 export function recordMessage(store,id,input,user){
  const text=required(input.text,'نص المحادثة',4000),eventKey=required(input.eventKey,'معرف الحدث',120);
  if(!['WhatsApp','Email','Instagram','Facebook','X','LinkedIn','Phone'].includes(input.channel))fail(400,'قناة غير مدعومة');
@@ -98,14 +114,118 @@ export function recordMessage(store,id,input,user){
   if(prior){const message=JSON.parse(prior.json);if(message.leadId!==id||message.text!==text||message.channel!==input.channel||message.intent!==input.intent)fail(409,'معرف الحدث مستخدم لمحادثة أخرى');return {...message,replayed:true};}
   const lead=getLead(store.db,id);
   const message={id:randomUUID(),leadId:id,eventKey,channel:input.channel,text,intent:input.intent,direction:'INBOUND',source:'MANUAL_ENTRY',recordedBy:user.id,recordedAt:new Date().toISOString()};
-  store.db.prepare('INSERT INTO crm_messages VALUES (?,?,?,?)').run(message.id,id,eventKey,JSON.stringify(message));
+  store.db.prepare('INSERT INTO crm_messages (id,lead_id,event_key,json,external_message_id) VALUES (?,?,?,?,?)').run(message.id,id,eventKey,JSON.stringify(message),null);
   lead.version++;lead.lastInboundAt=message.recordedAt;lead.replyHold=true;
-  const optOut=input.intent==='opt_out'||/^(stop|unsubscribe|إلغاء الاشتراك|الغاء الاشتراك|لا تتواصل معي|لا تراسلني)[.!؟?\s]*$/i.test(text);
+  const optOut=input.intent==='opt_out'||isOptOutText(text);
   if(optOut){lead.optOut=true;lead.optOutAt=message.recordedAt;lead.consent={Email:null,WhatsApp:null};}
   if(input.intent==='quote')lead.temperature='HOT';
   if(['medical','complaint','legal','discount_exception'].includes(input.intent)){lead.humanHold=true;lead.handoffReason=input.intent.toUpperCase();}
-  writeLead(store.db,lead);stopFollowups(store.db,id,optOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(state,'CRM_INBOUND_RECORDED',id,user);return message;
+  writeLead(store.db,lead);stopFollowups(store.db,id,optOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(state,'CRM_INBOUND_RECORDED',id,user);return {...message,optedOut:optOut};
  });
+}
+// --- Channel/webhook-driven messaging (WhatsApp/Instagram/Facebook) ---------------------
+// Separate from recordMessage() above (which is for a human operator manually transcribing
+// a conversation that happened elsewhere) because this path: (1) has no human `user` — the
+// actor is an automated channel connector or an agent, (2) must find-or-create the lead
+// itself since a webhook has no existing lead id to post to, and (3) needs to record real
+// OUTBOUND messages the system sends, which recordMessage() never did.
+export function findLeadByPhone(db,phone){
+ if(!phone)return null;
+ return listLeads(db).find(lead=>lead.phone===phone)||null;
+}
+export function findLeadByEmail(db,email){
+ if(!email)return null;
+ const normalized=email.trim().toLowerCase();
+ return listLeads(db).find(lead=>lead.email && lead.email.toLowerCase()===normalized)||null;
+}
+/**
+ * Customer matching priority per the integration spec: an explicit existing CRM mapping
+ * first (email for Email channel, phone for WhatsApp/SMS-style channels), then create if
+ * genuinely new. Never merges two existing leads found by different identifiers — if a
+ * lookup by email and a lookup by phone would resolve to two DIFFERENT existing leads,
+ * this returns the one matched by the channel's own identifier and leaves the conflict for
+ * a human to notice and reconcile manually, rather than guessing which record is "right."
+ */
+export function findOrCreateLeadFromChannel(store,{phone,email,name,channel},actor){
+ const normalizedEmail=email?email.trim().toLowerCase():null;
+ const findExisting=()=>(normalizedEmail&&findLeadByEmail(store.db,normalizedEmail))||(phone&&findLeadByPhone(store.db,phone))||null;
+ const existing=findExisting();
+ if(existing)return {lead:existing,created:false};
+ return store.mutate(state=>{
+  const again=findExisting();if(again)return {lead:again,created:false};
+  const contactKey=normalizedEmail?'email:'+normalizedEmail:phone?'phone:'+phone:null;
+  const lead={id:randomUUID(),name:string(name,200)||normalizedEmail||phone||'عميل جديد',company:'',customerType:'B2C',sourceType:'INBOUND',email:normalizedEmail||'',phone:phone||'',research:null,city:'',productNeed:'',productUrl:'',quantity:null,valueSAR:null,timeline:'',budgetBand:'',stage:'NEW',temperature:'COLD',consent:{Email:null,WhatsApp:null},optOut:false,humanHold:false,replyHold:false,handoffReason:null,assignedTo:null,version:1,createdAt:new Date().toISOString(),createdBy:actor.id,channelOrigin:channel,nextCheckAt:null};
+  store.db.prepare('INSERT INTO crm_leads VALUES (?,?,?)').run(lead.id,contactKey,JSON.stringify(lead));
+  audit(state,'CRM_LEAD_CREATED',lead.id,actor);
+  return {lead,created:true};
+ });
+}
+/**
+ * Records one real inbound-or-outbound channel message. `externalMessageId` is the
+ * provider's own message id (WhatsApp wamid) — used both as the idempotency key (a
+ * redelivered webhook for the same message is a no-op replay, matching the crm_requests/
+ * crm_messages idempotency pattern used everywhere else in this file) and, for OUTBOUND
+ * messages, as the lookup key a later delivery-status webhook updates in place rather than
+ * inserting a second row for the same message.
+ */
+export function recordChannelMessage(store,{leadId,channel,direction,text,externalMessageId,messageType='text',media=null,intent='general',subject=null,cc=null,bcc=null,externalThreadId=null,internetMessageId=null,attachments=null},actor){
+ if(!['INBOUND','OUTBOUND'].includes(direction))fail(400,'اتجاه رسالة غير صالح');
+ if(!['WhatsApp','Email','Instagram','Facebook','X','LinkedIn','Phone'].includes(channel))fail(400,'قناة غير مدعومة');
+ const eventKey=externalMessageId?`${channel}:${externalMessageId}`:`${channel}:${direction}:${randomUUID()}`;
+ return store.mutate(state=>{
+  if(externalMessageId){
+   const prior=store.db.prepare('SELECT json FROM crm_messages WHERE external_message_id=?').get(externalMessageId);
+   if(prior)return {...JSON.parse(prior.json),replayed:true};
+  }
+  const lead=getLead(store.db,leadId);
+  const message={id:randomUUID(),leadId,eventKey,channel,text:string(text,4000),intent,direction,messageType,media,externalMessageId:externalMessageId||null,
+   // Email-specific fields — always present (null when not applicable) so every message
+   // row has a stable, predictable shape regardless of channel.
+   subject:subject||null,cc:cc||null,bcc:bcc||null,externalThreadId:externalThreadId||null,internetMessageId:internetMessageId||null,attachments:attachments||null,
+   status:direction==='OUTBOUND'?'SENT':'RECEIVED',source:direction==='INBOUND'?'CHANNEL_WEBHOOK':'AGENT_OR_SYSTEM',recordedBy:actor.id,recordedAt:new Date().toISOString(),deliveredAt:null,readAt:null};
+  store.db.prepare('INSERT INTO crm_messages (id,lead_id,event_key,json,external_message_id) VALUES (?,?,?,?,?)').run(message.id,leadId,eventKey,JSON.stringify(message),externalMessageId||null);
+  let optedOut=false;
+  if(direction==='INBOUND'){
+   lead.version++;lead.lastInboundAt=message.recordedAt;lead.replyHold=true;
+   if(isOptOutText(text)){lead.optOut=true;lead.optOutAt=message.recordedAt;lead.consent={Email:null,WhatsApp:null};optedOut=true;}
+   writeLead(store.db,lead);stopFollowups(store.db,leadId,optedOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(state,'CRM_INBOUND_RECORDED',leadId,actor);
+  } else {
+   lead.lastOutboundAt=message.recordedAt;writeLead(store.db,lead);
+  }
+  return {...message,optedOut};
+ });
+}
+// Delivery-status webhooks (sent/delivered/read/failed) update the ORIGINAL message row in
+// place — never a new row per status, per the integration spec ("لا تخلق رسالة جديدة لكل status").
+export function updateMessageStatus(store,externalMessageId,status,{errorCode=null}={}){
+ if(!['SENT','DELIVERED','READ','FAILED'].includes(status))fail(400,'حالة رسالة غير صالحة');
+ return store.mutate(()=>{
+  const row=store.db.prepare('SELECT json FROM crm_messages WHERE external_message_id=?').get(externalMessageId);
+  if(!row)return {found:false};
+  const message=JSON.parse(row.json);
+  // Never move status backwards (a delayed "sent" arriving after "read" must not regress it).
+  const order=['SENT','DELIVERED','READ','FAILED'];
+  if(status!=='FAILED' && order.indexOf(status)<order.indexOf(message.status))return {found:true,ignored:true};
+  message.status=status;
+  if(status==='DELIVERED')message.deliveredAt=new Date().toISOString();
+  if(status==='READ')message.readAt=new Date().toISOString();
+  if(status==='FAILED')message.errorCode=errorCode;
+  store.db.prepare('UPDATE crm_messages SET json=? WHERE external_message_id=?').run(JSON.stringify(message),externalMessageId);
+  return {found:true,message};
+ });
+}
+/**
+ * Mechanical, not judgmental: whoever actually flips a lead's temperature to HOT (a human
+ * via the UI, or an agent via its own update_lead tool call) gets the exact same real
+ * escalation/notification — this never second-guesses the temperature decision itself.
+ */
+export function maybeEscalateHotLead(store,eventBus,before,after,{agentId='human',runId=null}={}){
+ if(after.temperature!=='HOT'||before.temperature==='HOT')return null;
+ const eventId=eventBus?.emit('LEAD_HOT',{leadId:after.id,agentId});
+ const reason=`فرصة ساخنة: ${after.name}${after.company?' — '+after.company:''} — ${after.productNeed||'بدون تفاصيل احتياج'}`;
+ const escalation=createEscalation(store.db,{runId,agentId,priority:'P1',reason,
+  context:{leadId:after.id,company:after.company||null,productNeed:after.productNeed||null,city:after.city||null,quantity:after.quantity,timeline:after.timeline||null,customerType:after.customerType,recommendedAction:'CONTACT_LEAD'}});
+ return {eventId,escalation};
 }
 export function contactControl(store,id,input,user){return store.mutate(state=>{
  const lead=getLead(store.db,id);expectedVersion(lead,input);const evidence=required(input.evidence,'دليل القرار',1000);

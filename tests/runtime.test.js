@@ -14,6 +14,7 @@ import {installApprovals,listApprovals} from '../src/runtime/approvals.js';
 import {installEscalations,listEscalations} from '../src/runtime/escalations.js';
 import {installOrchestrator} from '../src/runtime/orchestrator.js';
 import {installGate} from '../src/runtime/gate.js';
+import {installCredentials} from '../src/runtime/credentials.js';
 import {createLLMProvider} from '../src/runtime/llmProvider.js';
 import {promotionEligibility} from '../src/runtime/permissions.js';
 import {normalizeSallaProduct} from '../src/connectors.js';
@@ -26,6 +27,7 @@ function fixture(){
  installKnowledge(store.db);installCRM(store.db);installPlanning(store.db);installCompliance(store.db);
  installAutonomy(store.db);installReporting(store.db);installRegistry(store.db);installRuntimeTables(store.db);
  installEvents(store.db);installApprovals(store.db);installEscalations(store.db);installGate(store.db);
+ installCredentials(store.db);
  seedRegistry(store.db);
  return store;
 }

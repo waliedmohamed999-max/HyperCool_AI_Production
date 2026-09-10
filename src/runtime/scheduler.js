@@ -2,6 +2,8 @@ import {isPaused} from './gate.js';
 import {saveDailyBrief,riyadhDate} from '../planning.js';
 import {saveWeeklyReport,currentWeekStart} from '../reporting.js';
 import {listLeads} from '../crm.js';
+import {getCredentialsMeta,updateCredentialsMetadata,isExpiringSoon} from './credentials.js';
+import {renewMailSubscription} from './microsoft-graph.js';
 
 export const SCHEDULER_ACTOR={id:'scheduler',name:'الجدولة الآلية',role:'automation'};
 const FOLLOWUP_ELIGIBLE_STAGES=['QUOTE_SENT','DEMO','POST_PURCHASE'];
@@ -34,6 +36,27 @@ export async function sweepFollowupGaps({store,agentRuntime}) {
 }
 
 /**
+ * Microsoft Graph mail subscriptions expire after a maximum of ~70.5 hours (Graph's own
+ * limit — see microsoft-graph.js createMailSubscription) — this is why renewal must be a
+ * recurring scheduled job (spec Part AU), not a one-time setup step. Renews once the
+ * stored subscription is within 6 hours of expiry; does nothing if no subscription is on
+ * record (nothing to renew — see /api/integrations/microsoft/subscribe for creating one).
+ */
+export async function renewMicrosoftSubscriptionIfNeeded({store,env,fetcher=fetch}) {
+ const meta=getCredentialsMeta(store.db,'microsoft365');
+ const subscription=meta?.metadata?.mailSubscription;
+ if(!subscription?.id)return {skipped:'NO_SUBSCRIPTION'};
+ if(!isExpiringSoon(subscription.expiresAt,6*3600000))return {skipped:'NOT_DUE'};
+ try {
+  const renewed=await renewMailSubscription({store,env,fetcher},subscription.id);
+  updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{...subscription,expiresAt:renewed.expiresAt,lastRenewedAt:new Date().toISOString()}});
+  return {renewed:true,expiresAt:renewed.expiresAt};
+ } catch(error) {
+  updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{...subscription,lastRenewalError:error.message,lastRenewalAttemptAt:new Date().toISOString()}});
+  throw error;
+ }
+}
+/**
  * AgentScheduler. One in-process interval loop (this is a single always-on local
  * server — no external cron exists yet, see docs/agent-runtime.md). `tick()` is the
  * whole unit of work and is exported standalone so tests call it directly on a fake
@@ -41,7 +64,7 @@ export async function sweepFollowupGaps({store,agentRuntime}) {
  * server's main-execution block, never from createApp() itself, so importing/testing
  * this module never spins up a background timer by accident.
  */
-export function createScheduler({store,agentRuntime,env,getExtras}) {
+export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch}) {
  const db=store.db;
  let timer=null;
  async function tick(now=Date.now()) {
@@ -55,6 +78,7 @@ export function createScheduler({store,agentRuntime,env,getExtras}) {
    try{result.weeklyReport=saveWeeklyReport(store,currentWeekStart(now),SCHEDULER_ACTOR,getExtras?.());}catch(error){result.weeklyReportError=error.message;}
   }
   try{result.followupSweep=await sweepFollowupGaps({store,agentRuntime});}catch(error){result.followupSweepError=error.message;}
+  try{result.microsoftSubscriptionRenewal=await renewMicrosoftSubscriptionIfNeeded({store,env,fetcher});}catch(error){result.microsoftSubscriptionRenewalError=error.message;}
   return result;
  }
  function start(intervalMs=Number(env.SCHEDULER_INTERVAL_MS)||300000) {

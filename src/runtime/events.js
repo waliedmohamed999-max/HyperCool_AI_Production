@@ -10,7 +10,12 @@ export const EVENT_TYPES=[
  // Real Salla webhook-derived events (src/runtime/salla-webhooks.js) — not yet consumed by
  // any agent route in orchestrator.js; they exist so the event IS real and observable
  // (Operations Log, /api/events) even before a specific agent reacts to them.
- 'PRODUCT_UPDATED','PRODUCT_STOCK_UPDATED'
+ 'PRODUCT_UPDATED','PRODUCT_STOCK_UPDATED',
+ // Emitted the moment src/crm.js detects an opt-out (manual entry or channel webhook) —
+ // stopFollowups() already runs synchronously in the same call, so no agent needs to react
+ // to this to make opt-out effective; it exists for observability/audit and so a future
+ // handler (e.g. cross-channel opt-out propagation) has a real event to subscribe to.
+ 'CUSTOMER_OPTED_OUT'
 ];
 
 export function installEvents(db) {

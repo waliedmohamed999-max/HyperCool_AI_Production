@@ -20,6 +20,15 @@ export function installCredentials(db) {
   connected_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
  );`);
+ // Additive, guarded columns (see runtime/registry.js for the same pattern) — added for
+ // Meta, whose connection needs more than one secret (a user token AND a per-Page access
+ // token) plus several non-secret asset identifiers (Page id/name, Instagram id/username,
+ // WhatsApp Business Account id, phone number id) that Salla's simpler single-token model
+ // never needed. `extra_enc` is encrypted exactly like the access/refresh token; `metadata`
+ // is plain JSON because none of those asset ids are secrets.
+ const columns=db.prepare("PRAGMA table_info(integration_credentials)").all().map(c=>c.name);
+ if(!columns.includes('extra_enc'))db.exec('ALTER TABLE integration_credentials ADD COLUMN extra_enc TEXT');
+ if(!columns.includes('metadata'))db.exec('ALTER TABLE integration_credentials ADD COLUMN metadata TEXT');
 }
 function encryptionKey(env) {
  const raw=env.INTEGRATION_ENCRYPTION_KEY;
@@ -49,7 +58,7 @@ function decrypt(key,packed) {
  decipher.setAuthTag(Buffer.from(tagB64,'base64'));
  return Buffer.concat([decipher.update(Buffer.from(dataB64,'base64')),decipher.final()]).toString('utf8');
 }
-export function saveCredentials(db,env,provider,{accessToken,refreshToken,expiresAt,scopes,externalAccountId},user) {
+export function saveCredentials(db,env,provider,{accessToken,refreshToken,expiresAt,scopes,externalAccountId,extra,metadata},user) {
  const key=encryptionKey(env);
  if(!key)fail(500,'INTEGRATION_ENCRYPTION_KEY غير مُعد أو غير صالح (يجب أن يكون 32 بايت بترميز hex أو base64) — لا يمكن حفظ بيانات اعتماد مشفّرة بدونه');
  if(typeof accessToken!=='string'||!accessToken)fail(400,'access token مطلوب');
@@ -57,21 +66,24 @@ export function saveCredentials(db,env,provider,{accessToken,refreshToken,expire
  const row={
   provider,accessTokenEnc:encrypt(key,accessToken),refreshTokenEnc:refreshToken?encrypt(key,refreshToken):null,
   expiresAt:expiresAt||null,scopes:scopes?JSON.stringify(scopes):null,externalAccountId:externalAccountId||null,
+  extraEnc:extra!==undefined?encrypt(key,JSON.stringify(extra)):null,metadata:metadata!==undefined?JSON.stringify(metadata):null,
   connectedBy:user?.id||null,connectedByName:user?.name||null,connectedAt:now,updatedAt:now
  };
  // On an existing row, a token refresh (user=null, no new human action) must NOT overwrite
  // who originally connected the integration — only an explicit reconnect (a real user
  // passed in) may change that attribution.
- db.prepare(`INSERT INTO integration_credentials (provider,access_token_enc,refresh_token_enc,expires_at,scopes,external_account_id,connected_by,connected_by_name,connected_at,updated_at)
-  VALUES (@provider,@accessTokenEnc,@refreshTokenEnc,@expiresAt,@scopes,@externalAccountId,@connectedBy,@connectedByName,@connectedAt,@updatedAt)
-  ON CONFLICT(provider) DO UPDATE SET access_token_enc=excluded.access_token_enc,refresh_token_enc=excluded.refresh_token_enc,expires_at=excluded.expires_at,scopes=excluded.scopes,external_account_id=COALESCE(excluded.external_account_id,integration_credentials.external_account_id),connected_by=COALESCE(excluded.connected_by,integration_credentials.connected_by),connected_by_name=COALESCE(excluded.connected_by_name,integration_credentials.connected_by_name),updated_at=excluded.updated_at`).run(row);
+ db.prepare(`INSERT INTO integration_credentials (provider,access_token_enc,refresh_token_enc,expires_at,scopes,external_account_id,extra_enc,metadata,connected_by,connected_by_name,connected_at,updated_at)
+  VALUES (@provider,@accessTokenEnc,@refreshTokenEnc,@expiresAt,@scopes,@externalAccountId,@extraEnc,@metadata,@connectedBy,@connectedByName,@connectedAt,@updatedAt)
+  ON CONFLICT(provider) DO UPDATE SET access_token_enc=excluded.access_token_enc,refresh_token_enc=excluded.refresh_token_enc,expires_at=excluded.expires_at,scopes=excluded.scopes,external_account_id=COALESCE(excluded.external_account_id,integration_credentials.external_account_id),extra_enc=COALESCE(excluded.extra_enc,integration_credentials.extra_enc),metadata=COALESCE(excluded.metadata,integration_credentials.metadata),connected_by=COALESCE(excluded.connected_by,integration_credentials.connected_by),connected_by_name=COALESCE(excluded.connected_by_name,integration_credentials.connected_by_name),updated_at=excluded.updated_at`).run(row);
  return getCredentialsMeta(db,provider);
 }
 // Decrypted tokens never leave this module except through this function, called only by
 // the server-side code that actually needs to make an authenticated API call — never by
 // any route that returns JSON to the browser (see getCredentialsMeta for the safe, public shape).
 export function getCredentials(db,env,provider) {
- const row=db.prepare('SELECT * FROM integration_credentials WHERE provider=?').get(provider);
+ let row;
+ try {row=db.prepare('SELECT * FROM integration_credentials WHERE provider=?').get(provider);}
+ catch {return null;}
  if(!row)return null;
  const key=encryptionKey(env);
  if(!key)fail(500,'INTEGRATION_ENCRYPTION_KEY غير مُعد أو غير صالح');
@@ -79,14 +91,36 @@ export function getCredentials(db,env,provider) {
   accessToken:decrypt(key,row.access_token_enc),
   refreshToken:row.refresh_token_enc?decrypt(key,row.refresh_token_enc):null,
   expiresAt:row.expires_at,scopes:row.scopes?JSON.parse(row.scopes):[],externalAccountId:row.external_account_id,
+  extra:row.extra_enc?JSON.parse(decrypt(key,row.extra_enc)):null,
+  metadata:row.metadata?JSON.parse(row.metadata):null,
   connectedAt:row.connected_at
  };
 }
-// Safe to expose to the frontend: metadata only, never the token values.
+// Safe to expose to the frontend: metadata only, never the token values. `metadata` is
+// included because it holds non-secret asset identifiers (Page name, IG username, phone
+// number) meant to be shown on the Integrations page — `extra` (which may hold a secondary
+// secret like a Page access token) never is.
 export function getCredentialsMeta(db,provider) {
- const row=db.prepare('SELECT provider,expires_at,scopes,external_account_id,connected_by_name,connected_at,updated_at FROM integration_credentials WHERE provider=?').get(provider);
+ // Defensive against a store that never ran installCredentials() (an older test fixture, or
+ // a future call site that only needs the OTHER tables this module doesn't own) — "no
+ // credentials table" and "no credentials for this provider" are the same answer to any
+ // caller: not connected, never a crash.
+ let row;
+ try {row=db.prepare('SELECT provider,expires_at,scopes,external_account_id,metadata,connected_by_name,connected_at,updated_at FROM integration_credentials WHERE provider=?').get(provider);}
+ catch {return null;}
  if(!row)return null;
- return {provider:row.provider,expiresAt:row.expires_at,scopes:row.scopes?JSON.parse(row.scopes):[],externalAccountId:row.external_account_id,connectedByName:row.connected_by_name,connectedAt:row.connected_at,updatedAt:row.updated_at};
+ return {provider:row.provider,expiresAt:row.expires_at,scopes:row.scopes?JSON.parse(row.scopes):[],externalAccountId:row.external_account_id,metadata:row.metadata?JSON.parse(row.metadata):null,connectedByName:row.connected_by_name,connectedAt:row.connected_at,updatedAt:row.updated_at};
+}
+// Merges `patch` into the existing (non-secret) metadata blob without touching the
+// encrypted token columns at all — for operational state that belongs next to a
+// connection (e.g. Microsoft's mail webhook subscription id/expiry) but isn't itself a
+// secret and shouldn't require re-supplying the access token just to update.
+export function updateCredentialsMetadata(db,provider,patch) {
+ const row=db.prepare('SELECT metadata FROM integration_credentials WHERE provider=?').get(provider);
+ if(!row)return null;
+ const merged={...(row.metadata?JSON.parse(row.metadata):{}),...patch};
+ db.prepare('UPDATE integration_credentials SET metadata=?,updated_at=? WHERE provider=?').run(JSON.stringify(merged),new Date().toISOString(),provider);
+ return merged;
 }
 export function clearCredentials(db,provider) {
  db.prepare('DELETE FROM integration_credentials WHERE provider=?').run(provider);

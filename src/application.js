@@ -12,7 +12,7 @@ import {connectionStatus,importSalla,ConnectorError,testAnthropicConnection,test
 import {createGenerator,listAiRuns} from './generation.js';
 import {loadEnvFile} from 'node:process';
 import {installPlanning,listSlots,listJobs,createCalendar,scheduleContent,cancelJobs,prepareDue,buildBrief,saveDailyBrief,riyadhDate,authorizeAutomation} from './planning.js';
-import {installCRM,listLeads,leadDetail,listFollowups,sequences,createLead,updateLead,recordMessage,contactControl,createFollowups,approveFollowup,prepareFollowups,cancelFollowups,searchLeads} from './crm.js';
+import {installCRM,listLeads,leadDetail,listFollowups,sequences,createLead,updateLead,recordMessage,contactControl,createFollowups,approveFollowup,prepareFollowups,cancelFollowups,searchLeads,getLead,maybeEscalateHotLead,findOrCreateLeadFromChannel,recordChannelMessage,updateMessageStatus,isOptOutText} from './crm.js';
 import {buildSalesDashboard} from './sales-dashboard.js';
 import {installCompliance,listComplianceChecks,listComplianceChecksSince,createComplianceChecker,latestComplianceByContent} from './compliance.js';
 import {buildIntegrationsDashboard} from './integration-ops.js';
@@ -24,7 +24,7 @@ import {installReporting,buildExecutiveReport,saveWeeklyReport,listWeeklyReports
 import {installRegistry,seedRegistry,listAgents as listRegistryAgents,getAgent,setEnabled,setModelConfig} from './runtime/registry.js';
 import {installRuntimeTables,createAgentRuntime,listRuns,getRun,listToolCalls} from './runtime/runtime.js';
 import {installEvents,createEventBus} from './runtime/events.js';
-import {installApprovals,listApprovals,decideApproval} from './runtime/approvals.js';
+import {installApprovals,listApprovals,decideApproval,createApproval} from './runtime/approvals.js';
 import {installEscalations,listEscalations,resolveEscalation} from './runtime/escalations.js';
 import {installOrchestrator,buildDailyBrief} from './runtime/orchestrator.js';
 import {integrationStatus,AGENT_INTEGRATIONS} from './runtime/tools.js';
@@ -34,7 +34,15 @@ import {installGate,getGateStatus,setPaused,isPaused} from './runtime/gate.js';
 import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
-import {installWebhookEvents,verifySallaWebhook,processSallaWebhook,listWebhookEvents} from './runtime/salla-webhooks.js';
+import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
+import {verifySallaWebhook,processSallaWebhook} from './runtime/salla-webhooks.js';
+import {handleVerificationChallenge,verifyMetaSignature,normalizeWhatsAppWebhook} from './runtime/meta-webhooks.js';
+import {metaOAuthConfigured,createMetaAuthorizeUrl,consumeMetaState,exchangeCodeAndResolveAssets,saveMetaConnection,metaOAuthStatus,disconnectMeta,resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from './runtime/meta-oauth.js';
+import {sendWhatsAppMessage,testWhatsAppConnection,syncWhatsAppTemplates,installWhatsAppTemplates,listWhatsAppTemplates,whatsappConfigured} from './runtime/whatsapp.js';
+import {microsoftOAuthConfigured,createMicrosoftAuthorizeUrl,consumeMicrosoftState,exchangeCodeForTokens as exchangeMicrosoftCodeForTokens,resolveConnectedProfile,saveMicrosoftConnection,microsoftOAuthStatus,disconnectMicrosoft,resolveMicrosoftAccessToken} from './runtime/microsoft-oauth.js';
+import {testMicrosoftConnection,sendMail,getMessage,createMailSubscription,deleteMailSubscription} from './runtime/microsoft-graph.js';
+import {handleValidationHandshake,processMicrosoftNotifications} from './runtime/microsoft-webhooks.js';
+import {updateCredentialsMetadata,getCredentialsMeta} from './runtime/credentials.js';
 
 const packageVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 // Environment validation — logged at startup, never crashes the process. Every core config
@@ -49,11 +57,15 @@ function validateEnv(env) {
   ['Salla catalog sync',['SALLA_ACCESS_TOKEN, or SALLA_CLIENT_ID/SALLA_CLIENT_SECRET/SALLA_REDIRECT_URI for OAuth'],!!env.SALLA_ACCESS_TOKEN||!!(env.SALLA_CLIENT_ID&&env.SALLA_CLIENT_SECRET&&env.SALLA_REDIRECT_URI)],
   ['Salla OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.SALLA_CLIENT_ID||credentialsConfigured(env)],
   ['Salla webhooks',['SALLA_WEBHOOK_SECRET'],!!env.SALLA_WEBHOOK_SECRET],
-  ['WhatsApp',['WHATSAPP_ACCESS_TOKEN'],!!env.WHATSAPP_ACCESS_TOKEN],
-  ['Meta (Instagram/Facebook)',['META_ACCESS_TOKEN'],!!env.META_ACCESS_TOKEN],
+  ['WhatsApp',['WHATSAPP_ACCESS_TOKEN, or connect Meta via OAuth below'],!!env.WHATSAPP_ACCESS_TOKEN||!!(env.META_APP_ID&&env.META_APP_SECRET&&env.META_REDIRECT_URI)],
+  ['Meta (Instagram/Facebook)',['META_ACCESS_TOKEN, or META_APP_ID/META_APP_SECRET/META_REDIRECT_URI for OAuth'],!!env.META_ACCESS_TOKEN||!!(env.META_APP_ID&&env.META_APP_SECRET&&env.META_REDIRECT_URI)],
+  ['Meta OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.META_APP_ID||credentialsConfigured(env)],
+  ['Meta webhooks',['META_WEBHOOK_SECRET or META_APP_SECRET','META_VERIFY_TOKEN'],!!(env.META_WEBHOOK_SECRET||env.META_APP_SECRET)&&!!env.META_VERIFY_TOKEN],
   ['X',['X_BEARER_TOKEN'],!!env.X_BEARER_TOKEN],
   ['LinkedIn',['LINKEDIN_ACCESS_TOKEN'],!!env.LINKEDIN_ACCESS_TOKEN],
-  ['Microsoft 365',['MICROSOFT_ACCESS_TOKEN'],!!env.MICROSOFT_ACCESS_TOKEN],
+  ['Microsoft 365',['MICROSOFT_ACCESS_TOKEN, or MICROSOFT_CLIENT_ID/SECRET/TENANT_ID/REDIRECT_URI for OAuth'],!!env.MICROSOFT_ACCESS_TOKEN||!!(env.MICROSOFT_CLIENT_ID&&env.MICROSOFT_CLIENT_SECRET&&env.MICROSOFT_REDIRECT_URI)],
+  ['Microsoft 365 OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.MICROSOFT_CLIENT_ID||credentialsConfigured(env)],
+  ['Microsoft 365 mail webhook',['MICROSOFT_WEBHOOK_SECRET'],!!env.MICROSOFT_WEBHOOK_SECRET],
   ['Canva',['CANVA_API_KEY'],!!env.CANVA_API_KEY]
  ];
  for(const [name,vars,configured] of optionalIntegrations)
@@ -83,6 +95,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installGate(store.db);
   installCredentials(store.db);
   installWebhookEvents(store.db);
+  installWhatsAppTemplates(store.db);
   seedRegistry(store.db);
   const eventBus=createEventBus(store.db);
   const agentRuntime=createAgentRuntime({store,env,fetcher,eventBus});
@@ -90,7 +103,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   function reportExtras() {
     return {agents:listRegistryAgents(store.db),agentRuns:listRuns(store.db,{limit:2000}),escalations:listEscalations(store.db),approvals:listApprovals(store.db),env};
   }
-  const scheduler=createScheduler({store,agentRuntime,env,getExtras:reportExtras});
+  const scheduler=createScheduler({store,agentRuntime,env,getExtras:reportExtras,fetcher});
   const generate=createGenerator(store,env,fetcher);
   const checkCompliance=createComplianceChecker(store,env,fetcher);
   let syncing=false;
@@ -171,6 +184,70 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
         return send(200,processSallaWebhook({db:store.db,eventBus,body:payload}));
       }
+      // Meta's verification handshake — GET with hub.challenge, no body, no signature (the
+      // handshake IS the authentication: only someone holding META_VERIFY_TOKEN can pass it).
+      if(req.method==='GET' && url.pathname==='/api/webhooks/meta/whatsapp') {
+        res.writeHead(200,{'Content-Type':'text/plain'});return res.end(handleVerificationChallenge(url.searchParams,env));
+      }
+      // Real inbound WhatsApp delivery. Same unauthenticated-by-session, authenticated-by-
+      // secret pattern as /api/webhooks/salla — see verifyMetaSignature. This is the one
+      // route the whole PART F flow (webhook → CUSTOMER_MESSAGE_RECEIVED → Frost → Sales
+      // Agent) starts from.
+      if(req.method==='POST' && url.pathname==='/api/webhooks/meta/whatsapp') {
+        const raw=await rawBody(req);
+        verifyMetaSignature(req,raw,env);
+        let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
+        const normalized=normalizeWhatsAppWebhook(store.db,payload);
+        const paused=isPaused(store.db);
+        const connectorActor={id:'connector:whatsapp',name:'موصل واتساب',role:'automation'};
+        for(const item of normalized.messages) {
+          if(item.replayed||item.error||!item.phone)continue;
+          const {lead}=findOrCreateLeadFromChannel(store,{phone:item.phone,name:item.name,channel:'WhatsApp'},connectorActor);
+          const message=recordChannelMessage(store,{leadId:lead.id,channel:'WhatsApp',direction:'INBOUND',text:item.text,externalMessageId:item.externalMessageId,messageType:item.messageType,media:item.media||null},connectorActor);
+          if(message.replayed)continue;
+          if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'WhatsApp'});
+          // The pause gate stops autonomous AGENT action, never the recording of the message
+          // itself — a paused system must still capture what the customer said, exactly like
+          // the internal scheduler's own tick() only skips its own triggered work, not intake.
+          if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'WhatsApp',text:item.text});
+        }
+        for(const item of normalized.statuses) {
+          if(item.replayed)continue;
+          updateMessageStatus(store,item.externalMessageId,item.status,{errorCode:item.errorCode});
+        }
+        return send(200,{received:normalized.messages.length,statuses:normalized.statuses.length,skipped:normalized.skipped});
+      }
+      // Microsoft Graph's real webhook mechanism is different from Meta's/Salla's: EVERY
+      // POST (including the very first, which is the validation handshake) hits the same
+      // URL. A validation POST carries ?validationToken=... and must get that token echoed
+      // back as plain text within 10 seconds — no JSON body to parse, no secret involved
+      // (the handshake just proves we control this URL). Real notifications carry a JSON
+      // body instead and are verified per-item via clientState (see microsoft-webhooks.js).
+      if(req.method==='POST' && url.pathname==='/api/webhooks/microsoft/mail') {
+        const token=handleValidationHandshake(url);
+        if(token!==null){res.writeHead(200,{'Content-Type':'text/plain'});return res.end(token);}
+        const raw=await rawBody(req);
+        let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
+        const result=processMicrosoftNotifications(store.db,payload,env);
+        const paused=isPaused(store.db);
+        const connectorActor={id:'connector:microsoft365',name:'موصل Microsoft 365',role:'automation'};
+        for(const {messageId} of result.toFetch) {
+          try {
+           const graphMessage=await getMessage({store,env,fetcher},messageId);
+           if(!graphMessage||graphMessage.isDraft)continue; // never ingest our own drafts as if a customer sent them
+           const fromAddress=graphMessage.from?.emailAddress?.address||null;
+           if(!fromAddress)continue;
+           const {lead}=findOrCreateLeadFromChannel(store,{email:fromAddress,name:graphMessage.from?.emailAddress?.name,channel:'Email'},connectorActor);
+           const message=recordChannelMessage(store,{leadId:lead.id,channel:'Email',direction:'INBOUND',text:graphMessage.bodyPreview||'',subject:graphMessage.subject||null,externalMessageId:graphMessage.id,internetMessageId:graphMessage.internetMessageId,externalThreadId:graphMessage.conversationId,messageType:'email'},connectorActor);
+           if(message.replayed)continue;
+           if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'Email'});
+           if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'Email',text:message.text});
+          } catch(error) {
+           store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'EMAIL_INGEST_FAILED',itemId:messageId,errorCode:error.message,at:new Date().toISOString()});});
+          }
+        }
+        return send(200,{toFetch:result.toFetch.length,rejected:result.rejected,replayed:result.replayed});
+      }
       // Unauthenticated on purpose — load balancers/uptime monitors never hold a session.
       // Still pass through the Host/Origin/Sec-Fetch checks above, same as everything else.
       if(req.method==='GET' && (url.pathname==='/health'||url.pathname==='/health/live')) {
@@ -181,7 +258,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         try{store.db.prepare('SELECT 1').get();dependencies.database='ok';}catch{dependencies.database='error';}
         dependencies.scheduler=scheduler.running()?'running':'stopped';
         dependencies.llm=providerStatus(env).configured?'configured':'not_configured';
-        const integrations=integrationStatus(env);
+        const integrations=integrationStatus(env,store.db);
         for(const [name,status] of Object.entries(integrations))dependencies['integration_'+name]=status.configured?'configured':'not_configured';
         const coreOk=dependencies.database==='ok';
         return send(coreOk?200:503,{status:coreOk?'ready':'not_ready',core_status:coreOk?'ok':'degraded',dependencies,timestamp:new Date().toISOString(),version:packageVersion});
@@ -251,7 +328,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(req.method==='GET' && url.pathname==='/api/agents') {
         const autonomy=currentAutonomy(store.db);
-        const integrations=integrationStatus(env);
+        const integrations=integrationStatus(env,store.db);
         const integrationNames={whatsapp:'واتساب',meta:'ميتا (Instagram/Facebook)',x:'X',linkedin:'لينكدإن',microsoft365:'Microsoft 365',canva:'Canva',salla_webhooks:'ويبهوكس سلة'};
         return send(200,agentDefinitions.map(agent=>{
           const registryRow=getAgent(store.db,agent.id);
@@ -315,7 +392,26 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && approvalDecide) {
         authorize(session,['owner']);
         const input=await body(req);
-        return send(200,decideApproval(store.db,approvalDecide[1],input.decision,session.user));
+        const decided=decideApproval(store.db,approvalDecide[1],input.decision,session.user);
+        // Execution-on-approval, scoped to exactly one action type: an approved email send.
+        // This is the one place in the whole Approval Center where deciding APPROVED also
+        // performs the real side effect — every other approval type (memory, permission
+        // changes, etc.) stays decision-only, matching the existing pattern (spec Part O:
+        // "use existing Approval Center, don't duplicate logic" — this reuses it rather
+        // than inventing a parallel "pending email" queue).
+        if(decided.status==='APPROVED' && decided.action_type==='send_marketing_message') {
+          const proposed=JSON.parse(decided.proposed_output);
+          if(proposed?.to && proposed?.subject && proposed?.bodyHtml) {
+            try {
+             const sendResult=await sendMail({store,env,fetcher},{to:proposed.to,cc:proposed.cc,subject:proposed.subject,bodyHtml:proposed.bodyHtml});
+             if(sendResult.status==='SENT' && proposed.leadId)recordChannelMessage(store,{leadId:proposed.leadId,channel:'Email',direction:'OUTBOUND',text:proposed.bodyHtml,subject:proposed.subject,cc:proposed.cc||null,messageType:'email'},session.user);
+             return send(200,{...decided,emailSendResult:sendResult});
+            } catch(error) {
+             return send(200,{...decided,emailSendResult:{status:'FAILED',errorDetail:error.message}});
+            }
+          }
+        }
+        return send(200,decided);
       }
       if(req.method==='GET' && url.pathname==='/api/escalations')return send(200,listEscalations(store.db,{status:url.searchParams.get('status')||undefined}));
       const escalationResolve=url.pathname.match(/^\/api\/escalations\/([\w-]+)\/resolve$/);
@@ -342,6 +438,9 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(id==='anthropic')return send(200,await testAnthropicConnection({env,fetcher}));
         if(id==='openai')return send(200,await testOpenAIConnection({env,fetcher}));
         if(id==='salla'){const resolved=await resolveSallaAccessToken({store,env,fetcher});return send(200,await testSallaConnection({env,fetcher,accessToken:resolved?.token}));}
+        if(id==='whatsapp')return send(200,await testWhatsAppConnection({store,env,fetcher}));
+        if(id==='meta')return send(200,resolveMetaAccessToken({store,env},'page')?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
+        if(id==='microsoft365')return send(200,await testMicrosoftConnection({store,env,fetcher}));
         return send(200,{result:'NOT_IMPLEMENTED'});
       }
       // Salla OAuth (owner only — connecting/disconnecting the store's own commerce data is
@@ -373,6 +472,127 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='GET' && url.pathname==='/api/webhooks/salla/events') {
         authorize(session,['owner']);
         return send(200,listWebhookEvents(store.db,{source:'salla',limit:Number(url.searchParams.get('limit'))||50}));
+      }
+      // Meta OAuth (owner only, same bar as Salla above).
+      if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/status') {
+        authorize(session,['owner']);
+        return send(200,metaOAuthStatus(store.db));
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/start') {
+        authorize(session,['owner']);
+        res.writeHead(302,{Location:createMetaAuthorizeUrl(env,session.user.id)});return res.end();
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/callback') {
+        authorize(session,['owner']);
+        const code=url.searchParams.get('code'),oauthState=url.searchParams.get('state');
+        if(!code||!oauthState)fail(400,'استجابة ربط Meta ناقصة (code/state)');
+        consumeMetaState(oauthState,session.user.id);
+        const assets=await exchangeCodeAndResolveAssets({env,fetcher,code});
+        saveMetaConnection(store.db,env,assets,session.user);
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'META_OAUTH_CONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        res.writeHead(302,{Location:'/#integrations'});return res.end();
+      }
+      if(req.method==='POST' && url.pathname==='/api/integrations/meta/disconnect') {
+        authorize(session,['owner']);
+        disconnectMeta(store.db);
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'META_OAUTH_DISCONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        return send(200,{disconnected:true});
+      }
+      if(req.method==='GET' && url.pathname==='/api/webhooks/meta/events') {
+        authorize(session,['owner']);
+        return send(200,listWebhookEvents(store.db,{source:'meta',limit:Number(url.searchParams.get('limit'))||50}));
+      }
+      // WhatsApp templates — real approval status pulled from Meta, never invented locally.
+      if(req.method==='GET' && url.pathname==='/api/whatsapp/templates') {
+        authorize(session,['owner','operator']);
+        return send(200,listWhatsAppTemplates(store.db,{status:url.searchParams.get('status')||undefined}));
+      }
+      if(req.method==='POST' && url.pathname==='/api/whatsapp/templates/sync') {
+        authorize(session,['owner']);
+        const result=await syncWhatsAppTemplates({store,env,fetcher});
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'WHATSAPP_TEMPLATES_SYNCED',itemId:'whatsapp',count:result.synced,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        return send(200,result);
+      }
+      // Manual send outside the agent runtime — an owner/operator replying by hand from the
+      // Shared Inbox still goes through the exact same permission/opt-out/window checks as
+      // the whatsapp_send agent tool (see runtime/tools.js), never a second, looser path.
+      const manualWhatsAppSend=url.pathname.match(/^\/api\/crm\/leads\/([\w-]+)\/whatsapp-send$/);
+      if(req.method==='POST' && manualWhatsAppSend) {
+        authorize(session,['owner','operator']);
+        const id=manualWhatsAppSend[1],input=await body(req);
+        const lead=getLead(store.db,id);
+        if(lead.optOut)fail(409,'العميل أوقف التواصل (opt-out)');
+        if(lead.humanHold)fail(409,'المحادثة موقوفة بانتظار مراجعة بشرية');
+        if(!lead.phone)fail(409,'لا يوجد رقم هاتف لهذا العميل');
+        if(!input.templateName && !(lead.lastInboundAt && Date.now()-Date.parse(lead.lastInboundAt)<=86400000))fail(409,'خارج نافذة خدمة العملاء (24 ساعة) — استخدم قالبًا معتمدًا');
+        const result=await sendWhatsAppMessage({store,env,fetcher},{to:lead.phone,text:input.text,templateName:input.templateName,templateLanguage:input.templateLanguage});
+        if(result.status==='SENT')recordChannelMessage(store,{leadId:id,channel:'WhatsApp',direction:'OUTBOUND',text:input.text||`[template:${input.templateName}]`,externalMessageId:result.externalMessageId,messageType:input.templateName?'template':'text'},session.user);
+        return send(200,result);
+      }
+      // Microsoft 365 OAuth (owner only, same bar as Salla/Meta above).
+      if(req.method==='GET' && url.pathname==='/api/integrations/microsoft/oauth/status') {
+        authorize(session,['owner']);
+        return send(200,microsoftOAuthStatus(store.db));
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/microsoft/oauth/start') {
+        authorize(session,['owner']);
+        res.writeHead(302,{Location:createMicrosoftAuthorizeUrl(env,session.user.id)});return res.end();
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/microsoft/oauth/callback') {
+        authorize(session,['owner']);
+        const code=url.searchParams.get('code'),oauthState=url.searchParams.get('state');
+        if(!code||!oauthState)fail(400,'استجابة ربط Microsoft ناقصة (code/state)');
+        consumeMicrosoftState(oauthState,session.user.id);
+        const tokens=await exchangeMicrosoftCodeForTokens({env,fetcher,code});
+        const profile=await resolveConnectedProfile({env,fetcher,accessToken:tokens.accessToken});
+        saveMicrosoftConnection(store.db,env,tokens,profile,session.user);
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'MICROSOFT_CONNECTED',itemId:'microsoft365',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        res.writeHead(302,{Location:'/#integrations'});return res.end();
+      }
+      if(req.method==='POST' && url.pathname==='/api/integrations/microsoft/disconnect') {
+        authorize(session,['owner']);
+        // Delete the webhook subscription first (best-effort) so a disconnected mailbox
+        // doesn't keep sending notifications this app can no longer act on.
+        const meta=getCredentialsMeta(store.db,'microsoft365');
+        if(meta?.metadata?.mailSubscription?.id)await deleteMailSubscription({store,env,fetcher},meta.metadata.mailSubscription.id);
+        disconnectMicrosoft(store.db);
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'MICROSOFT_DISCONNECTED',itemId:'microsoft365',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        return send(200,{disconnected:true});
+      }
+      // Creates the real Graph subscription that makes /api/webhooks/microsoft/mail
+      // receive anything at all — a separate, explicit step from OAuth connect, since a
+      // notificationUrl only resolves correctly once PUBLIC_ORIGIN/deployment is live.
+      if(req.method==='POST' && url.pathname==='/api/integrations/microsoft/subscribe') {
+        authorize(session,['owner']);
+        if(!env.MICROSOFT_WEBHOOK_SECRET)fail(400,'أضف MICROSOFT_WEBHOOK_SECRET في إعدادات الخادم أولًا');
+        if(!publicUrl)fail(400,'يتطلب اشتراك الويبهوك نطاقًا عامًا (PUBLIC_ORIGIN) — لا يقبل Graph عناوين محلية');
+        const notificationUrl=new URL('/api/webhooks/microsoft/mail',publicUrl).href;
+        const subscription=await createMailSubscription({store,env,fetcher},{notificationUrl,clientState:env.MICROSOFT_WEBHOOK_SECRET});
+        updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{id:subscription.subscriptionId,expiresAt:subscription.expiresAt,resource:subscription.resource,createdAt:new Date().toISOString()}});
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'MICROSOFT_SUBSCRIPTION_CREATED',itemId:subscription.subscriptionId,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        return send(200,subscription);
+      }
+      // Manual reply outside the agent runtime — same permission/opt-out/approval-category
+      // checks as the microsoft_sendEmail agent tool, never a second, looser path.
+      const manualEmailSend=url.pathname.match(/^\/api\/crm\/leads\/([\w-]+)\/email-send$/);
+      if(req.method==='POST' && manualEmailSend) {
+        authorize(session,['owner','operator']);
+        const id=manualEmailSend[1],input=await body(req);
+        const lead=getLead(store.db,id);
+        if(lead.optOut)fail(409,'العميل أوقف التواصل (opt-out)');
+        if(lead.humanHold)fail(409,'المحادثة موقوفة بانتظار مراجعة بشرية');
+        if(!lead.email)fail(409,'لا يوجد بريد إلكتروني لهذا العميل');
+        if(!input.subject||!input.bodyHtml)fail(400,'العنوان والنص مطلوبان');
+        const category=input.category||'general';
+        if(['quote','discount','large_b2b','legal'].includes(category)) {
+         const approval=createApproval(store.db,{runId:null,agentId:'human',actionType:'send_marketing_message',
+          proposedOutput:{leadId:id,to:lead.email,cc:input.cc||[],subject:input.subject,bodyHtml:input.bodyHtml,category},
+          riskLevel:category==='legal'?'HIGH':'MEDIUM',reason:`${session.user.name} drafted a ${category} email to ${lead.email} — requires owner approval before sending.`});
+         return send(200,{status:'WAITING_APPROVAL',approvalId:approval.id});
+        }
+        const result=await sendMail({store,env,fetcher},{to:lead.email,cc:input.cc,subject:input.subject,bodyHtml:input.bodyHtml});
+        if(result.status==='SENT')recordChannelMessage(store,{leadId:id,channel:'Email',direction:'OUTBOUND',text:input.bodyHtml,subject:input.subject,cc:input.cc||null,messageType:'email'},session.user);
+        return send(200,result);
       }
       if(req.method==='GET' && url.pathname==='/api/memory') return send(200,listMemory(store.db));
       if(req.method==='GET' && url.pathname==='/api/memory/dashboard') return send(200,buildMemoryWorkspace(store,{pendingApprovals:listApprovals(store.db,{status:'PENDING'}).filter(a=>a.action_type==='memory_policy_change')}));
@@ -417,10 +637,18 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           if(req.method==='GET' && !leadRoute[2])return send(200,leadDetail(store.db,leadRoute[1]));
           if(req.method==='POST'){
             const input=await body(req),id=leadRoute[1],user=session.user;
-            if(leadRoute[2]==='update')return send(200,updateLead(store,id,input,user));
+            if(leadRoute[2]==='update'){
+              const before=getLead(store.db,id);
+              const updated=updateLead(store,id,input,user);
+              maybeEscalateHotLead(store,eventBus,before,updated,{agentId:'human'});
+              return send(200,updated);
+            }
             if(leadRoute[2]==='messages'){
               const message=recordMessage(store,id,input,user);
-              if(!message.replayed && message.direction==='INBOUND')eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:id,channel:message.channel,text:message.text});
+              if(!message.replayed && message.direction==='INBOUND'){
+                eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:id,channel:message.channel,text:message.text});
+                if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:id,channel:message.channel});
+              }
               return send(201,message);
             }
             if(leadRoute[2]==='contact')return send(200,contactControl(store,id,input,user));

@@ -58,7 +58,7 @@ function fallbackEnabled(env) {
  */
 export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
  const db=store.db;
- const toolRegistry=buildToolRegistry({store,env});
+ const toolRegistry=buildToolRegistry({store,env,eventBus,fetcher});
  // One provider-driven attempt cycle: up to 2 tries against the SAME provider, repairing a
  // schema-invalid reply once via the provider's own internal repair step (see llmProvider.js)
  // plus once more here if the repaired reply still fails validateAgentDecision. Throws the
@@ -81,7 +81,7 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
    if(!registryRow)throw Object.assign(new Error('Unknown agent: '+agentId),{status:404});
    if(!registryRow.enabled)return finishDisabled(db,agentId,triggerType,triggerId,user);
    const level=effectiveLevel(levelOf(db,agentId),env);
-   const tools=toolRegistry.list(level);
+   const tools=toolRegistry.list(level,agentId);
    const actor=agentActor(agentId,registryRow.name_ar);
    const run={id:randomUUID(),agentId,triggerType,triggerId,parentRunId,status:'RUNNING',inputContext:input,startedAt:new Date().toISOString(),actorId:user?.id||null,actorName:user?.name||null};
    insertRun(db,run);
@@ -91,7 +91,7 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
     const tool=toolRegistry.get(name);
     let status='OK',output;
     if(!tool){status='ERROR';output={status:'ERROR',error:'UNKNOWN_TOOL'};}
-    else if(!canUseTool(level,tool)){status='FORBIDDEN';output={status:'FORBIDDEN',reason:'PERMISSION_LEVEL',required:tool.minLevel,current:level};}
+    else if(!canUseTool(level,tool,agentId)){status='FORBIDDEN';output={status:'FORBIDDEN',reason:tool.allowedAgents&&!tool.allowedAgents.includes(agentId)?'AGENT_NOT_ALLOWED':'PERMISSION_LEVEL',required:tool.minLevel,current:level};}
     else {
      try {
       output=await tool.handler(toolInput,{store,env,actor,runId:run.id,agentId});
