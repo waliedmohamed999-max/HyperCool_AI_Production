@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 export function fail(status,message) { throw Object.assign(new Error(message),{status}); }
 const hash = value => createHash('sha256').update(value).digest('hex');
-const publicUser = user => ({id:user.id,username:user.username,name:user.name,role:user.role});
+const publicUser = user => ({id:user.id,username:user.username,name:user.name,role:user.role,preferredLocale:user.preferred_locale||null});
 function encodePassword(password) {
   const salt=randomBytes(16).toString('hex');
   return `${salt}:${scryptSync(password,salt,64).toString('hex')}`;
@@ -76,7 +76,11 @@ export function createAuth(db) {
       db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
     },
     activeSessionUserIds:()=>db.prepare('SELECT DISTINCT user_id FROM sessions WHERE expires>?').all(Date.now()).map(r=>r.user_id),
-    revokeSessions(id) {db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);}
+    revokeSessions(id) {db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);},
+    setPreferredLocale(id,locale) {
+      if(!['ar','en'].includes(locale)) fail(400,'لغة غير صالحة');
+      db.prepare('UPDATE users SET preferred_locale=? WHERE id=?').run(locale,id);
+    }
   };
 }
 export function authorize(session,roles) {

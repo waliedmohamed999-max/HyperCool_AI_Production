@@ -10,7 +10,8 @@
     "test:ui": "node scripts/ui-qa.mjs",
     "ui:screenshots": "node scripts/ui-baseline.mjs",
     "agents:extract": "node scripts/extract-agents.js",
-    "workflows:build": "node scripts/build-workflows.js"
+    "backup": "node scripts/backup.mjs",
+    "restore": "node scripts/restore.mjs"
   },
   "engines": {
     "node": ">=24.11.0"

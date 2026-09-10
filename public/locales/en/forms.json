@@ -1,0 +1,10 @@
+{
+  "required": "Required",
+  "name": "Name",
+  "username": "Username",
+  "password": "Password",
+  "email": "Email",
+  "phone": "Phone",
+  "city": "City",
+  "notes": "Notes"
+}

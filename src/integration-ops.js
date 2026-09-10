@@ -14,10 +14,11 @@ import {agents as AGENT_DEFS} from './domain.js';
 // flow or permission API exists anywhere in this app.
 export const INTEGRATIONS=[
  {id:'anthropic',name:'Anthropic',category:'AI',description:'تشغيل الوكلاء وتوليد المحتوى بالذكاء الاصطناعي.',envVars:['ANTHROPIC_API_KEY','ANTHROPIC_MODEL'],authType:'API Key',connectorImplemented:true,scopes:[]},
- // Explicitly NOT supported: no env var, no connector, no mention anywhere in this codebase.
- // Listed per request ("OpenAI إذا مدعوم") but marked honestly rather than treated like the
- // six stub services below, which at least have real env-var gating and tool placeholders.
- {id:'openai',name:'OpenAI',category:'AI',description:'مزود ذكاء اصطناعي بديل.',envVars:[],authType:'API Key',connectorImplemented:false,supported:false,scopes:[]},
+ // Real second AgentRuntime provider (src/runtime/llmProvider.js) — used only by the 12-agent
+ // runtime today, not by the separate content-draft/compliance-check flow in this file's
+ // Anthropic-only connectors above, which is why its activity is read from agent_runs rather
+ // than ai_runs/compliance_runs.
+ {id:'openai',name:'OpenAI',category:'AI',description:'مزود ذكاء اصطناعي بديل لتشغيل فريق الوكلاء.',envVars:['OPENAI_API_KEY','OPENAI_DEFAULT_MODEL'],authType:'API Key',connectorImplemented:true,scopes:[]},
  {id:'salla',name:'Salla',category:'Commerce',description:'استيراد كتالوج المنتجات والأسعار والمخزون.',envVars:['SALLA_ACCESS_TOKEN'],webhookVar:'SALLA_WEBHOOK_SECRET',authType:'Bearer Token',connectorImplemented:true,scopes:[]},
  {id:'whatsapp',name:'WhatsApp Business',category:'Messaging',description:'استقبال محادثات العملاء وتشغيل الردود والمتابعات.',envVars:['WHATSAPP_ACCESS_TOKEN'],authType:'Bearer Token',connectorImplemented:false,scopes:[{name:'whatsapp_business_messaging',note:'إرسال واستقبال رسائل واتساب للأعمال'}]},
  {id:'meta',name:'Meta',category:'Social',description:'نشر محتوى على Instagram وFacebook.',envVars:['META_ACCESS_TOKEN'],authType:'OAuth Token',connectorImplemented:false,scopes:[{name:'pages_read_engagement',note:'قراءة تفاعل صفحة فيسبوك'},{name:'instagram_basic',note:'الوصول الأساسي لحساب إنستغرام'},{name:'pages_manage_posts',note:'نشر منشورات على الصفحة'}]},
@@ -33,6 +34,7 @@ export const ERROR_ACTIONS={
  PROVIDER_ERROR:'الخدمة الخارجية أعادت خطأ غير متوقع، أعد المحاولة لاحقًا',
  INVALID_PROVIDER_RESPONSE:'استجابة غير متوقعة من الخدمة، أعد المحاولة',
  ANTHROPIC_NOT_CONFIGURED:'أضف مفتاح Anthropic واسم الموديل في إعدادات الخادم',
+ OPENAI_NOT_CONFIGURED:'أضف مفتاح OpenAI واسم الموديل في إعدادات الخادم',
  SALLA_NOT_CONFIGURED:'أضف رمز وصول سلة في إعدادات الخادم',
  INVALID_SALLA_RESPONSE:'استجابة سلة غير متوقعة، أعد المحاولة لاحقًا',
  INVALID_SALLA_PRODUCT:'بيانات منتج غير صالحة وردت من سلة',
@@ -69,6 +71,19 @@ function anthropicActivity(aiRuns,complianceRuns) {
  const hasNewerError=lastError&&(!lastSuccess||lastError.at>lastSuccess.at);
  return {events,lastSuccess,lastError,hasNewerError};
 }
+// OpenAI has no dedicated log table either — its only real call site today is the Agent
+// Runtime (src/runtime/runtime.js), which already tags every run with the provider that
+// actually executed it. Runs where used_fallback=1 count as OpenAI activity only if OpenAI
+// is literally the provider that ran (i.e. Anthropic failed over TO OpenAI), never the other
+// way around — this is a real usage record, not an assumption.
+function openaiActivity(agentRuns) {
+ const events=agentRuns.filter(r=>r.provider==='openai').map(r=>({at:r.finished_at||r.started_at,status:r.status,errorCode:r.status==='FAILED'?(r.error||'UNKNOWN'):null,kind:'تشغيل وكيل ('+r.agent_id+')',durationMs:r.latency_ms||null}))
+  .filter(e=>e.at).sort((a,b)=>b.at.localeCompare(a.at));
+ const lastSuccess=events.find(e=>['COMPLETED','ESCALATED','WAITING_APPROVAL'].includes(e.status));
+ const lastError=events.find(e=>e.status==='FAILED');
+ const hasNewerError=lastError&&(!lastSuccess||lastError.at>lastSuccess.at);
+ return {events,lastSuccess,lastError,hasNewerError};
+}
 function sallaActivity(audit) {
  const events=audit.filter(a=>a.action==='SALLA_CATALOG_SYNCED'||a.action==='SALLA_CATALOG_SYNC_FAILED').sort((a,b)=>b.at.localeCompare(a.at));
  const lastSuccess=events.find(e=>e.action==='SALLA_CATALOG_SYNCED');
@@ -81,9 +96,10 @@ function envRows(integration,env) {
  if(integration.webhookVar)rows.push({name:integration.webhookVar,configured:!!env[integration.webhookVar]});
  return rows;
 }
-export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns}) {
+export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns,agentRuns=[]}) {
  const state=store.read();
  const anthropic=anthropicActivity(aiRuns,complianceRuns);
+ const openai=openaiActivity(agentRuns);
  const salla=sallaActivity(state.audit);
  const integrations=INTEGRATIONS.map(integration=>{
   const rows=envRows(integration,env);
@@ -95,6 +111,10 @@ export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns}) {
    status=!configured?'NEEDS_SETUP':anthropic.hasNewerError?'ERROR':'CONNECTED';
    lastActivity=anthropic.lastSuccess?{at:anthropic.lastSuccess.at,note:anthropic.lastSuccess.kind}:null;
    recentErrors=anthropic.events.filter(e=>e.errorCode).slice(0,10).map(e=>({at:e.at,code:e.errorCode,action:ERROR_ACTIONS[e.errorCode]||ERROR_ACTIONS.UNKNOWN}));
+  } else if(integration.id==='openai') {
+   status=!configured?'NEEDS_SETUP':openai.hasNewerError?'ERROR':openai.lastSuccess?'CONNECTED':'CONFIGURED_NO_CONNECTOR';
+   lastActivity=openai.lastSuccess?{at:openai.lastSuccess.at,note:openai.lastSuccess.kind}:null;
+   recentErrors=openai.events.filter(e=>e.errorCode).slice(0,10).map(e=>({at:e.at,code:e.errorCode,action:ERROR_ACTIONS[e.errorCode]||ERROR_ACTIONS.UNKNOWN}));
   } else if(integration.id==='salla') {
    status=!configured?'NEEDS_SETUP':salla.hasNewerError?'ERROR':'CONNECTED';
    lastActivity=salla.lastSuccess?{at:salla.lastSuccess.at,by:salla.lastSuccess.actorName,count:salla.lastSuccess.count}:null;
@@ -120,6 +140,7 @@ export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns}) {
  };
  const recentSyncActivity=[
   ...anthropic.events.slice(0,15).map(e=>({at:e.at,integration:'Anthropic',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
+  ...openai.events.slice(0,15).map(e=>({at:e.at,integration:'OpenAI',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
   ...salla.events.slice(0,15).map(e=>({at:e.at,integration:'Salla',operation:'مزامنة الكتالوج',status:e.action==='SALLA_CATALOG_SYNCED'?'COMPLETED':'ERROR',records:e.count??null,durationMs:null,errorCode:e.errorCode||null}))
  ].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,20);
  return {summary,integrations,recentSyncActivity};

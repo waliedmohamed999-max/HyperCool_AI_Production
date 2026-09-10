@@ -3,7 +3,11 @@ export class ConnectorError extends Error {
  constructor(code){super(code);this.code=code;}
 }
 export function connectionStatus(env) {
- return {anthropic:{configured:!!(env.ANTHROPIC_API_KEY && env.ANTHROPIC_MODEL),model:env.ANTHROPIC_MODEL||null},salla:{configured:!!env.SALLA_ACCESS_TOKEN}};
+ return {
+  anthropic:{configured:!!(env.ANTHROPIC_API_KEY && env.ANTHROPIC_MODEL),model:env.ANTHROPIC_MODEL||null},
+  openai:{configured:!!(env.OPENAI_API_KEY && (env.OPENAI_DEFAULT_MODEL||env.OPENAI_MODEL)),model:env.OPENAI_DEFAULT_MODEL||env.OPENAI_MODEL||null},
+  salla:{configured:!!env.SALLA_ACCESS_TOKEN}
+ };
 }
 async function requestJson(fetcher,url,options,signal,maxBytes=2000000) {
  let response;
@@ -58,10 +62,21 @@ export async function testAnthropicConnection({env,fetcher=fetch}) {
   return {result:code==='CREDENTIALS_REJECTED'?'AUTH_FAILED':code==='RATE_LIMITED'?'RATE_LIMITED':'NETWORK_ERROR',code};
  }
 }
-export async function testSallaConnection({env,fetcher=fetch}) {
- if(!env.SALLA_ACCESS_TOKEN)return {result:'NOT_CONFIGURED',code:'SALLA_NOT_CONFIGURED'};
+export async function testOpenAIConnection({env,fetcher=fetch}) {
+ if(!connectionStatus(env).openai.configured)return {result:'NOT_CONFIGURED',code:'OPENAI_NOT_CONFIGURED'};
  try {
-  const result=await requestJson(fetcher,'https://api.salla.dev/admin/v2/products?page=1&per_page=1',{headers:{Authorization:`Bearer ${env.SALLA_ACCESS_TOKEN}`}},AbortSignal.timeout(15000));
+  await requestJson(fetcher,'https://api.openai.com/v1/models',{headers:{authorization:`Bearer ${env.OPENAI_API_KEY}`}},AbortSignal.timeout(15000));
+  return {result:'OK'};
+ } catch(error) {
+  const code=error instanceof ConnectorError?error.code:'NETWORK_OR_TIMEOUT';
+  return {result:code==='CREDENTIALS_REJECTED'?'AUTH_FAILED':code==='RATE_LIMITED'?'RATE_LIMITED':'NETWORK_ERROR',code};
+ }
+}
+export async function testSallaConnection({env,fetcher=fetch,accessToken}) {
+ const token=accessToken||env.SALLA_ACCESS_TOKEN;
+ if(!token)return {result:'NOT_CONFIGURED',code:'SALLA_NOT_CONFIGURED'};
+ try {
+  const result=await requestJson(fetcher,'https://api.salla.dev/admin/v2/products?page=1&per_page=1',{headers:{Authorization:`Bearer ${token}`}},AbortSignal.timeout(15000));
   if(result.success!==true)throw new ConnectorError('INVALID_SALLA_RESPONSE');
   return {result:'OK'};
  } catch(error) {
@@ -69,11 +84,12 @@ export async function testSallaConnection({env,fetcher=fetch}) {
   return {result:code==='CREDENTIALS_REJECTED'?'AUTH_FAILED':code==='RATE_LIMITED'?'RATE_LIMITED':'NETWORK_ERROR',code};
  }
 }
-export async function importSalla({env,fetcher=fetch}) {
- if(!env.SALLA_ACCESS_TOKEN)throw new ConnectorError('SALLA_NOT_CONFIGURED');
+export async function importSalla({env,fetcher=fetch,accessToken}) {
+ const token=accessToken||env.SALLA_ACCESS_TOKEN;
+ if(!token)throw new ConnectorError('SALLA_NOT_CONFIGURED');
  const signal=AbortSignal.timeout(45000),products=[],ids=new Set(),at=new Date().toISOString();
  for(let page=1;page<=20;page++) {
-  const result=await requestJson(fetcher,`https://api.salla.dev/admin/v2/products?page=${page}&per_page=50`,{headers:{Authorization:`Bearer ${env.SALLA_ACCESS_TOKEN}`}},signal);
+  const result=await requestJson(fetcher,`https://api.salla.dev/admin/v2/products?page=${page}&per_page=50`,{headers:{Authorization:`Bearer ${token}`}},signal);
   if(result.success!==true||!Array.isArray(result.data))throw new ConnectorError('INVALID_SALLA_RESPONSE');
   for(const row of result.data){const product=normalizeSallaProduct(row,at);if(ids.has(product.id))throw new ConnectorError('DUPLICATE_SALLA_PRODUCT');ids.add(product.id);products.push(product);}
   const pages=result.pagination?.totalPages??result.pagination?.total_pages;

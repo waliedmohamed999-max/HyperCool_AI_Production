@@ -42,7 +42,7 @@
 | التحقق البنيوي | Ajv `^8.20.0` | JSON Schema للقرارات وpayload كل وكيل. |
 | المصادقة | تنفيذ داخل `src/auth.js` | scrypt، جلسات cookies، CSRF، أدوار ثلاثة. |
 | الذكاء الاصطناعي | Anthropic API | مسار توليد/امتثال مباشر ومسار Runtime عام بأدوات. لا مزود OpenAI منفذ. |
-| الأتمتة | setInterval داخل Node + ملف n8n اختياري | لا Redis أو worker queue مستقلة. |
+| الأتمتة | setInterval داخل Node (`src/runtime/scheduler.js`) + نقطتا HTTP اختياريتان كمحفز خارجي احتياطي | لا اعتماد على أي منصة أتمتة خارجية؛ لا Redis أو worker queue مستقلة. |
 | الاختبارات | `node:test`، Playwright، axe | Playwright `^1.63.0` وaxe `^4.13.0` تبعيات تطوير. |
 | الخط | IBM Plex Sans Arabic محلي | أوزان 400–700، عربي ولاتيني، بلا تحميل خط من مزود خارجي. |
 | التشغيل | Windows حاليًا، localhost:3000 | وجود المشروع تحت xampp لا يعني أنه PHP أو Laravel أو أنه يستخدم MySQL/Apache. |
@@ -95,7 +95,7 @@ Browser / index.html
 | `src/generation.js` | توليد المحتوى وسياق brief ومنع التكرار وحفظ التشغيل. |
 | `src/compliance.js` | الفحص الآلي المساعد المرتبط ببصمة المحتوى. |
 | `src/knowledge.js` | ذاكرة بإصدارات، موافقات ومقترحات وكتالوج وسياق التوليد. |
-| `src/planning.js` | الخانات والبصمات والجدولة والحزمة اليومية وأمان n8n. |
+| `src/planning.js` | الخانات والبصمات والجدولة والحزمة اليومية وأمان المحفز الخارجي (`authorizeAutomation`). |
 | `src/crm.js` | العملاء، التأهيل، الرسائل، الموافقات، سلاسل المتابعة والإيقاف. |
 | `src/sales-dashboard.js` | حساب مؤشرات وقمع ومراحل ومحادثات وتوقعات CRM. |
 | `src/reporting.js` | الأسبوع الحالي والمقارنة والتقرير التنفيذي والحفظ. |
@@ -114,8 +114,7 @@ Browser / index.html
 | `public/styles/` | fonts، tokens، base، components، layout، pages. |
 | `agents/` | global و12 ملف دور وtasks؛ ملفات تعليمات وليست processes مستقلة. |
 | `tests/` | اختبارات خدمات وعقود وصلاحيات وتكامل HTTP. |
-| `scripts/` | استخراج البرومبتات وبناء n8n وفحص الواجهة وتقرير التسليم. |
-| `workflows/daily-operations.json` | workflow n8n قابل للاستيراد؛ ليس دليل تفعيل داخل n8n. |
+| `scripts/` | استخراج البرومبتات وفحص الواجهة وتقرير التسليم والنسخ الاحتياطي. |
 | `docs/` | النطاق والمرجع المستخرج وخطط ومذكرات التنفيذ وتقارير الواجهة وهذا التسليم. |
 
 تغييرات صغيرة في DOM يجب أن تحافظ على IDs وdata attributes التي تستخدمها مستمعات الأحداث، أو تُحدّث معها كل المستهلكين والاختبارات. تغيير اسم زر قد يكسر اختبارات تعتمد على نصه كما حدث بالفعل.
@@ -211,7 +210,7 @@ DRAFT -> REVIEWED -> APPROVED
 
 مركز المحتوى الأحدث يعرض KPIs، pipeline مبنيًا على الحالات الحقيقية، مكتبة المحتوى، ملاحظات امتثال مصنفة، وملاحظات Frost بقواعد حسابية. الحالة SCHEDULED مشتقة من schedule_jobs؛ ليست حالة أصلية جديدة داخل المحتوى. لا يوجد PUBLISHED فعلي أو campaign entity مستقل حتى لو كان هناك حقل brief اسمه campaign.
 
-## 9. التقويم والجدولة وn8n
+## 9. التقويم والجدولة والمحفز الخارجي الاختياري
 
 إنشاء التقويم يبني 30 يومًا بقواعد ثابتة: Instagram/X/Facebook يوميًا، وLinkedIn الأحد والثلاثاء والخميس. لا يولد ذلك 30 منشورًا ولا تصميمًا تلقائيًا، بل خانات وأفكار/محاور. قيد date/platform يمنع التكرار عند تداخل التقويمات.
 
@@ -223,9 +222,9 @@ DRAFT -> REVIEWED -> APPROVED
 
 المجدول الداخلي يفحص كل 300,000ms افتراضيًا. ينشئ الحزمة أثناء الساعة 08 بتوقيت الرياض، ويحاول حفظ التقرير يوم الأحد، ويفحص فجوات المتابعة كل tick. يبدأ بعد أول interval، وليس cron عند الثانية 00 بالضبط. `run-now` يستدعي tick نفسه؛ خارج الساعة 08 لا يفرض إنشاء الحزمة اليومية.
 
-ملف n8n يملك مسارين: حزمة 08:00 وتجهيز المواعيد كل خمس دقائق، بمفتاح `X-HyperCool-Token`. يحتاج n8n قادرًا على الوصول إلى loopback الصحيح. `127.0.0.1` داخل Docker أو n8n Cloud ليس حاسوب التطبيق. لا يوجد إثبات تفعيل workflow في n8n ضمن هذه المراجعة.
+نقطتا نهاية HTTP اختياريتان (`/api/automation/daily-brief`, `/api/automation/prepare-due`) بمفتاح `X-HyperCool-Token` متاحتان كمحفز خارجي احتياطي فقط — لبيئات استضافة لا تضمن بقاء عملية Node حية باستمرار لتشغيل الجدولة الداخلية بمفردها. أي مستدعٍ HTTP يعمل (cron، Windows Task Scheduler، أو أي أداة عامة)؛ لا يوجد اعتماد على أي منتج أتمتة بعينه. يجب أن يعمل المستدعي على نفس المضيف وحيز الشبكة الذي يصل إلى `127.0.0.1` الخاص بالتطبيق (الذي يستمع على loopback فقط).
 
-تنبيه للمبرمج: المجدول الداخلي الحالي لا يستدعي `prepareDue` للنشر؛ توجد العملية يدويًا أو عبر n8n. كذلك pause gate يغطي scheduler/event routing، ولا يتحقق منه مسار n8n automation؛ حدّد هل المطلوب أن يشمل الإيقاف كل مصادر الأتمتة.
+تنبيه للمبرمج: المجدول الداخلي الحالي لا يستدعي `prepareDue` للنشر؛ توجد العملية يدويًا أو عبر نقطة النهاية الاختيارية. pause gate يغطي الآن كلا المسارين (scheduler/event routing ومسار `/api/automation/*` الخارجي) — راجع `isPaused` في `src/application.js`.
 
 ## 10. CRM والمبيعات والمتابعات
 
@@ -311,7 +310,6 @@ DRAFT -> REVIEWED -> APPROVED
 | Microsoft 365 | env flag وstub | OAuth وتجديد وMail.Send والتنبيهات وreply/opt-out بحسب التصميم. |
 | Canva | env flag وstub | إنشاء design/export وربط ملف فعلي بمراجعة المحتوى. |
 | OpenAI | NOT_SUPPORTED في المركز الأحدث | إضافة provider implementation وعقود/اختبارات؛ ليس متاحًا بمجرد متغير بيئة. |
-| n8n | ملف workflow و3 APIs | إعداد credential وتنفيذ يدوي ثم تفعيل ومراقبة. |
 
 مركز التكاملات الأحدث يعرض الإعدادات المطلوبة دون القيم السرية، تاريخ النشاط، الأخطاء، التبعيات وتفاصيل scopes توثيقية. هذه scopes ليست صلاحيات مقروءة من حساب متصل، ويجب مراجعة متطلبات كل مزود عند بناء موصله.
 
@@ -337,7 +335,7 @@ DRAFT -> REVIEWED -> APPROVED
 
 ## 16. فهرس API الحالي
 
-الرموز: «جلسة» تعني أدوار owner/operator/reviewer ما لم يوجد قيد إضافي. كل POST المحمي يحتاج CSRF؛ أتمتة n8n لها مفتاح مستقل. القواعد التفصيلية للخدمة قد تمنع عملية رغم قبول الدور العام.
+الرموز: «جلسة» تعني أدوار owner/operator/reviewer ما لم يوجد قيد إضافي. كل POST المحمي يحتاج CSRF؛ نقطتا نهاية المحفز الخارجي (`/api/automation/*`) لهما مفتاح مستقل (`AUTOMATION_TOKEN`) بدلًا من CSRF. القواعد التفصيلية للخدمة قد تمنع عملية رغم قبول الدور العام.
 
 | Method | Path | الصلاحية/الوظيفة |
 | --- | --- | --- |
@@ -435,7 +433,7 @@ npm start
 | `AI_API_KEY` | بديل Runtime عن ANTHROPIC_API_KEY. |
 | `AI_DEFAULT_MODEL` | بديل Runtime عن ANTHROPIC_MODEL. |
 | `SALLA_ACCESS_TOKEN` | استيراد المنتجات واختبار سلة. |
-| `AUTOMATION_TOKEN` | سر n8n بطول 32 على الأقل. |
+| `AUTOMATION_TOKEN` | سر المحفز الخارجي الاختياري (`/api/automation/*`) بطول 32 على الأقل — أي مستدعٍ HTTP، وليس منتجًا بعينه. |
 | `SCHEDULER_INTERVAL_MS` | مدة tick؛ الافتراضي خمس دقائق. |
 | `WHATSAPP_ACCESS_TOKEN` | علامة إعداد للموصل الناقص. |
 | `META_ACCESS_TOKEN` | علامة إعداد للموصل الناقص. |
@@ -449,7 +447,7 @@ npm start
 
 التطبيق يقبل Host/Origin محليين فقط. وضعه خلف domain/HTTPS/reverse proxy يحتاج تعديلًا مقصودًا للـorigin/cookie/trust proxy؛ ليس مجرد تغيير PORT. لا تُزل الحماية عالميًا لجعل الدومين يعمل.
 
-أوامر إضافية: `npm run agents:extract` يعيد استخراج ملفات prompts؛ `npm run workflows:build` يبني n8n؛ `npm run test:ui` رحلة المتصفح القديمة؛ `npm run ui:screenshots` تصوير smoke؛ `node scripts/handoff-audit.mjs` فحص التسليم الحالي المعزول.
+أوامر إضافية: `npm run agents:extract` يعيد استخراج ملفات prompts؛ `npm run test:ui` رحلة المتصفح القديمة؛ `npm run ui:screenshots` تصوير smoke؛ `node scripts/handoff-audit.mjs` فحص التسليم الحالي المعزول.
 
 ## 18. نتيجة الاختبارات وحدود ما ثبت
 
@@ -555,7 +553,7 @@ P0 = قبل أي إرسال خارجي/إطلاق عام. P1 = قبل الاعت
 
 ## 24. مراجع التسليم
 
-المراجع داخل المشروع: `docs/project-scope.md`، `docs/playbook-extracted.txt`، `docs/agent-runtime.md`، `docs/crm-and-followups.md`، `docs/planning-and-n8n.md`، `docs/connections.md`، `docs/ui-design-audit.md`، `docs/ui-redesign-report.md`.
+المراجع داخل المشروع: `docs/project-scope.md`، `docs/playbook-extracted.txt`، `docs/agent-runtime.md`، `docs/crm-and-followups.md`، `docs/planning-and-automation.md`، `docs/connections.md`، `docs/ui-design-audit.md`، `docs/ui-redesign-report.md`.
 
 عند تعارض مرجع تاريخي مع الكود، يرجع المبرمج إلى الملف والاختبار المشار إليهما في هذا التقرير، ثم يحسم إن كان التعارض نقصًا في التنفيذ أو قدمًا في الوثيقة. لا تعالج التعارض بتغيير قواعد العمل سرًا.
 

@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
 import {openStore} from '../src/store.js';
 import {createContent,reviewContent,approveContent} from '../src/domain.js';
 import {installPlanning,createCalendar,listSlots,listJobs,scheduleContent,cancelJobs,prepareDue,buildBrief,saveDailyBrief,riyadhDate,authorizeAutomation} from '../src/planning.js';
@@ -69,11 +68,8 @@ test('brief snapshots are idempotent and do not fabricate disconnected KPIs',()=
  assert.equal(saveDailyBrief(store,'2030-01-01',owner).replayed,true);
  }finally{store.close();}
 });
-test('automation secret is required and workflow remains inactive without outbound publishing',()=>{
+test('automation secret is required for external trigger calls, independent of any specific caller',()=>{
  assert.throws(()=>authorizeAutomation({headers:{}},{}));
  assert.throws(()=>authorizeAutomation({headers:{'x-hypercool-token':'wrong'}},{AUTOMATION_TOKEN:'x'.repeat(32)}));
  assert.doesNotThrow(()=>authorizeAutomation({headers:{'x-hypercool-token':'x'.repeat(32)}},{AUTOMATION_TOKEN:'x'.repeat(32)}));
- const workflow=JSON.parse(readFileSync(new URL('../workflows/daily-operations.json',import.meta.url),'utf8'));
- assert.equal(workflow.active,false);assert.equal(workflow.settings.timezone,'Asia/Riyadh');
- for(const node of workflow.nodes.filter(n=>n.type==='n8n-nodes-base.httpRequest'))assert.match(node.parameters.url,/^http:\/\/127\.0\.0\.1:3000\/api\/automation\/(daily-brief|prepare-due)$/);
 });

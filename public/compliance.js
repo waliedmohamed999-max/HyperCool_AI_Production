@@ -1,7 +1,8 @@
+import {t} from './i18n.js';
 const results=new Map(),keys=new Map();
-const labels={PASS:'مطابق',PASS_WITH_EDITS:'مطابق مع ملاحظات',BLOCK:'محظور'};
-const severities={LOW:'منخفض',MEDIUM:'متوسط',HIGH:'عالٍ'};
-const errors={ANTHROPIC_NOT_CONFIGURED:'إعداد Anthropic غير مكتمل',CREDENTIALS_REJECTED:'رفض الخدمة لبيانات الدخول',RATE_LIMITED:'تم تجاوز حد الطلبات',NETWORK_OR_TIMEOUT:'انقطع الاتصال أو انتهت المهلة',INVALID_MODEL_OUTPUT:'مخرجات الموديل لا تطابق العقد',INCOMPLETE_MODEL_OUTPUT:'لم يكتمل رد الموديل',CONTENT_CHANGED:'تغير المحتوى أثناء الفحص؛ أعد التشغيل',CHECK_FAILED:'تعذر تشغيل الفحص'};
+const labels=new Proxy({},{get:(_,code)=>{const key='content.classification'+code.split('_').map(p=>p.charAt(0)+p.slice(1).toLowerCase()).join('');const value=t(key);return value===key?undefined:value;}});
+const severities=new Proxy({},{get:(_,code)=>{const key='content.severity'+code.charAt(0)+code.slice(1).toLowerCase();const value=t(key);return value===key?undefined:value;}});
+const errors=new Proxy({},{get:(_,code)=>{const key='content.error'+code.split('_').map(p=>p.charAt(0)+p.slice(1).toLowerCase()).join('');const value=t(key);return value===key?undefined:value;}});
 const fingerprint=item=>JSON.stringify({title:item.title,body:item.body,englishCopy:item.englishCopy||'',url:item.url,assetUrl:item.assetUrl||'',platform:item.platform,date:item.date});
 function requestKeyFor(id,fp) {
  const cached=keys.get(id);
@@ -12,11 +13,11 @@ export function resetCompliance(){results.clear();keys.clear();}
 export function renderComplianceCheck(item,escape) {
  const fp=fingerprint(item),entry=results.get(item.id),stale=!entry||entry.fingerprint!==fp;
  const key=requestKeyFor(item.id,fp);
- const body=stale?'<p>لم يُشغَّل فحص آلي على هذه النسخة بعد.</p>'
-  :entry.status==='RUNNING'?'<p>الفحص قيد التنفيذ…</p>'
-  :entry.status!=='COMPLETED'?`<p>${escape(errors[entry.errorCode]||entry.errorCode||'تعذر إكمال الفحص')}</p>`
-  :`<p><b>${escape(labels[entry.decision.payload?.classification]||entry.decision.status)}</b>${entry.decision.payload?.reason?' — '+escape(entry.decision.payload.reason):''}</p>${(entry.decision.payload?.issues||[]).map(issue=>`<p>${escape(severities[issue.severity]||issue.severity)} · ${escape(issue.field)}: ${escape(issue.problem)}${issue.correction?' — اقتراح: '+escape(issue.correction):''}</p>`).join('')||'<p>لا ملاحظات من الفحص الآلي.</p>'}`;
- return `<details class="compliance-check"><summary>فحص الامتثال الآلي (مساعد فقط)</summary>${body}<p><small>هذا الفحص مساعد للمراجع البشري ولا يغني عن تعبئة نموذج المراجعة أدناه ولا يعتمد كمراجعة موثقة.</small></p><button type="button" data-compliance-check="${item.id}" data-fp="${escape(fp)}" data-request-key="${key}">${stale?'تشغيل الفحص':'إعادة التشغيل على هذه النسخة'}</button></details>`;
+ const body=stale?`<p>${t('content.notRunYet')}</p>`
+  :entry.status==='RUNNING'?`<p>${t('content.checkRunning')}</p>`
+  :entry.status!=='COMPLETED'?`<p>${escape(errors[entry.errorCode]||entry.errorCode||t('content.checkIncompleteFallback'))}</p>`
+  :`<p><b>${escape(labels[entry.decision.payload?.classification]||entry.decision.status)}</b>${entry.decision.payload?.reason?' — '+escape(entry.decision.payload.reason):''}</p>${(entry.decision.payload?.issues||[]).map(issue=>`<p>${escape(severities[issue.severity]||issue.severity)} · ${escape(issue.field)}: ${escape(issue.problem)}${issue.correction?escape(t('content.correctionSuggestionPrefix'))+escape(issue.correction):''}</p>`).join('')||`<p>${t('content.noAutoCheckNotes')}</p>`}`;
+ return `<details class="compliance-check"><summary>${t('content.complianceCheckSummary')}</summary>${body}<p><small>${t('content.complianceAssistiveNote')}</small></p><button type="button" data-compliance-check="${item.id}" data-fp="${escape(fp)}" data-request-key="${key}">${stale?t('content.runCheckButton'):t('content.rerunCheckButton')}</button></details>`;
 }
 export async function clickCompliance(button,api) {
  const id=button.dataset.complianceCheck,fp=button.dataset.fp,requestKey=button.dataset.requestKey;
@@ -24,6 +25,6 @@ export async function clickCompliance(button,api) {
  try {
   const run=await api(`/api/content/${id}/compliance`,{requestKey});
   results.set(id,{fingerprint:fp,status:run.status,decision:run.decision,errorCode:run.errorCode});
-  return run.replayed?'نتيجة الفحص لهذه النسخة محفوظة بالفعل':run.status==='COMPLETED'?'تم تشغيل فحص الامتثال الآلي — مساعد فقط':(errors[run.errorCode]||'تعذر إكمال الفحص');
+  return run.replayed?t('content.toastAlreadyChecked'):run.status==='COMPLETED'?t('content.toastCheckCompleted'):(errors[run.errorCode]||t('content.checkIncompleteFallback'));
  } catch(error) {results.delete(id);throw error;}
 }

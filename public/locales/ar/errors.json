@@ -1,0 +1,15 @@
+{
+  "networkOrTimeout": "انقطع الاتصال أو انتهت المهلة",
+  "authFailed": "فشل التحقق من الهوية",
+  "credentialsRejected": "رفض الخدمة لبيانات الدخول",
+  "rateLimited": "تم تجاوز حد الطلبات",
+  "notConfigured": "الإعداد غير مكتمل",
+  "invalidModelOutput": "مخرجات النموذج لا تطابق العقد المتوقع",
+  "incompleteModelOutput": "لم يكتمل رد النموذج",
+  "contentChanged": "تغيّر المحتوى أثناء الفحص؛ أعد التشغيل",
+  "checkFailed": "تعذر تشغيل الفحص",
+  "permissionDenied": "حسابك لا يملك صلاحية هذا الإجراء",
+  "sessionExpired": "انتهت الجلسة؛ سجّل الدخول مرة أخرى",
+  "validationError": "تحقق من صحة البيانات المدخلة",
+  "unknownError": "حدث خطأ غير متوقع"
+}

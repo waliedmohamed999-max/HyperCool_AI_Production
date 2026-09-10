@@ -166,7 +166,7 @@ Twelve agents. Names are placeholders — rename to match the HADER convention i
 |---|---|---|
 | Reasoning core | Claude (Anthropic API) | One system prompt per agent, shared brand-memory file. |
 | Build environment | Claude Code / Cowork | Agents defined as skills + scheduled tasks. |
-| Orchestration | Make.com or n8n | Scheduling, retries, webhooks, approval routing. |
+| Orchestration | Native in-process runtime (`src/runtime/`) | As built: internal event bus, Frost orchestrator, scheduler, approvals and escalations all run inside the app's own backend — no external automation platform. Two optional token-gated HTTP endpoints (`/api/automation/*`) exist only as a redundant external trigger for hosting environments that can't guarantee a long-running process; any caller works, none is required. |
 | Instagram + Facebook | Meta Graph API — Instagram Platform, Pages API, Instagram Messaging API | Requires a Professional/Business account, a Meta Business app, and app review for messaging permissions. |
 | X | X API | Posting tier required; DM access is a separate scope. |
 | LinkedIn | LinkedIn Marketing / Community Management API | Company-page posting only. **No personal-profile automation.** |
@@ -258,7 +258,7 @@ Proposed targets for month 3 — confirm or adjust before Phase 1.
 ## 11. Deliverables
 
 1. Twelve agent definitions with system prompts, tools and guardrails.
-2. Orchestration scenarios (Make/n8n) with approval routing.
+2. Orchestration: native in-process runtime with approval routing (as built — no Make/n8n dependency).
 3. Brand memory file: voice, approved claims, price list, objection library, FAQ.
 4. 30-day content calendar, pre-loaded.
 5. WhatsApp message templates, submitted and approved.

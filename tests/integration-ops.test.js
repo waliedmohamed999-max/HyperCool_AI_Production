@@ -91,23 +91,24 @@ test('summary counts match the real per-integration statuses, covering every cat
  const store=fixture();
  const dash=buildIntegrationsDashboard(store,{env:noEnv,aiRuns:[],complianceRuns:[]});
  assert.equal(dash.summary.total,INTEGRATIONS.length);
- assert.equal(dash.summary.needsSetup,INTEGRATIONS.length-1); // every real/stub integration except the one marked unsupported
+ assert.equal(dash.summary.needsSetup,INTEGRATIONS.length); // every integration is a real, actionable "needs setup" item now — none are marked unsupported
  assert.equal(dash.summary.connected,0);
  assert.equal(dash.summary.errors,0);
 });
-test('an integration explicitly marked unsupported (OpenAI) is never shown as needing setup or connected',()=>{
+test('OpenAI (a real second AgentRuntime provider) needs setup with no env vars configured',()=>{
  const store=fixture();
- const dash=buildIntegrationsDashboard(store,{env:noEnv,aiRuns:[],complianceRuns:[]});
+ const dash=buildIntegrationsDashboard(store,{env:noEnv,aiRuns:[],complianceRuns:[],agentRuns:[]});
  const openai=dash.integrations.find(i=>i.id==='openai');
- assert.equal(openai.status,'NOT_SUPPORTED');
- assert.equal(openai.envVars.length,0);
- // Excluded from all four headline buckets — it is not an actionable "needs setup" item.
- assert.equal(dash.summary.needsSetup+dash.summary.connected+dash.summary.attentionRequired+dash.summary.errors,INTEGRATIONS.length-1);
+ assert.equal(openai.status,'NEEDS_SETUP');
+ assert.deepEqual(openai.envVars.map(v=>v.name),['OPENAI_API_KEY','OPENAI_DEFAULT_MODEL']);
 });
-test('setting a made-up OPENAI env var still never flips OpenAI to CONNECTED — there is no connector to use it',()=>{
+test('OpenAI configured but never actually run by any agent is CONFIGURED_NO_CONNECTOR, not CONNECTED — only a real successful agent run proves it works',()=>{
  const store=fixture();
- const dash=buildIntegrationsDashboard(store,{env:{OPENAI_API_KEY:'sk-whatever'},aiRuns:[],complianceRuns:[]});
- assert.equal(dash.integrations.find(i=>i.id==='openai').status,'NOT_SUPPORTED');
+ const env={OPENAI_API_KEY:'sk-whatever',OPENAI_DEFAULT_MODEL:'gpt-test'};
+ const configuredNoRuns=buildIntegrationsDashboard(store,{env,aiRuns:[],complianceRuns:[],agentRuns:[]});
+ assert.equal(configuredNoRuns.integrations.find(i=>i.id==='openai').status,'CONFIGURED_NO_CONNECTOR');
+ const withRealRun=buildIntegrationsDashboard(store,{env,aiRuns:[],complianceRuns:[],agentRuns:[{agent_id:'sales',provider:'openai',status:'COMPLETED',started_at:'2030-01-01T00:00:00.000Z',finished_at:'2030-01-01T00:00:01.000Z',latency_ms:1000}]});
+ assert.equal(withRealRun.integrations.find(i=>i.id==='openai').status,'CONNECTED');
 });
 test('no integration exposes a raw secret value anywhere in the dashboard payload',()=>{
  const store=fixture();

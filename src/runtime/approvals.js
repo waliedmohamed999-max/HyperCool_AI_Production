@@ -11,6 +11,7 @@ export const ACTION_TYPES=['publish_content','send_marketing_message','discount'
 
 export function installApprovals(db) {
  db.exec('CREATE TABLE IF NOT EXISTS agent_approvals (id TEXT PRIMARY KEY, run_id TEXT, agent_id TEXT NOT NULL, action_type TEXT NOT NULL, proposed_output TEXT NOT NULL, risk_level TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL, decided_by TEXT, decided_by_name TEXT, decided_at TEXT, created_at TEXT NOT NULL);');
+ db.exec('CREATE INDEX IF NOT EXISTS idx_agent_approvals_status ON agent_approvals(status);');
 }
 export function createApproval(db,{runId,agentId,actionType,proposedOutput,riskLevel,reason}) {
  if(!ACTION_TYPES.includes(actionType))fail(400,'نوع إجراء غير معروف للموافقة');

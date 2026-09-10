@@ -1,0 +1,8 @@
+{
+  "required": "This field is required",
+  "invalidEmail": "Invalid email address",
+  "invalidUrl": "Invalid URL",
+  "tooShort": "This value is too short",
+  "tooLong": "This value is too long",
+  "passwordMinLength": "Password must be at least 12 characters"
+}

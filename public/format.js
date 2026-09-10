@@ -4,13 +4,19 @@
 // `empty` is re-exported (not redefined) from the shared ui kit so every page renders the
 // exact same empty-state markup — icon, escaped title, escaped hint — instead of a
 // page-local variant that quietly drifted from it.
-import {empty} from './components/ui/index.js';
+import {empty,escape} from './components/ui/index.js';
+import {getLocale,t} from './i18n.js';
 export {empty};
+// fmtNum/fmtSAR keep Western tabular digits in both languages (matches the tables'
+// font-variant-numeric:tabular-nums) since they're dense counts/amounts; fmtDate/fmtDateTime
+// simply follow whichever Intl locale is active — unchanged from the app's existing Arabic
+// date behavior, now also switching to en-US month names/order in English mode.
+const intlLocale=()=>getLocale()==='en'?'en-US':'ar-SA';
 export const fmtNum=n=>Number.isFinite(n)?n.toLocaleString('en-US'):'—';
-export const fmtSAR=n=>Number.isFinite(n)?n.toLocaleString('en-US',{maximumFractionDigits:0})+' ر.س':'—';
-export const fmtDate=iso=>iso?new Date(iso+'T12:00:00Z').toLocaleDateString('ar-SA',{day:'numeric',month:'short',timeZone:'UTC'}):'';
+export const fmtSAR=n=>Number.isFinite(n)?n.toLocaleString('en-US',{maximumFractionDigits:0})+(getLocale()==='en'?' SAR':' ر.س'):'—';
+export const fmtDate=iso=>iso?new Date(iso+'T12:00:00Z').toLocaleDateString(intlLocale(),{day:'numeric',month:'short',timeZone:'UTC'}):'';
 export const fmtDateRange=(start,end)=>`${fmtDate(start)} ← ${fmtDate(new Date(Date.parse(end)-86400000).toISOString().slice(0,10))}`;
-export const fmtDateTime=iso=>iso?new Date(iso).toLocaleString('ar-SA',{timeZone:'Asia/Riyadh',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+export const fmtDateTime=iso=>iso?new Date(iso).toLocaleString(intlLocale(),{timeZone:'Asia/Riyadh',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
 
 export function miniStat(label,value) {
  return `<div class="kpi-card"><span class="kpi-label">${label}</span><span class="kpi-value" dir="ltr">${value}</span></div>`;
@@ -21,14 +27,14 @@ export function kpiCard(def,kpi,escape) {
  const noData=(kpi.value||0)===0 && (!hasComparison || (kpi.previous||0)===0);
  let trend='';
  if(hasComparison) {
-  if(noData)trend='<span class="kpi-trend neutral">لا توجد بيانات كافية</span>';
+  if(noData)trend=`<span class="kpi-trend neutral">${escape(t('common.charts.kpiNotEnoughData'))}</span>`;
   else {
    const dir=kpi.trend==='flat'?'neutral':(def.good==='up'?(kpi.trend==='up'?'good':'bad'):(kpi.trend==='down'?'good':'bad'));
    const arrow=kpi.trend==='up'?'↑':kpi.trend==='down'?'↓':'—';
    trend=`<span class="kpi-trend ${dir}" dir="ltr">${arrow}${kpi.changePercent!==null?' '+Math.abs(kpi.changePercent)+'%':''}</span>`;
   }
  }
- const context=hasComparison?'مقارنة بالفترة السابقة':escape(kpi.note||'');
+ const context=hasComparison?t('common.charts.kpiComparedToPreviousPeriod'):escape(kpi.note||'');
  const cls='kpi-card'+(def.page?' clickable':'');
  const attr=def.page?` data-report-nav="${def.page}"`:'';
  return `<div class="${cls}"${attr}><span class="kpi-label">${escape(def.label)}</span><span class="kpi-value" dir="ltr">${value}</span>${trend}<span class="kpi-context">${context}</span></div>`;
@@ -40,16 +46,26 @@ export function proportionalBar(fraction,className) {
  return `<svg viewBox="0 0 100 24" preserveAspectRatio="none" class="proportional-track" role="presentation"><rect class="${className}" x="0" y="0" width="${width}" height="24" rx="6"></rect></svg>`;
 }
 export function renderBarChart(entries,escape) {
- if(!entries.length)return empty('لا توجد بيانات كافية بعد.');
+ if(!entries.length)return empty(t('common.charts.notEnoughData'));
  const max=Math.max(...entries.map(e=>e[1]),1);
  return `<div class="bar-chart">${entries.map(([label,count])=>`<div class="bar-row"><span>${escape(label)}</span><div class="bar-track">${proportionalBar(count/max,'bar-svg-fill')}</div><span class="bar-value" dir="ltr">${fmtNum(count)}</span></div>`).join('')}</div>`;
 }
 export function renderFunnel(funnel,escape) {
- if(!funnel.hasData)return empty('سيظهر Funnel المبيعات هنا بعد توفر بيانات كافية في CRM.','أضف عملاء محتملين من صفحة «العملاء والمبيعات».');
+ if(!funnel.hasData)return empty(t('common.charts.funnelEmptyTitle'),t('common.charts.funnelEmptyHint'));
  const max=Math.max(...funnel.stages.map(s=>s.count),1);
- return `<div class="funnel">${funnel.stages.map(stage=>`<div class="funnel-row"><span class="funnel-label">${escape(stage.label)}</span><div class="funnel-track">${proportionalBar(stage.count/max,'funnel-svg-fill')}</div><span class="funnel-count" dir="ltr">${fmtNum(stage.count)}</span>${stage.dropOffPercent?`<span class="funnel-dropoff" dir="ltr">↓ ${stage.dropOffPercent}%</span>`:'<span></span>'}</div>`).join('')}</div><p><small>لقطة حالية لكل الفرص النشطة، وليست تتبعًا تاريخيًا للتحويل.</small></p>`;
+ return `<div class="funnel">${funnel.stages.map(stage=>`<div class="funnel-row"><span class="funnel-label">${escape(stage.label)}</span><div class="funnel-track">${proportionalBar(stage.count/max,'funnel-svg-fill')}</div><span class="funnel-count" dir="ltr">${fmtNum(stage.count)}</span>${stage.dropOffPercent?`<span class="funnel-dropoff" dir="ltr">↓ ${stage.dropOffPercent}%</span>`:'<span></span>'}</div>`).join('')}</div><p><small>${t('common.charts.funnelSnapshotNote')}</small></p>`;
 }
-export const stageNames={NEW:'جديد',QUALIFIED:'مؤهل',QUOTE_SENT:'عرض سعر مُرسل',DEMO:'عرض توضيحي',POST_PURCHASE:'ما بعد الشراء',PARKED:'مؤجل',WON:'مكتسب',LOST:'مفقود'};
+// Real CRM stage codes (never translated in the DB) → locale-aware display text, computed
+// fresh on every access so a language switch relabels the pipeline/select-options/pills
+// everywhere this is used with zero other code touched. Object.entries()/Object.keys() work
+// on this Proxy exactly like a plain object (ownKeys + getOwnPropertyDescriptor traps).
+const STAGE_KEYS=['NEW','QUALIFIED','QUOTE_SENT','DEMO','POST_PURCHASE','PARKED','WON','LOST'];
+export const stageNames=new Proxy({},{
+ get:(_,key)=>STAGE_KEYS.includes(key)?t('statuses.'+key):undefined,
+ ownKeys:()=>STAGE_KEYS,
+ has:(_,key)=>STAGE_KEYS.includes(key),
+ getOwnPropertyDescriptor:(_,key)=>STAGE_KEYS.includes(key)?{enumerable:true,configurable:true}:undefined
+});
 
 // Fixed, CSS-class-driven color set for the widgets below. Colors must come from a class
 // (defined in styles/pages.css against the real design tokens), never a raw hex or CSS
@@ -62,7 +78,7 @@ export const chartColors=['chart-c1','chart-c2','chart-c3','chart-c4','chart-c5'
 export function renderDonut(segments,escape,{size=112,thickness=13}={}) {
  const real=segments.filter(s=>s.value>0);
  const total=real.reduce((sum,s)=>sum+s.value,0);
- if(!total)return empty('لا توجد بيانات كافية بعد.');
+ if(!total)return empty(t('common.charts.notEnoughData'));
  const r=(size-thickness)/2,c=2*Math.PI*r,center=size/2;
  let offset=0;
  const arcs=real.map((s,i)=>{
@@ -72,13 +88,13 @@ export function renderDonut(segments,escape,{size=112,thickness=13}={}) {
   return html;
  }).join('');
  const legend=real.map((s,i)=>`<li><span class="legend-dot ${s.colorClass||chartColors[i%chartColors.length]}"></span>${escape(s.label)}<b dir="ltr">${fmtNum(s.value)}</b></li>`).join('');
- return `<div class="donut-chart"><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="رسم دائري"><g transform="rotate(-90 ${center} ${center})">${arcs}</g><text x="${center}" y="${center-2}" text-anchor="middle" class="donut-total">${fmtNum(total)}</text><text x="${center}" y="${center+14}" text-anchor="middle" class="donut-total-label">الإجمالي</text></svg><ul class="donut-legend">${legend}</ul></div>`;
+ return `<div class="donut-chart"><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="${escape(t('common.charts.donutChartLabel'))}"><g transform="rotate(-90 ${center} ${center})">${arcs}</g><text x="${center}" y="${center-2}" text-anchor="middle" class="donut-total">${fmtNum(total)}</text><text x="${center}" y="${center+14}" text-anchor="middle" class="donut-total-label">${escape(t('common.charts.total'))}</text></svg><ul class="donut-legend">${legend}</ul></div>`;
 }
 // A tiny inline trend line for a colored stat card. values: plain numbers, oldest first.
 // With fewer than 2 real points there is no trend to draw — say so instead of a flat fake line.
 export function renderSparkline(values,colorClass='chart-c1') {
  const real=values.filter(Number.isFinite);
- if(real.length<2)return '<p class="spark-empty">بيانات غير كافية لعرض اتجاه</p>';
+ if(real.length<2)return `<p class="spark-empty">${escape(t('common.charts.sparklineNotEnough'))}</p>`;
  const min=Math.min(...real),max=Math.max(...real),span=max-min||1;
  const pts=real.map((v,i)=>`${(i/(real.length-1)*100).toFixed(1)},${(28-(v-min)/span*26).toFixed(1)}`);
  const area=`0,30 ${pts.join(' ')} 100,30`;
@@ -92,7 +108,7 @@ export function renderTrendChart(points,escape,colorClass='chart-c1') {
   // A ghost axis instead of a bare box — signals "chart is coming", not "broken".
   const w=600,h=180;
   const gridlines=[0.25,0.5,0.75].map(f=>`<line x1="10" y1="${(h-16)*f+8}" x2="${w-10}" y2="${(h-16)*f+8}" class="trend-ghost-grid"></line>`).join('');
-  return `<div class="trend-empty"><svg viewBox="0 0 ${w} ${h}" class="trend-chart" role="presentation">${gridlines}<line x1="10" y1="${h-16}" x2="${w-10}" y2="${h-16}" class="trend-ghost-axis"></line></svg><div class="trend-empty-note">${empty('يحتاج أسبوعين محفوظين على الأقل لعرض اتجاه.','احفظ التقرير الأسبوعي كل أسبوع من صفحة التقرير الأسبوعي.')}</div></div>`;
+  return `<div class="trend-empty"><svg viewBox="0 0 ${w} ${h}" class="trend-chart" role="presentation">${gridlines}<line x1="10" y1="${h-16}" x2="${w-10}" y2="${h-16}" class="trend-ghost-axis"></line></svg><div class="trend-empty-note">${empty(t('common.charts.trendNeedsTwoWeeks'),t('common.charts.trendSaveWeekly'))}</div></div>`;
  }
  const min=Math.min(...real.map(p=>p.value),0),max=Math.max(...real.map(p=>p.value),1),span=max-min||1;
  const w=600,h=180,padX=10,padY=16;
@@ -105,7 +121,7 @@ export function renderTrendChart(points,escape,colorClass='chart-c1') {
  // for the hover tooltip without recomputing the scale — no separate data channel needed.
  const dots=real.map((p,i)=>`<circle class="${colorClass} trend-dot" cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3.5" data-x="${x(i).toFixed(1)}" data-y="${y(p.value).toFixed(1)}" data-label="${escape(p.label)}" data-value="${escape(fmtNum(p.value))}"></circle>`).join('');
  const hoverLayer=`<g class="trend-hover" visibility="hidden"><line class="trend-hover-line" x1="0" y1="${padY}" x2="0" y2="${h-padY}"></line><circle class="${colorClass} trend-hover-dot" r="5.5"></circle><g class="trend-tooltip"><rect class="trend-tooltip-bg" width="86" height="34" rx="6"></rect><text class="trend-tooltip-label" x="8" y="14">.</text><text class="trend-tooltip-value" x="8" y="27">.</text></g></g>`;
- return `<svg viewBox="0 0 ${w} ${h}" class="trend-chart" role="img" aria-label="اتجاه أسبوعي"><polygon class="${colorClass} spark-fill" points="${area}"></polygon><polyline class="${colorClass} spark-line" fill="none" stroke-width="2.5" points="${pts.join(' ')}"></polyline>${dots}${labels}${hoverLayer}</svg>`;
+ return `<svg viewBox="0 0 ${w} ${h}" class="trend-chart" role="img" aria-label="${escape(t('common.charts.weeklyTrendLabel'))}"><polygon class="${colorClass} spark-fill" points="${area}"></polygon><polyline class="${colorClass} spark-line" fill="none" stroke-width="2.5" points="${pts.join(' ')}"></polyline>${dots}${labels}${hoverLayer}</svg>`;
 }
 // Attaches real mouse-hover interactivity to every .trend-chart SVG inside container:
 // a guide line, a highlighted dot and a small tooltip that snap to the nearest real data

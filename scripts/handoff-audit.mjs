@@ -21,7 +21,7 @@ try{
  for(const width of [1440,1920,768,390])for(const route of ['overview','crm','planning','reports','content','agents','knowledge','integrations','audit','users']){
   await page.setViewportSize({width,height:1000});await page.evaluate(route=>document.querySelector(`nav a[href="#${route}"]`).click(),route);await page.evaluate(()=>document.querySelector('#message').replaceChildren());await page.screenshot({path:`${output}/${route}-${width}.png`,fullPage:true});
   const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
-  await auditPage.setViewportSize({width,height:1000});await auditPage.evaluate(route=>document.querySelector(`nav a[href="#${route}"]`).click(),route);
+  await auditPage.setViewportSize({width,height:1000});await auditPage.evaluate(route=>document.querySelector(`nav a[href="#${route}"]`).click(),route);await auditPage.waitForTimeout(200);
   const axe=await new AxeBuilder({page:auditPage}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();
   result.screens.push({route,width,overflow,violations:axe.violations.map(v=>({id:v.id,impact:v.impact,targets:v.nodes.map(n=>n.target)}))});
  }

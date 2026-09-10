@@ -8,6 +8,8 @@ export function openStore(path, legacyPath) {
     CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','reviewer','operator')), password TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), csrf TEXT NOT NULL, expires INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires);
   `);
   // Additive-only migration for Team Management: existing rows get status='active' (they
   // could already log in, so this reflects real current capability) and NULL timestamps
@@ -16,6 +18,10 @@ export function openStore(path, legacyPath) {
   if(!userColumns.includes('status'))db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended'))");
   if(!userColumns.includes('created_at'))db.exec('ALTER TABLE users ADD COLUMN created_at TEXT');
   if(!userColumns.includes('last_login_at'))db.exec('ALTER TABLE users ADD COLUMN last_login_at TEXT');
+  // Additive-only migration for account-level language preference (i18n). NULL means "no
+  // preference recorded yet" — the client falls back to its own saved preference, then to
+  // the product default (Arabic), never to the browser's Accept-Language.
+  if(!userColumns.includes('preferred_locale'))db.exec("ALTER TABLE users ADD COLUMN preferred_locale TEXT CHECK(preferred_locale IN ('ar','en'))");
   if (!db.prepare('SELECT id FROM state WHERE id=1').get()) {
     const state = legacyPath && existsSync(legacyPath) ? JSON.parse(readFileSync(legacyPath,'utf8')) : initialState();
     if (!Array.isArray(state.content) || !Array.isArray(state.audit)) throw new Error('Invalid legacy state');

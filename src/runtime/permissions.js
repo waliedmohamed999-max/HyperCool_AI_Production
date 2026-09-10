@@ -7,6 +7,17 @@ import {currentAutonomy,listAutonomyLog,levels} from '../autonomy.js';
 export function levelOf(db,agentId) {
  return currentAutonomy(db)[agentId]?.level||'L0';
 }
+// Launch-safety cap: SYSTEM_MODE=PRODUCTION_SAFE (see DEPLOYMENT.md) forces every agent
+// down to L1 regardless of what's stored in the audited autonomy ledger, without touching
+// the ledger itself — an owner can still see/set L2/L3 in the UI, it just won't take
+// effect until SYSTEM_MODE is raised. Any other/unset SYSTEM_MODE leaves the real stored
+// level untouched (unchanged, backward-compatible default behavior).
+const SYSTEM_MODE_CAPS={PRODUCTION_SAFE:'L1'};
+export function effectiveLevel(dbLevel,env={}) {
+ const cap=SYSTEM_MODE_CAPS[env.SYSTEM_MODE];
+ if(!cap)return dbLevel;
+ return levels.indexOf(dbLevel)<=levels.indexOf(cap)?dbLevel:cap;
+}
 export function canUseTool(level,tool) {
  if(!tool.minLevel)return true;
  return levels.indexOf(level)>=levels.indexOf(tool.minLevel);

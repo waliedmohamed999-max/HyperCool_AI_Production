@@ -4,9 +4,13 @@ import {EventEmitter} from 'node:events';
 // The fixed vocabulary from the spec. Anything else is a programming error, not a runtime one.
 export const EVENT_TYPES=[
  'CUSTOMER_MESSAGE_RECEIVED','LEAD_CREATED','LEAD_QUALIFIED','LEAD_HOT','QUOTE_REQUESTED','QUOTE_SENT',
- 'ORDER_CREATED','ORDER_COMPLETED','CART_ABANDONED','CONTENT_IDEA_CREATED','CONTENT_COPY_READY',
+ 'ORDER_CREATED','ORDER_UPDATED','ORDER_COMPLETED','CART_ABANDONED','CONTENT_IDEA_CREATED','CONTENT_COPY_READY',
  'CONTENT_COMPLIANCE_PASSED','CONTENT_APPROVED','CONTENT_PUBLISHED','FOLLOWUP_DUE','AGENT_RUN_FAILED',
- 'INTEGRATION_FAILED','COMPETITOR_SIGNAL_FOUND','DAILY_BRIEF_REQUIRED','WEEKLY_REPORT_REQUIRED'
+ 'INTEGRATION_FAILED','COMPETITOR_SIGNAL_FOUND','DAILY_BRIEF_REQUIRED','WEEKLY_REPORT_REQUIRED',
+ // Real Salla webhook-derived events (src/runtime/salla-webhooks.js) — not yet consumed by
+ // any agent route in orchestrator.js; they exist so the event IS real and observable
+ // (Operations Log, /api/events) even before a specific agent reacts to them.
+ 'PRODUCT_UPDATED','PRODUCT_STOCK_UPDATED'
 ];
 
 export function installEvents(db) {

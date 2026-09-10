@@ -40,5 +40,14 @@ test('API revisions revoke schedules, retain history and automation cannot imper
   const first=await call('/api/automation/daily-brief',{},null,{'x-hypercool-token':token});
   assert.equal(first.status,200);assert.equal(first.data.deliveryStatus,'LOCAL_ONLY');
   assert.equal((await call('/api/automation/daily-brief',{},null,{'x-hypercool-token':token})).data.replayed,true);
+  // "Pause all autonomous actions" must also stop the external-trigger path, not just the
+  // in-process scheduler — otherwise pausing from Frost Control Center would be a lie.
+  assert.equal((await call('/api/frost/pause',{reason:'test'},owner)).status,200);
+  const pausedBrief=await call('/api/automation/daily-brief',{},null,{'x-hypercool-token':token});
+  assert.equal(pausedBrief.status,200);assert.equal(pausedBrief.data.skipped,'PAUSED');
+  const pausedPrepare=await call('/api/automation/prepare-due',{},null,{'x-hypercool-token':token});
+  assert.equal(pausedPrepare.status,200);assert.equal(pausedPrepare.data.skipped,'PAUSED');
+  assert.equal((await call('/api/frost/resume',{},owner)).status,200);
+  assert.equal((await call('/api/automation/prepare-due',{},null,{'x-hypercool-token':token})).data.skipped,undefined);
  }finally{await new Promise(resolve=>app.server.close(resolve));app.store.close();await rm(directory,{recursive:true,force:true});}
 });

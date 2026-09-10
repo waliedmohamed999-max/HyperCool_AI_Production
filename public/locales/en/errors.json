@@ -1,0 +1,15 @@
+{
+  "networkOrTimeout": "The connection was interrupted or timed out",
+  "authFailed": "Identity verification failed",
+  "credentialsRejected": "The service rejected these credentials",
+  "rateLimited": "Request limit exceeded",
+  "notConfigured": "Setup is incomplete",
+  "invalidModelOutput": "Model output does not match the expected contract",
+  "incompleteModelOutput": "The model's response was incomplete",
+  "contentChanged": "Content changed during the check; run it again",
+  "checkFailed": "Could not run the check",
+  "permissionDenied": "Your account does not have permission for this action",
+  "sessionExpired": "Your session expired; please sign in again",
+  "validationError": "Check the submitted data",
+  "unknownError": "An unexpected error occurred"
+}

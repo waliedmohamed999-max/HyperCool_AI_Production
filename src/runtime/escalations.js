@@ -8,6 +8,7 @@ export const PRIORITIES=['P0','P1','P2','P3','P4','P5'];
 
 export function installEscalations(db) {
  db.exec('CREATE TABLE IF NOT EXISTS agent_escalations (id TEXT PRIMARY KEY, run_id TEXT, agent_id TEXT NOT NULL, priority TEXT NOT NULL, reason TEXT NOT NULL, context TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT, resolved_by TEXT, resolved_by_name TEXT);');
+ db.exec('CREATE INDEX IF NOT EXISTS idx_agent_escalations_status ON agent_escalations(status);');
 }
 export function createEscalation(db,{runId,agentId,priority,reason,context}) {
  if(!PRIORITIES.includes(priority))fail(400,'أولوية غير معروفة');

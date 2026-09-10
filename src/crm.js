@@ -15,6 +15,9 @@ export function installCRM(db){db.exec(`
  CREATE TABLE IF NOT EXISTS crm_messages (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL REFERENCES crm_leads(id), event_key TEXT NOT NULL UNIQUE, json TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS crm_followups (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL REFERENCES crm_leads(id), status TEXT NOT NULL, due_at TEXT NOT NULL, json TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS crm_requests (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, json TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS idx_crm_messages_lead_id ON crm_messages(lead_id);
+ CREATE INDEX IF NOT EXISTS idx_crm_followups_lead_id ON crm_followups(lead_id);
+ CREATE INDEX IF NOT EXISTS idx_crm_followups_status ON crm_followups(status);
 `);}
 const string=(value,max=200)=>typeof value==='string'?value.trim().slice(0,max):'';
 function required(value,label,max=200){if(typeof value!=='string'||!value.trim()||value.length>max)fail(400,`الحقل مطلوب أو طويل: ${label}`);return value.trim();}
