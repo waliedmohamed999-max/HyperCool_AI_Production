@@ -12,6 +12,11 @@ const ROUTES={
  QUOTE_REQUESTED:{agentId:'sales',priority:'P2',buildInput:payload=>payload},
  FOLLOWUP_DUE:{agentId:'followup',priority:'P2',buildInput:payload=>payload},
  CONTENT_IDEA_CREATED:{agentId:'copy',priority:'P3',buildInput:payload=>payload},
+ // Fired by planning.js's prepareDue once a scheduled item is due and still fully valid
+ // (approved, hash-matched, connector-eligible) — the Publishing & Scheduling agent decides
+ // which *_publish tool to call based on payload.platform. Its own tools independently
+ // re-check approval/idempotency, so this route never bypasses those safeguards.
+ CONTENT_PUBLISH_REQUESTED:{agentId:'publishing',priority:'P2',buildInput:payload=>payload},
  DAILY_BRIEF_REQUIRED:{agentId:'frost',priority:'P3',buildInput:payload=>payload},
  WEEKLY_REPORT_REQUIRED:{agentId:'frost',priority:'P3',buildInput:payload=>payload}
 };

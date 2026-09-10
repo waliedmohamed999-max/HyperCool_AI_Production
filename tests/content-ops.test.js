@@ -31,7 +31,7 @@ test('computeContentKPIs counts REJECTED as blocked, matching the real terminal 
 test('computeContentPipeline exposes only real persisted states, no fabricated COPY_READY/CREATIVE_READY stage',()=>{
  const pipeline=computeContentPipeline([draft()],[],[],new Map());
  const stages=pipeline.map(column=>column.stage);
- assert.deepEqual(stages,['DRAFT','REVIEWED','APPROVED','SCHEDULED','REJECTED']);
+ assert.deepEqual(stages,['DRAFT','REVIEWED','APPROVED','SCHEDULED','PUBLISHED','REJECTED']);
 });
 test('computeContentPipeline attributes owner from the real audit trail, not a guess',()=>{
  const item=draft();

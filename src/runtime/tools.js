@@ -8,21 +8,31 @@ import {publishToInstagram,publishToFacebook,alreadyPublished} from './meta-publ
 import {resolveMetaAccessToken} from './meta-oauth.js';
 import {sendMail,findRecentSentMessage,createCalendarEvent,getCalendarAvailability} from './microsoft-graph.js';
 import {resolveMicrosoftAccessToken} from './microsoft-oauth.js';
+import {publishTweet} from './x-publishing.js';
+import {resolveXAccessToken} from './x-oauth.js';
+import {publishLinkedInPost} from './linkedin-publishing.js';
+import {resolveLinkedInAccessToken} from './linkedin-oauth.js';
+import {createEscalation} from './escalations.js';
 
 export function integrationStatus(env,db=null) {
  // A Meta/WhatsApp OAuth connection (see runtime/meta-oauth.js) counts as configured too —
  // otherwise an agent that only needs whatsapp/meta would show WAITING_INTEGRATION forever
  // for anyone who connected via OAuth instead of the legacy static-token env vars.
- let metaConnected=false,microsoftConnected=false;
+ let metaConnected=false,microsoftConnected=false,xConnected=false,linkedinConnected=false;
  if(db){
   try{metaConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('meta');}catch{metaConnected=false;}
   try{microsoftConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('microsoft365');}catch{microsoftConnected=false;}
+  try{xConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('x');}catch{xConnected=false;}
+  try{linkedinConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('linkedin');}catch{linkedinConnected=false;}
  }
  return {
   whatsapp:{configured:!!env.WHATSAPP_ACCESS_TOKEN||metaConnected},
   meta:{configured:!!env.META_ACCESS_TOKEN||metaConnected},
-  x:{configured:!!env.X_BEARER_TOKEN},
-  linkedin:{configured:!!env.LINKEDIN_ACCESS_TOKEN},
+  // X can only actually PUBLISH via the OAuth connection — the static X_BEARER_TOKEN is
+  // app-only and read-only (see x-oauth.js), so it alone does not count as "configured" for
+  // the publishing tool's purposes, only for read/metrics use.
+  x:{configured:xConnected},
+  linkedin:{configured:linkedinConnected||!!(env.LINKEDIN_ACCESS_TOKEN&&env.LINKEDIN_ORGANIZATION_ID)},
   microsoft365:{configured:!!env.MICROSOFT_ACCESS_TOKEN||microsoftConnected},
   canva:{configured:!!env.CANVA_API_KEY},
   salla_webhooks:{configured:!!env.SALLA_WEBHOOK_SECRET}
@@ -54,6 +64,41 @@ function withinCustomerServiceWindow(lead) {
 }
 export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
  const db=store.db;
+ // Shared by every publish tool (meta_publish/x_publish/linkedin_publish) so the
+ // content-item bookkeeping, schedule_jobs status, audit trail and event emission are
+ // identical regardless of platform (spec Part A: "Content Agent must not know per-platform
+ // detail" — this is that same principle applied to the OUTCOME side, not just the request
+ // side). A job is only ever touched if one is currently READY_FOR_CONNECTOR for this
+ // content — a manual/ad-hoc publish with no active schedule job leaves scheduling alone.
+ function finalizePublishResult(contentId,platform,result,ctx) {
+  const jobRow=db.prepare("SELECT id,json FROM schedule_jobs WHERE content_id=? AND status='READY_FOR_CONNECTOR'").get(contentId);
+  const now=new Date().toISOString();
+  if(result.status==='PUBLISHED') {
+   store.mutate(state=>{
+    const target=state.content.find(c=>c.id===contentId);
+    target.status='PUBLISHED';target.externalPostId=result.externalPostId;target.liveUrl=result.liveUrl||null;target.publishedAt=now;
+    state.audit.unshift({id:crypto.randomUUID(),action:'CONTENT_PUBLISHED',itemId:contentId,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:now});
+   });
+   if(jobRow){const job=JSON.parse(jobRow.json);job.status='PUBLISHED';job.publishedAt=now;job.externalPostId=result.externalPostId;job.liveUrl=result.liveUrl||null;db.prepare('UPDATE schedule_jobs SET status=?,json=? WHERE id=?').run('PUBLISHED',JSON.stringify(job),jobRow.id);}
+   if(eventBus)eventBus.emit('CONTENT_PUBLISHED',{contentId,platform,externalPostId:result.externalPostId});
+  } else if(result.status==='STATUS_UNKNOWN') {
+   // A timeout/network failure with no confirmed outcome — never assumed to be a failure
+   // (which would invite a blind retry and a possible duplicate post) nor a success. Left
+   // for human reconciliation via a real P2 escalation (spec Part Q/AP) instead of a
+   // fabricated automatic retry loop.
+   store.mutate(state=>{state.audit.unshift({id:crypto.randomUUID(),action:platform.toUpperCase()+'_PUBLISH_STATUS_UNKNOWN',itemId:contentId,errorCode:result.errorCode||null,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:now});});
+   if(jobRow){const job=JSON.parse(jobRow.json);job.status='STATUS_UNKNOWN';job.blockReason=result.errorCode||'STATUS_UNKNOWN';db.prepare('UPDATE schedule_jobs SET status=?,json=? WHERE id=?').run('STATUS_UNKNOWN',JSON.stringify(job),jobRow.id);}
+   createEscalation(db,{runId:ctx.runId,agentId:ctx.agentId,priority:'P2',reason:`نتيجة نشر ${platform} غير معروفة بعد خطأ اتصال — يحتاج تحققًا يدويًا قبل أي إعادة محاولة`,context:{contentId,platform,errorCode:result.errorCode||null}});
+  } else if(result.status==='FAILED') {
+   store.mutate(state=>{state.audit.unshift({id:crypto.randomUUID(),action:platform.toUpperCase()+'_PUBLISH_FAILED',itemId:contentId,errorCode:result.errorCode||null,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:now});});
+   if(jobRow){const job=JSON.parse(jobRow.json);job.status='FAILED';job.blockReason=result.errorCode||'FAILED';db.prepare('UPDATE schedule_jobs SET status=?,json=? WHERE id=?').run('FAILED',JSON.stringify(job),jobRow.id);}
+  }
+  return result;
+ }
+ // Off by default; only ever affects X/LinkedIn publish tools (spec Part AX). Never touches
+ // the network, never marks content PUBLISHED — used to rehearse the full validation/
+ // approval/scheduling path (including a real agent run) without ever creating a real post.
+ function testModeEnabled() { return env.SOCIAL_PUBLISHING_TEST_MODE==='true'; }
  const tools=[
   {name:'get_products',description:'List all Salla-synced products with price/stock snapshot.',inputSchema:obj({}),minLevel:'L0',
    handler:()=>listProducts(db)},
@@ -113,7 +158,11 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
     }
     return result;
    }},
-  {name:'meta_publish',description:'Publish an approved content item to Instagram or Facebook (platform decided by the content item itself). Refuses anything not APPROVED, already published, or missing a required asset.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'meta',
+  // All three publish tools are restricted to the Publishing & Scheduling agent
+  // (allowedAgents) — spec Part L/M: only that agent's flow verifies approval/compliance/
+  // schedule/idempotency before ever reaching here, so no other agent (even at L2+) should
+  // be able to trigger a real post as a side effect of unrelated reasoning.
+  {name:'meta_publish',description:'Publish an approved content item to Instagram or Facebook (platform decided by the content item itself). Refuses anything not APPROVED, already published, or missing a required asset.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'meta',allowedAgents:['publishing'],
    handler:async({contentId},ctx)=>{
     const resolved=resolveMetaAccessToken({store,env},'page');
     if(!resolved)return blocked('meta','publish_post');
@@ -127,20 +176,37 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
     const result=item.platform==='Instagram'
      ?await publishToInstagram({store,env,fetcher},{imageUrl:item.assetUrl,caption:item.body})
      :await publishToFacebook({store,env,fetcher},{message:item.body,link:item.url});
-    if(result.status==='PUBLISHED'){
-     store.mutate(state=>{
-      const target=state.content.find(c=>c.id===contentId);
-      target.status='PUBLISHED';target.externalPostId=result.externalPostId;target.liveUrl=result.liveUrl;target.publishedAt=new Date().toISOString();
-      state.audit.unshift({id:crypto.randomUUID(),action:'CONTENT_PUBLISHED',itemId:contentId,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:new Date().toISOString()});
-     });
-     if(eventBus)eventBus.emit('CONTENT_PUBLISHED',{contentId,platform:item.platform,externalPostId:result.externalPostId});
-    }
-    return result;
+    return finalizePublishResult(contentId,item.platform,result,ctx);
    }},
-  {name:'x_publish',description:'Publish a post to X.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'x',
-   handler:()=>blocked('x','publish_post')},
-  {name:'linkedin_publish',description:'Publish a post to the LinkedIn company page.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'linkedin',
-   handler:()=>blocked('linkedin','publish_post')},
+  {name:'x_publish',description:'Publish an approved content item to X. Refuses anything not APPROVED, already published, or unsupported for this platform.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'x',allowedAgents:['publishing'],
+   handler:async({contentId},ctx)=>{
+    const state=store.read();
+    const item=state.content.find(c=>c.id===contentId);
+    if(!item)return {status:'ERROR',error:'CONTENT_NOT_FOUND'};
+    if(item.status!=='APPROVED')return {status:'BLOCKED',reason:'NOT_APPROVED'};
+    if(alreadyPublished(item))return {status:'OK',reason:'ALREADY_PUBLISHED',externalPostId:item.externalPostId,liveUrl:item.liveUrl};
+    if(item.platform!=='X')return {status:'BLOCKED',reason:'UNSUPPORTED_PLATFORM'};
+    if(testModeEnabled())return {status:'OK',testMode:true,would_publish:true,platform:'X',payload:{text:item.body},approval_required:false};
+    const resolved=await resolveXAccessToken({store,env,fetcher},'publish');
+    if(!resolved)return blocked('x','publish_post');
+    const result=await publishTweet({store,env,fetcher},{text:item.body});
+    return finalizePublishResult(contentId,'X',result,ctx);
+   }},
+  {name:'linkedin_publish',description:'Publish an approved content item to the connected LinkedIn Company Page (never a personal profile). Refuses anything not APPROVED, already published, or without a resolved organization.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'linkedin',allowedAgents:['publishing'],
+   handler:async({contentId},ctx)=>{
+    const state=store.read();
+    const item=state.content.find(c=>c.id===contentId);
+    if(!item)return {status:'ERROR',error:'CONTENT_NOT_FOUND'};
+    if(item.status!=='APPROVED')return {status:'BLOCKED',reason:'NOT_APPROVED'};
+    if(alreadyPublished(item))return {status:'OK',reason:'ALREADY_PUBLISHED',externalPostId:item.externalPostId,liveUrl:item.liveUrl};
+    if(item.platform!=='LinkedIn')return {status:'BLOCKED',reason:'UNSUPPORTED_PLATFORM'};
+    if(!item.englishCopy?.trim())return {status:'BLOCKED',reason:'ENGLISH_COPY_REQUIRED'};
+    if(testModeEnabled())return {status:'OK',testMode:true,would_publish:true,platform:'LinkedIn',payload:{text:item.englishCopy,link:item.url},approval_required:false};
+    const resolved=await resolveLinkedInAccessToken({store,env,fetcher});
+    if(!resolved||!resolved.organizationId)return blocked('linkedin','publish_post');
+    const result=await publishLinkedInPost({store,env,fetcher},{text:item.englishCopy,link:item.url});
+    return finalizePublishResult(contentId,'LinkedIn',result,ctx);
+   }},
   // category values requiring approval are hardcoded here, not left to the model to decide
   // for itself — a "quote"/"discount"/"large_b2b"/"legal" email always creates a real
   // agent_approvals row and returns WAITING_APPROVAL, regardless of permission level;

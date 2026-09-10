@@ -80,7 +80,15 @@ export function cancelJobs(store,state,contentId,user) {
  return {cancelled:rows.length};
 }
 
-export function prepareDue(store,user,now=Date.now()) {
+// `eventBus` is optional so existing callers (manual `/api/schedule/prepare`,
+// `/api/automation/prepare-due`) keep working unchanged; the internal scheduler tick
+// (src/runtime/scheduler.js) passes a real one so a job becoming READY_FOR_CONNECTOR
+// actually triggers the Publishing & Scheduling agent instead of sitting inert until
+// someone opens the calendar — see CONTENT_PUBLISH_REQUESTED in orchestrator.js. Fired
+// exactly once per SCHEDULED→READY_FOR_CONNECTOR transition (the `job.status!==status`
+// guard below), never re-fired for a job already sitting in READY_FOR_CONNECTOR — a
+// stalled/unknown publish outcome is a reconciliation concern, not a re-trigger loop.
+export function prepareDue(store,user,now=Date.now(),eventBus=null) {
  return store.mutate(state=>{
   const rows=store.db.prepare("SELECT json FROM schedule_jobs WHERE status IN ('SCHEDULED','READY_FOR_CONNECTOR') AND scheduled_at<=?").all(new Date(now).toISOString());
   let ready=0,blocked=0;
@@ -89,7 +97,12 @@ export function prepareDue(store,user,now=Date.now()) {
    const valid=item?.status==='APPROVED' && item.approval?.contentHash===job.contentHash && item.review?.contentHash===job.contentHash && item.review?.userId && item.approval?.userId && item.approval?.id===job.approvalId && !item.legacyUnauthenticated && contentHash(item)===job.contentHash;
    const status=valid?'READY_FOR_CONNECTOR':'BLOCKED';
    if(valid)ready++;else blocked++;
-   if(job.status!==status){job.status=status;job.blockReason=valid?'PUBLISHING_NOT_CONNECTED':'APPROVAL_CHANGED';job.preparedAt=new Date(now).toISOString();store.db.prepare('UPDATE schedule_jobs SET status=?,json=? WHERE id=?').run(status,JSON.stringify(job),job.id);audit(state,status==='BLOCKED'?'SCHEDULE_BLOCKED':'SCHEDULE_PREPARED',job.contentId,user);}
+   if(job.status!==status){
+    job.status=status;job.blockReason=valid?null:'APPROVAL_CHANGED';job.preparedAt=new Date(now).toISOString();
+    store.db.prepare('UPDATE schedule_jobs SET status=?,json=? WHERE id=?').run(status,JSON.stringify(job),job.id);
+    audit(state,status==='BLOCKED'?'SCHEDULE_BLOCKED':'SCHEDULE_PREPARED',job.contentId,user);
+    if(valid&&eventBus)eventBus.emit('CONTENT_PUBLISH_REQUESTED',{contentId:job.contentId,jobId:job.id,platform:item.platform,idempotencyKey:job.idempotencyKey,scheduledAt:job.scheduledAt,current_datetime:new Date(now).toISOString(),timezone:'Asia/Riyadh'});
+   }
   }
   return {ready,blocked,externalActions:0};
  });

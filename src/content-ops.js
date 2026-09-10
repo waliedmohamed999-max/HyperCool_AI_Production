@@ -35,7 +35,7 @@ export function computeContentKPIs(content,jobs,flaggedIds=new Set()) {
   awaitingApproval:{value:content.filter(c=>c.status==='REVIEWED').length,hint:'بانتظار اعتماد المالك'},
   approved:{value:content.filter(c=>c.status==='APPROVED'&&!scheduled.has(c.id)).length,hint:'معتمد ولم يُجدول بعد'},
   scheduled:{value:scheduled.size,hint:'موعد محفوظ؛ لا يعني نشرًا فعليًا'},
-  published:{value:0,hint:'لا يوجد تكامل نشر متصل بعد (NOT_CONNECTED)'},
+  published:{value:content.filter(c=>c.status==='PUBLISHED').length,hint:'نُشر فعليًا عبر تكامل متصل، بمعرّف منشور خارجي حقيقي'},
   blocked:{value:content.filter(c=>c.status==='REJECTED').length,hint:'مرفوض من مراجع أو مالك'}
  };
 }
@@ -53,6 +53,7 @@ export function computeContentPipeline(content,jobs,audit,complianceByContent) {
   {stage:'REVIEWED',label:'بانتظار الاعتماد',cards:content.filter(c=>c.status==='REVIEWED').map(card)},
   {stage:'APPROVED',label:'معتمد',cards:content.filter(c=>c.status==='APPROVED'&&!scheduled.has(c.id)).map(card)},
   {stage:'SCHEDULED',label:'مجدول',cards:content.filter(c=>c.status==='APPROVED'&&scheduled.has(c.id)).map(item=>({...card(item),scheduledAt:scheduled.get(item.id).scheduledAt}))},
+  {stage:'PUBLISHED',label:'منشور',cards:content.filter(c=>c.status==='PUBLISHED').map(item=>({...card(item),externalPostId:item.externalPostId||null,liveUrl:item.liveUrl||null,publishedAt:item.publishedAt||null}))},
   {stage:'REJECTED',label:'محجوب',cards:content.filter(c=>c.status==='REJECTED').map(card)}
  ];
 }
@@ -73,7 +74,8 @@ export function computeContentLibrary(content,jobs,audit) {
  return content.map(item=>({
   id:item.id,title:item.title,platform:item.platform,campaign:null,product:item.sourceContext?.product?.name||null,
   status:item.status,date:item.date,createdBy:createdBy.get(item.id)||(item.origin==='AI'?'وكيل الكتابة':null),
-  approvedBy:item.approval?.owner||null,scheduledAt:scheduled.get(item.id)?.scheduledAt||null,publishedAt:null,
+  approvedBy:item.approval?.owner||null,scheduledAt:scheduled.get(item.id)?.scheduledAt||null,publishedAt:item.publishedAt||null,
+  externalPostId:item.externalPostId||null,liveUrl:item.liveUrl||null,
   origin:item.origin||'MANUAL',revision:item.revision||1
  }));
 }

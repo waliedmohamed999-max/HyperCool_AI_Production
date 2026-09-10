@@ -1,5 +1,5 @@
 import {isPaused} from './gate.js';
-import {saveDailyBrief,riyadhDate} from '../planning.js';
+import {saveDailyBrief,riyadhDate,prepareDue} from '../planning.js';
 import {saveWeeklyReport,currentWeekStart} from '../reporting.js';
 import {listLeads} from '../crm.js';
 import {getCredentialsMeta,updateCredentialsMetadata,isExpiringSoon} from './credentials.js';
@@ -64,7 +64,7 @@ export async function renewMicrosoftSubscriptionIfNeeded({store,env,fetcher=fetc
  * server's main-execution block, never from createApp() itself, so importing/testing
  * this module never spins up a background timer by accident.
  */
-export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch}) {
+export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch,eventBus=null}) {
  const db=store.db;
  let timer=null;
  async function tick(now=Date.now()) {
@@ -79,6 +79,11 @@ export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch}
   }
   try{result.followupSweep=await sweepFollowupGaps({store,agentRuntime});}catch(error){result.followupSweepError=error.message;}
   try{result.microsoftSubscriptionRenewal=await renewMicrosoftSubscriptionIfNeeded({store,env,fetcher});}catch(error){result.microsoftSubscriptionRenewalError=error.message;}
+  // Content Calendar → Publishing pipeline (X/LinkedIn/Meta spec Part O): the internal
+  // scheduler is what makes a due, approved, scheduled post actually get published without
+  // anyone opening the app — prepareDue flips due jobs to READY_FOR_CONNECTOR and, only on
+  // that transition, emits CONTENT_PUBLISH_REQUESTED for the Publishing agent to act on.
+  try{result.schedulePrepare=prepareDue(store,SCHEDULER_ACTOR,now,eventBus);}catch(error){result.schedulePrepareError=error.message;}
   return result;
  }
  function start(intervalMs=Number(env.SCHEDULER_INTERVAL_MS)||300000) {

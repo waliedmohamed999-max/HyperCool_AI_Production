@@ -31,8 +31,14 @@ export const INTEGRATIONS=[
  // Real connector (src/runtime/meta-oauth.js, meta-publishing.js) for Page/Instagram
  // publishing; messaging webhooks are shared with WhatsApp above (same Meta App subscription).
  {id:'meta',name:'Meta',category:'Social',description:'نشر محتوى على Instagram وFacebook.',envVars:['META_ACCESS_TOKEN'],webhookVar:'META_WEBHOOK_SECRET',authType:'OAuth Token',connectorImplemented:true,scopes:[{name:'pages_read_engagement',note:'قراءة تفاعل صفحة فيسبوك'},{name:'instagram_basic',note:'الوصول الأساسي لحساب إنستغرام'},{name:'pages_manage_posts',note:'نشر منشورات على الصفحة'},{name:'whatsapp_business_messaging',note:'إرسال واستقبال رسائل واتساب للأعمال'}]},
- {id:'x',name:'X',category:'Social',description:'نشر محتوى على منصة X.',envVars:['X_BEARER_TOKEN'],authType:'Bearer Token',connectorImplemented:false,scopes:[{name:'tweet.write',note:'نشر تغريدات'},{name:'tweet.read',note:'قراءة التغريدات'}]},
- {id:'linkedin',name:'LinkedIn',category:'Social',description:'نشر محتوى الأعمال B2B على لينكدإن.',envVars:['LINKEDIN_ACCESS_TOKEN'],authType:'OAuth Token',connectorImplemented:false,scopes:[{name:'w_organization_social',note:'النشر نيابة عن صفحة الشركة'}]},
+ // Real connector (src/runtime/x-oauth.js, x-publishing.js) — publishing requires the OAuth
+ // user-context token; X_BEARER_TOKEN (app-only) is read-only and cannot publish, so it is
+ // not listed as a sufficient env var here (see integrationStatus in runtime/tools.js).
+ {id:'x',name:'X',category:'Social',description:'نشر محتوى على منصة X.',envVars:['X_CLIENT_ID','X_CLIENT_SECRET','X_REDIRECT_URI'],authType:'OAuth 2.0 + PKCE',connectorImplemented:true,scopes:[{name:'tweet.write',note:'نشر تغريدات'},{name:'tweet.read',note:'قراءة التغريدات ومقاييسها'},{name:'users.read',note:'قراءة هوية الحساب المتصل'},{name:'offline_access',note:'الحصول على refresh token'}]},
+ // Real connector (src/runtime/linkedin-oauth.js, linkedin-publishing.js) — publishing to a
+ // personal profile is never implemented by design (spec Part G); only a resolved Company
+ // Page/Organization can be published to.
+ {id:'linkedin',name:'LinkedIn',category:'Social',description:'نشر محتوى الأعمال B2B على صفحة الشركة في لينكدإن.',envVars:['LINKEDIN_CLIENT_ID','LINKEDIN_CLIENT_SECRET','LINKEDIN_REDIRECT_URI'],authType:'OAuth 2.0',connectorImplemented:true,scopes:[{name:'w_organization_social',note:'النشر نيابة عن صفحة الشركة'},{name:'r_organization_social',note:'قراءة منشورات الصفحة ومقاييسها'},{name:'rw_organization_admin',note:'تحديد صفحات الشركة التي يديرها الحساب المتصل'},{name:'openid / profile / email',note:'هوية الحساب المتصل'}]},
  // Real connector (src/runtime/microsoft-oauth.js, microsoft-graph.js) — mail send/receive
  // and calendar are implemented; activity is read from crm_messages (channel=Email) and
  // webhook_events (source=microsoft365), not a separate log table.
@@ -152,6 +158,34 @@ function microsoftActivity(db,audit) {
 function microsoftOAuthConnected(db) {
  try{return !!db.prepare("SELECT 1 FROM integration_credentials WHERE provider='microsoft365'").get();}catch{return false;}
 }
+// X — real activity is CONTENT_PUBLISHED audit entries for X content plus this platform's
+// own failure/status-unknown audit actions (see runtime/tools.js finalizePublishResult).
+function xActivity(state) {
+ const events=state.content.filter(c=>c.platform==='X'&&c.status==='PUBLISHED').map(c=>({at:c.publishedAt,status:'COMPLETED',errorCode:null,kind:'نشر منشور',durationMs:null}))
+  .concat(state.audit.filter(a=>a.action==='X_PUBLISH_FAILED'||a.action==='X_PUBLISH_STATUS_UNKNOWN').map(a=>({at:a.at,status:'FAILED',errorCode:a.errorCode||null,kind:'خطأ نشر',durationMs:null})))
+  .filter(e=>e.at).sort((a,b)=>b.at.localeCompare(a.at));
+ const lastSuccess=events.find(e=>e.status==='COMPLETED');
+ const lastError=events.find(e=>e.status==='FAILED');
+ const hasNewerError=lastError&&(!lastSuccess||lastError.at>lastSuccess.at);
+ return {events,lastSuccess,lastError,hasNewerError};
+}
+function xOAuthConnectedCheck(db) {
+ try{return !!db.prepare("SELECT 1 FROM integration_credentials WHERE provider='x'").get();}catch{return false;}
+}
+// LinkedIn — same shape as xActivity, kept separate (not a shared helper) since each
+// platform's audit action names and content platform tag are real, distinct strings.
+function linkedinActivity(state) {
+ const events=state.content.filter(c=>c.platform==='LinkedIn'&&c.status==='PUBLISHED').map(c=>({at:c.publishedAt,status:'COMPLETED',errorCode:null,kind:'نشر منشور',durationMs:null}))
+  .concat(state.audit.filter(a=>a.action==='LINKEDIN_PUBLISH_FAILED'||a.action==='LINKEDIN_PUBLISH_STATUS_UNKNOWN').map(a=>({at:a.at,status:'FAILED',errorCode:a.errorCode||null,kind:'خطأ نشر',durationMs:null})))
+  .filter(e=>e.at).sort((a,b)=>b.at.localeCompare(a.at));
+ const lastSuccess=events.find(e=>e.status==='COMPLETED');
+ const lastError=events.find(e=>e.status==='FAILED');
+ const hasNewerError=lastError&&(!lastSuccess||lastError.at>lastSuccess.at);
+ return {events,lastSuccess,lastError,hasNewerError};
+}
+function linkedinOAuthConnectedCheck(db) {
+ try{return !!db.prepare("SELECT 1 FROM integration_credentials WHERE provider='linkedin'").get();}catch{return false;}
+}
 function envRows(integration,env) {
  const rows=integration.envVars.map(name=>({name,configured:!!env[name]}));
  if(integration.webhookVar)rows.push({name:integration.webhookVar,configured:!!env[integration.webhookVar]});
@@ -167,6 +201,10 @@ export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns,agen
  const metaConnected=metaOAuthConnected(store.db);
  const microsoft=microsoftActivity(store.db,state.audit);
  const microsoftConnected=microsoftOAuthConnected(store.db);
+ const x=xActivity(state);
+ const xConnected=xOAuthConnectedCheck(store.db);
+ const linkedin=linkedinActivity(state);
+ const linkedinConnected=linkedinOAuthConnectedCheck(store.db);
  const integrations=INTEGRATIONS.map(integration=>{
   const rows=envRows(integration,env);
   const configured=rows.filter(r=>r.name!==integration.webhookVar).every(r=>r.configured)&&integration.envVars.length>0;
@@ -202,6 +240,16 @@ export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns,agen
    status=!msConfigured?'NEEDS_SETUP':microsoft.hasNewerError?'ERROR':microsoft.lastSuccess?'CONNECTED':'CONFIGURED_NO_CONNECTOR';
    lastActivity=microsoft.lastSuccess?{at:microsoft.lastSuccess.at,note:microsoft.lastSuccess.kind}:null;
    recentErrors=microsoft.events.filter(e=>e.errorCode).slice(0,10).map(e=>({at:e.at,code:e.errorCode,action:ERROR_ACTIONS[e.errorCode]||ERROR_ACTIONS.UNKNOWN}));
+  } else if(integration.id==='x') {
+   const xConfigured=configured||xConnected;
+   status=!xConfigured?'NEEDS_SETUP':x.hasNewerError?'ERROR':x.lastSuccess?'CONNECTED':'CONFIGURED_NO_CONNECTOR';
+   lastActivity=x.lastSuccess?{at:x.lastSuccess.at,note:x.lastSuccess.kind}:null;
+   recentErrors=x.events.filter(e=>e.errorCode).slice(0,10).map(e=>({at:e.at,code:e.errorCode,action:ERROR_ACTIONS[e.errorCode]||ERROR_ACTIONS.UNKNOWN}));
+  } else if(integration.id==='linkedin') {
+   const liConfigured=configured||linkedinConnected;
+   status=!liConfigured?'NEEDS_SETUP':linkedin.hasNewerError?'ERROR':linkedin.lastSuccess?'CONNECTED':'CONFIGURED_NO_CONNECTOR';
+   lastActivity=linkedin.lastSuccess?{at:linkedin.lastSuccess.at,note:linkedin.lastSuccess.kind}:null;
+   recentErrors=linkedin.events.filter(e=>e.errorCode).slice(0,10).map(e=>({at:e.at,code:e.errorCode,action:ERROR_ACTIONS[e.errorCode]||ERROR_ACTIONS.UNKNOWN}));
   } else {
    // No real connector exists yet — configured or not, nothing in this app can actually use
    // the credential, so "Connected" would be false regardless of the env var's presence.
@@ -227,7 +275,9 @@ export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns,agen
   ...salla.events.slice(0,15).map(e=>({at:e.at,integration:'Salla',operation:'مزامنة الكتالوج',status:e.action==='SALLA_CATALOG_SYNCED'?'COMPLETED':'ERROR',records:e.count??null,durationMs:null,errorCode:e.errorCode||null})),
   ...whatsapp.events.slice(0,15).map(e=>({at:e.at,integration:'WhatsApp Business',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
   ...meta.events.slice(0,15).map(e=>({at:e.at,integration:'Meta',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
-  ...microsoft.events.slice(0,15).map(e=>({at:e.at,integration:'Microsoft 365',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode}))
+  ...microsoft.events.slice(0,15).map(e=>({at:e.at,integration:'Microsoft 365',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
+  ...x.events.slice(0,15).map(e=>({at:e.at,integration:'X',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode})),
+  ...linkedin.events.slice(0,15).map(e=>({at:e.at,integration:'LinkedIn',operation:e.kind,status:e.status,records:null,durationMs:e.durationMs,errorCode:e.errorCode}))
  ].sort((a,b)=>b.at.localeCompare(a.at)).slice(0,20);
  return {summary,integrations,recentSyncActivity};
 }

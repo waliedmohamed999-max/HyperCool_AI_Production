@@ -43,6 +43,10 @@ import {microsoftOAuthConfigured,createMicrosoftAuthorizeUrl,consumeMicrosoftSta
 import {testMicrosoftConnection,sendMail,getMessage,createMailSubscription,deleteMailSubscription} from './runtime/microsoft-graph.js';
 import {handleValidationHandshake,processMicrosoftNotifications} from './runtime/microsoft-webhooks.js';
 import {updateCredentialsMetadata,getCredentialsMeta} from './runtime/credentials.js';
+import {xOAuthConfigured,createXAuthorizeUrl,consumeXState,exchangeCodeForTokens as exchangeXCodeForTokens,resolveConnectedProfile as resolveXProfile,saveXConnection,xOAuthStatus,disconnectX} from './runtime/x-oauth.js';
+import {testXConnection} from './runtime/x-publishing.js';
+import {linkedInOAuthConfigured,createLinkedInAuthorizeUrl,consumeLinkedInState,exchangeCodeForTokens as exchangeLinkedInCodeForTokens,resolveConnectedProfile as resolveLinkedInProfile,resolveAdministeredOrganizations,saveLinkedInConnection,linkedInOAuthStatus,disconnectLinkedIn} from './runtime/linkedin-oauth.js';
+import {testLinkedInConnection} from './runtime/linkedin-publishing.js';
 
 const packageVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 // Environment validation — logged at startup, never crashes the process. Every core config
@@ -61,8 +65,10 @@ function validateEnv(env) {
   ['Meta (Instagram/Facebook)',['META_ACCESS_TOKEN, or META_APP_ID/META_APP_SECRET/META_REDIRECT_URI for OAuth'],!!env.META_ACCESS_TOKEN||!!(env.META_APP_ID&&env.META_APP_SECRET&&env.META_REDIRECT_URI)],
   ['Meta OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.META_APP_ID||credentialsConfigured(env)],
   ['Meta webhooks',['META_WEBHOOK_SECRET or META_APP_SECRET','META_VERIFY_TOKEN'],!!(env.META_WEBHOOK_SECRET||env.META_APP_SECRET)&&!!env.META_VERIFY_TOKEN],
-  ['X',['X_BEARER_TOKEN'],!!env.X_BEARER_TOKEN],
-  ['LinkedIn',['LINKEDIN_ACCESS_TOKEN'],!!env.LINKEDIN_ACCESS_TOKEN],
+  ['X',['X_CLIENT_ID/X_CLIENT_SECRET/X_REDIRECT_URI for OAuth (required — publishing needs a user-context token; X_BEARER_TOKEN alone is read-only)'],!!(env.X_CLIENT_ID&&env.X_CLIENT_SECRET&&env.X_REDIRECT_URI)],
+  ['X OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.X_CLIENT_ID||credentialsConfigured(env)],
+  ['LinkedIn',['LINKEDIN_CLIENT_ID/SECRET/REDIRECT_URI for OAuth, or LINKEDIN_ACCESS_TOKEN+LINKEDIN_ORGANIZATION_ID'],!!(env.LINKEDIN_CLIENT_ID&&env.LINKEDIN_CLIENT_SECRET&&env.LINKEDIN_REDIRECT_URI)||!!(env.LINKEDIN_ACCESS_TOKEN&&env.LINKEDIN_ORGANIZATION_ID)],
+  ['LinkedIn OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.LINKEDIN_CLIENT_ID||credentialsConfigured(env)],
   ['Microsoft 365',['MICROSOFT_ACCESS_TOKEN, or MICROSOFT_CLIENT_ID/SECRET/TENANT_ID/REDIRECT_URI for OAuth'],!!env.MICROSOFT_ACCESS_TOKEN||!!(env.MICROSOFT_CLIENT_ID&&env.MICROSOFT_CLIENT_SECRET&&env.MICROSOFT_REDIRECT_URI)],
   ['Microsoft 365 OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.MICROSOFT_CLIENT_ID||credentialsConfigured(env)],
   ['Microsoft 365 mail webhook',['MICROSOFT_WEBHOOK_SECRET'],!!env.MICROSOFT_WEBHOOK_SECRET],
@@ -103,7 +109,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   function reportExtras() {
     return {agents:listRegistryAgents(store.db),agentRuns:listRuns(store.db,{limit:2000}),escalations:listEscalations(store.db),approvals:listApprovals(store.db),env};
   }
-  const scheduler=createScheduler({store,agentRuntime,env,getExtras:reportExtras,fetcher});
+  const scheduler=createScheduler({store,agentRuntime,env,getExtras:reportExtras,fetcher,eventBus});
   const generate=createGenerator(store,env,fetcher);
   const checkCompliance=createComplianceChecker(store,env,fetcher);
   let syncing=false;
@@ -170,7 +176,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         // would silently fail to stop this path.
         if(req.method==='POST' && (url.pathname==='/api/automation/daily-brief'||url.pathname==='/api/automation/prepare-due') && isPaused(store.db))return send(200,{skipped:'PAUSED'});
         if(req.method==='POST' && url.pathname==='/api/automation/daily-brief')return send(200,saveDailyBrief(store,riyadhDate(),actor));
-        if(req.method==='POST' && url.pathname==='/api/automation/prepare-due')return send(200,prepareDue(store,actor));
+        if(req.method==='POST' && url.pathname==='/api/automation/prepare-due')return send(200,prepareDue(store,actor,Date.now(),eventBus));
         if(req.method==='GET' && url.pathname==='/api/automation/status')return send(200,{timezone:'Asia/Riyadh',externalPublishing:false});
         fail(404,'Unknown automation operation');
       }
@@ -441,6 +447,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(id==='whatsapp')return send(200,await testWhatsAppConnection({store,env,fetcher}));
         if(id==='meta')return send(200,resolveMetaAccessToken({store,env},'page')?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
         if(id==='microsoft365')return send(200,await testMicrosoftConnection({store,env,fetcher}));
+        if(id==='x')return send(200,await testXConnection({store,env,fetcher}));
+        if(id==='linkedin')return send(200,await testLinkedInConnection({store,env,fetcher}));
         return send(200,{result:'NOT_IMPLEMENTED'});
       }
       // Salla OAuth (owner only — connecting/disconnecting the store's own commerce data is
@@ -572,6 +580,67 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'MICROSOFT_SUBSCRIPTION_CREATED',itemId:subscription.subscriptionId,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
         return send(200,subscription);
       }
+      // X OAuth (owner only, same bar as Salla/Meta/Microsoft above). PKCE's code_verifier
+      // never leaves the server (x-oauth.js keeps it in the same in-memory state map as the
+      // CSRF nonce) — the browser round-trip only ever sees `code`/`state`.
+      if(req.method==='GET' && url.pathname==='/api/integrations/x/oauth/status') {
+        authorize(session,['owner']);
+        return send(200,xOAuthStatus(store.db));
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/x/oauth/start') {
+        authorize(session,['owner']);
+        res.writeHead(302,{Location:createXAuthorizeUrl(env,session.user.id)});return res.end();
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/x/oauth/callback') {
+        authorize(session,['owner']);
+        const code=url.searchParams.get('code'),oauthState=url.searchParams.get('state');
+        if(!code||!oauthState)fail(400,'استجابة ربط X ناقصة (code/state)');
+        const codeVerifier=consumeXState(oauthState,session.user.id);
+        const tokens=await exchangeXCodeForTokens({env,fetcher,code,codeVerifier});
+        const profile=await resolveXProfile({fetcher,accessToken:tokens.accessToken});
+        saveXConnection(store.db,env,tokens,profile,session.user);
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'X_CONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        res.writeHead(302,{Location:'/#integrations'});return res.end();
+      }
+      if(req.method==='POST' && url.pathname==='/api/integrations/x/disconnect') {
+        authorize(session,['owner']);
+        disconnectX(store.db);
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'X_DISCONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        return send(200,{disconnected:true});
+      }
+      // LinkedIn OAuth (owner only, same bar as above). Organization resolution is a real,
+      // separate API call (see resolveAdministeredOrganizations) — a connection can succeed
+      // as identity-only if rw_organization_admin wasn't granted, in which case publishing
+      // stays INTEGRATION_REQUIRED until an organization is actually resolved.
+      if(req.method==='GET' && url.pathname==='/api/integrations/linkedin/oauth/status') {
+        authorize(session,['owner']);
+        return send(200,linkedInOAuthStatus(store.db));
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/linkedin/oauth/start') {
+        authorize(session,['owner']);
+        res.writeHead(302,{Location:createLinkedInAuthorizeUrl(env,session.user.id)});return res.end();
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/linkedin/oauth/callback') {
+        authorize(session,['owner']);
+        const code=url.searchParams.get('code'),oauthState=url.searchParams.get('state');
+        if(!code||!oauthState)fail(400,'استجابة ربط LinkedIn ناقصة (code/state)');
+        consumeLinkedInState(oauthState,session.user.id);
+        const tokens=await exchangeLinkedInCodeForTokens({env,fetcher,code});
+        const profile=await resolveLinkedInProfile({fetcher,accessToken:tokens.accessToken});
+        let organization=null;
+        try{organization=(await resolveAdministeredOrganizations({fetcher,accessToken:tokens.accessToken}))[0]||null;}
+        catch{organization=null;} // rw_organization_admin not granted yet — connection still succeeds as identity-only.
+        saveLinkedInConnection(store.db,env,tokens,profile,organization,session.user);
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'LINKEDIN_CONNECTED',itemId:'linkedin',organizationId:organization?.id||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        if(organization)store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'LINKEDIN_ORGANIZATION_SELECTED',itemId:organization.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        res.writeHead(302,{Location:'/#integrations'});return res.end();
+      }
+      if(req.method==='POST' && url.pathname==='/api/integrations/linkedin/disconnect') {
+        authorize(session,['owner']);
+        disconnectLinkedIn(store.db);
+        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'LINKEDIN_DISCONNECTED',itemId:'linkedin',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        return send(200,{disconnected:true});
+      }
       // Manual reply outside the agent runtime — same permission/opt-out/approval-category
       // checks as the microsoft_sendEmail agent tool, never a second, looser path.
       const manualEmailSend=url.pathname.match(/^\/api\/crm\/leads\/([\w-]+)\/email-send$/);
@@ -658,10 +727,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
         fail(404,'مسار CRM غير موجود');
       }
-      if(req.method==='GET' && url.pathname==='/api/planning')return send(200,{slots:listSlots(store.db),jobs:listJobs(store.db),brief:buildBrief(store),savedBriefs:store.db.prepare('SELECT json FROM daily_briefs ORDER BY date DESC LIMIT 14').all().map(row=>JSON.parse(row.json)),today:riyadhDate(),automationConfigured:!!(env.AUTOMATION_TOKEN?.length>=32),publishingConnected:false});
+      if(req.method==='GET' && url.pathname==='/api/planning') {
+        const publishingIntegrations=integrationStatus(env,store.db);
+        return send(200,{slots:listSlots(store.db),jobs:listJobs(store.db),brief:buildBrief(store),savedBriefs:store.db.prepare('SELECT json FROM daily_briefs ORDER BY date DESC LIMIT 14').all().map(row=>JSON.parse(row.json)),today:riyadhDate(),automationConfigured:!!(env.AUTOMATION_TOKEN?.length>=32),publishingConnected:['meta','x','linkedin'].some(id=>publishingIntegrations[id]?.configured)});
+      }
       if(req.method==='POST' && url.pathname==='/api/calendar') {authorize(session,['owner','operator']);return send(201,createCalendar(store,(await body(req)).startDate,session.user));}
       if(req.method==='POST' && url.pathname==='/api/schedule') {authorize(session,['owner']);return send(201,scheduleContent(store,await body(req),session.user));}
-      if(req.method==='POST' && url.pathname==='/api/schedule/prepare') {authorize(session,['owner']);return send(200,prepareDue(store,session.user));}
+      if(req.method==='POST' && url.pathname==='/api/schedule/prepare') {authorize(session,['owner']);return send(200,prepareDue(store,session.user,Date.now(),eventBus));}
       if(req.method==='POST' && url.pathname==='/api/brief') {authorize(session,['owner']);return send(200,saveDailyBrief(store,riyadhDate(),session.user));}
       if(req.method==='GET' && url.pathname==='/api/reports/weekly')return send(200,{current:buildExecutiveReport(store,currentWeekStart(),reportExtras()),saved:listWeeklyReports(store.db)});
       if(req.method==='POST' && url.pathname==='/api/reports/weekly') {authorize(session,['owner']);const input=await body(req);return send(201,saveWeeklyReport(store,input.weekStart||currentWeekStart(),session.user,reportExtras()));}
