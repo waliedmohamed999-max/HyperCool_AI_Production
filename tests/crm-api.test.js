@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 import {openStore} from '../src/store.js';
 import {getLead} from '../src/crm.js';
 

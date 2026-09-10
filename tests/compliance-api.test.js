@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 
 const modelResponse=value=>new Response(JSON.stringify({stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(value)}],usage:{input_tokens:5,output_tokens:10}}),{status:200,headers:{'content-type':'application/json'}});
 const decision=()=>({status:'OK',action:'CHECK',rationale:'Checked against approved memory',verification:[],risk_level:'LOW',escalation_required:false,missing_data:[],payload:{classification:'PASS',issues:[],corrected_text_if_possible:null,evidence_sources:[],verified_fields:[],blocked_fields:[],human_review_required:true,reason:'Matches approved facts'}});

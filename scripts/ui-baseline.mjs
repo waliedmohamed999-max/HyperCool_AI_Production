@@ -2,7 +2,7 @@ import {chromium} from 'playwright';
 import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 const dataDir=await mkdtemp(join(tmpdir(),'hypercool-ui-'));
 const app=await createApp({dataDir,env:{}});
 await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));

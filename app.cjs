@@ -1,5 +1,6 @@
 // LiteSpeed loads the entry point with require(); import the ESM app asynchronously.
-import('./src/server.js')
+console.log('HyperCool: app.cjs entry loaded');
+import('./src/application.js')
   .then(({ startServer }) => startServer())
   .catch(error => {
     console.error('HyperCool startup failed:', error);

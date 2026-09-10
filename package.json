@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node app.cjs",
-    "build": "node --check app.cjs && node --check src/server.js",
+    "build": "node --check app.cjs && node --check src/server.js && node --check src/application.js",
     "test": "node --test",
     "test:ui": "node scripts/ui-qa.mjs",
     "ui:screenshots": "node scripts/ui-baseline.mjs",

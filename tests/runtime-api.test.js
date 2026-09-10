@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 
 const decision=()=>({status:'OK',action:'REPLY',rationale:'ok',verification:[],risk_level:'LOW',escalation_required:false,missing_data:[],
  payload:{intent:'price',customer_type:'B2C',qualification:{city:null,product_need:null,quantity:null,timeline:null,budget_band:null},recommended_product_id:null,reply_ar:'رد',reply_en:'reply',next_best_action:'x',lead_temperature:'COLD',crm_updates:{},missing_fields:[],handoff_reason:null}});

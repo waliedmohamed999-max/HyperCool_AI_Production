@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 
 test('agent autonomy is owner-only to change, visible to everyone, and reflected in /api/agents',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'hypercool-autonomy-'));

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 import {initialState} from '../src/domain.js';
 import {openStore} from '../src/store.js';
 import {agentDefinitions,validateDecision,validateAgentDecision,buildAgentPrompt} from '../src/agents.js';

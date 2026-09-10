@@ -1,5 +1,5 @@
 // Read-only source inventory plus browser smoke in an isolated, disposable database.
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 import {chromium} from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 import {mkdtemp,mkdir,readFile,readdir,writeFile,rm} from 'node:fs/promises';

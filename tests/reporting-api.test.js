@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 
 test('weekly report is readable by any authenticated role, saved only by the owner and idempotent per week',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'hypercool-reports-'));

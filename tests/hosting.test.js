@@ -5,11 +5,23 @@ import {execFileSync} from 'node:child_process';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 
 test('CommonJS can load server module without top-level await or starting it',()=>{
-  execFileSync(process.execPath,['-e',"require('./src/server.js')"],{timeout:15000});
+  execFileSync(process.execPath,['-e',"require('./src/application.js')"],{timeout:15000});
 });
+
+for(const entry of ['./src/server.js','./app.cjs']) {
+  test(`LiteSpeed require(${entry}) calls listen without a main-module guard`,async()=>{
+    const dir=await mkdtemp(join(tmpdir(),'hc-entry-test-'));
+    try {
+      const output=execFileSync(process.execPath,['-e',
+        `require('node:http').Server.prototype.listen=function(){console.log('LISTEN_CALLED');return this;};require(${JSON.stringify(entry)});`
+      ],{timeout:3000,encoding:'utf8',env:{...process.env,DATA_DIR:dir,PUBLIC_ORIGIN:'https://app.example.com'}});
+      assert.match(output,/LISTEN_CALLED/);
+    } finally {await rm(dir,{recursive:true,force:true});}
+  });
+}
 
 test('hosted origin enforces host and origin and secures session cookies',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'hc-hosting-'));

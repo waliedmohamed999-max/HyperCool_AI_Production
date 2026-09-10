@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
-import {createApp} from '../src/server.js';
+import {createApp} from '../src/application.js';
 const dataDir=await mkdtemp(join(tmpdir(),'hypercool-ui-qa-'));
 const app=await createApp({dataDir,env:{}});await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
 let browser;const report={screens:[],errors:[],checks:[]};
