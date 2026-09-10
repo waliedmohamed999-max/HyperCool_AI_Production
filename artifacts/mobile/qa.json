@@ -1,0 +1,133 @@
+{
+  "screens": [
+    {
+      "route": "overview",
+      "width": 360
+    },
+    {
+      "route": "crm",
+      "width": 360
+    },
+    {
+      "route": "content",
+      "width": 360
+    },
+    {
+      "route": "agents",
+      "width": 360
+    },
+    {
+      "route": "planning",
+      "width": 360
+    },
+    {
+      "route": "reports",
+      "width": 360
+    },
+    {
+      "route": "knowledge",
+      "width": 360
+    },
+    {
+      "route": "integrations",
+      "width": 360
+    },
+    {
+      "route": "audit",
+      "width": 360
+    },
+    {
+      "route": "users",
+      "width": 360
+    },
+    {
+      "route": "overview",
+      "width": 390
+    },
+    {
+      "route": "crm",
+      "width": 390
+    },
+    {
+      "route": "content",
+      "width": 390
+    },
+    {
+      "route": "agents",
+      "width": 390
+    },
+    {
+      "route": "planning",
+      "width": 390
+    },
+    {
+      "route": "reports",
+      "width": 390
+    },
+    {
+      "route": "knowledge",
+      "width": 390
+    },
+    {
+      "route": "integrations",
+      "width": 390
+    },
+    {
+      "route": "audit",
+      "width": 390
+    },
+    {
+      "route": "users",
+      "width": 390
+    },
+    {
+      "route": "overview",
+      "width": 430
+    },
+    {
+      "route": "crm",
+      "width": 430
+    },
+    {
+      "route": "content",
+      "width": 430
+    },
+    {
+      "route": "agents",
+      "width": 430
+    },
+    {
+      "route": "planning",
+      "width": 430
+    },
+    {
+      "route": "reports",
+      "width": 430
+    },
+    {
+      "route": "knowledge",
+      "width": 430
+    },
+    {
+      "route": "integrations",
+      "width": 430
+    },
+    {
+      "route": "audit",
+      "width": 430
+    },
+    {
+      "route": "users",
+      "width": 430
+    }
+  ],
+  "errors": [],
+  "checks": [
+    "signed-out dock hidden",
+    "30 route/viewports no overflow",
+    "bottom navigation",
+    "more menu opens/closes",
+    "decision dialog",
+    "desktop navigation preserved"
+  ]
+}

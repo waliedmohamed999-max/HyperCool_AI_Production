@@ -1,15 +1,17 @@
 // Shared formatting/rendering helpers for the dashboard-style pages (reports, CRM).
 // Pure presentation only — no API calls, no state — so both pages can depend on it
 // without either depending on the other.
+// `empty` is re-exported (not redefined) from the shared ui kit so every page renders the
+// exact same empty-state markup — icon, escaped title, escaped hint — instead of a
+// page-local variant that quietly drifted from it.
+import {empty} from './components/ui/index.js';
+export {empty};
 export const fmtNum=n=>Number.isFinite(n)?n.toLocaleString('en-US'):'—';
 export const fmtSAR=n=>Number.isFinite(n)?n.toLocaleString('en-US',{maximumFractionDigits:0})+' ر.س':'—';
 export const fmtDate=iso=>iso?new Date(iso+'T12:00:00Z').toLocaleDateString('ar-SA',{day:'numeric',month:'short',timeZone:'UTC'}):'';
 export const fmtDateRange=(start,end)=>`${fmtDate(start)} ← ${fmtDate(new Date(Date.parse(end)-86400000).toISOString().slice(0,10))}`;
 export const fmtDateTime=iso=>iso?new Date(iso).toLocaleString('ar-SA',{timeZone:'Asia/Riyadh',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
 
-export function empty(title,hint) {
- return `<div class="empty">${title}${hint?`<br><small>${hint}</small>`:''}</div>`;
-}
 export function miniStat(label,value) {
  return `<div class="kpi-card"><span class="kpi-label">${label}</span><span class="kpi-value" dir="ltr">${value}</span></div>`;
 }

@@ -1,12 +1,10 @@
-import {escape,badge,empty,button,drawer,metric,tabs} from './components/ui/index.js';
+import {escape,badge,empty,button,drawer,metric,tabs,table,initials,promptDrawer,enhance} from './components/ui/index.js';
 import {fmtDateTime} from './format.js';
 const $=selector=>document.querySelector(selector);
 const PERMISSION_LABELS={MANAGE:'إدارة كاملة',EDIT:'إنشاء وتعديل',VIEW:'عرض فقط',NONE:'لا وصول'};
 const ACTIVITY_LABELS={USER_CREATED:'إنشاء عضو',USER_ROLE_CHANGED:'تغيير الدور',USER_SUSPENDED:'إيقاف عضو',USER_REACTIVATED:'إعادة تفعيل عضو',USER_REMOVED:'حذف عضو',USER_ACCESS_RESET:'إعادة تعيين الوصول',USER_SESSIONS_REVOKED:'إنهاء جلسات عضو'};
 let dashboard=null,apiClient=null;
 
-function table(headers,rows){return `<table><thead><tr>${headers.map(h=>`<th>${escape(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(cell=>`<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table>`;}
-function initials(name){return escape((name||'?').trim().slice(0,2));}
 function relativeTime(iso){
  if(!iso)return null;
  const diff=Date.now()-Date.parse(iso);
@@ -39,7 +37,7 @@ function renderMembers(){
  $('#team-members').innerHTML=table(
   ['العضو','اسم الدخول','الدور','الحالة','آخر نشاط','تاريخ الإنشاء','إجراءات'],
   dashboard.members.map(m=>[
-   `<div class="row"><span class="avatar" aria-hidden="true">${initials(m.name)}</span>${escape(m.name)}</div>`,
+   `<div class="row"><span class="avatar" aria-hidden="true">${escape(initials(m.name))}</span>${escape(m.name)}</div>`,
    `<span dir="ltr">${escape(m.username)}</span>`,
    escape(dashboard.roleNames[m.role]||m.role),
    statusPill(m.status),
@@ -82,36 +80,25 @@ function renderActivity(){
 }
 
 function chooseRole(member){
- return new Promise(resolve=>{
-  const node=document.createElement('div');
+ return promptDrawer('تغيير دور العضو',node=>{
   node.innerHTML=`<p>العضو: ${escape(member.name)} — الدور الحالي: ${escape(dashboard.roleNames[member.role]||member.role)}</p><label>الدور الجديد<select></select></label>`;
   const select=node.querySelector('select');
   select.innerHTML=Object.entries(dashboard.roleNames).map(([value,label])=>`<option value="${value}"${value===member.role?' selected':''}>${escape(label)}</option>`).join('');
-  const save=button('حفظ الدور',{variant:'primary'}),cancel=button('إلغاء');
-  node.append(save,cancel);
-  const d=drawer('تغيير دور العضو',node,{restore:true});d.className='confirmation';
-  let result=null;
-  save.onclick=()=>{result=select.value;d.close();};
-  cancel.onclick=()=>d.close();
-  d.addEventListener('close',()=>resolve(result),{once:true});
- });
+  return {value:()=>select.value};
+ },{confirmLabel:'حفظ الدور'});
 }
 function choosePassword(member){
- return new Promise(resolve=>{
-  const node=document.createElement('div');
+ return promptDrawer('إعادة تعيين وصول العضو',node=>{
   node.innerHTML=`<p>سيتم استبدال كلمة مرور ${escape(member.name)} فورًا وإنهاء كل جلساته الحالية.</p><label>كلمة المرور الجديدة (12–256 حرفًا)<input type="text" dir="ltr" minlength="12" maxlength="256" required></label>`;
   const input=node.querySelector('input');
   const generate=button('توليد كلمة مرور قوية',{variant:'secondary'});
   generate.onclick=()=>{input.value=crypto.randomUUID().replace(/-/g,'').slice(0,20);input.setCustomValidity('');};
   node.append(generate);
-  const save=button('حفظ كلمة المرور الجديدة',{variant:'primary'}),cancel=button('إلغاء');
-  node.append(save,cancel);
-  const d=drawer('إعادة تعيين وصول العضو',node,{restore:true});d.className='confirmation';
-  let result=null;
-  save.onclick=()=>{if(input.value.trim().length<12){input.setCustomValidity('12 حرفًا على الأقل');input.reportValidity();return;}result=input.value.trim();d.close();};
-  cancel.onclick=()=>d.close();
-  d.addEventListener('close',()=>resolve(result),{once:true});
- });
+  return {
+   value:()=>input.value.trim(),
+   validate:()=>{if(input.value.trim().length<12){input.setCustomValidity('12 حرفًا على الأقل');input.reportValidity();return false;}return true;}
+  };
+ },{confirmLabel:'حفظ كلمة المرور الجديدة'});
 }
 async function openMember(id){
  const m=memberById(id);if(!m)return;
@@ -154,6 +141,7 @@ async function openMember(id){
  node.append(profile,role,permissions,activity,tasks,approvals,security);
  tabs(node,[['الملف الشخصي',profile],['الدور',role],['الصلاحيات',permissions],['النشاط الأخير',activity],['المهام المسندة',tasks],['الموافقات',approvals],['الأمان',security]]);
  const drawerEl=drawer(m.name,node,{restore:true});
+ enhance(node);
 }
 
 export async function renderTeam({api}){

@@ -4,6 +4,8 @@ export function icon(name='grid'){return `<svg class="icon" width="20" height="2
 export function badge(text,status=''){return `<span class="pill" data-status="${escape(status)}">${escape(text)}</span>`;}
 export function empty(title,hint=''){return `<div class="empty">${icon('file')}<strong>${escape(title)}</strong>${hint?`<p>${escape(hint)}</p>`:''}</div>`;}
 export function metric(label,value,hint='',name='chart'){return `<article class="kpi-card"><div class="row-between"><span class="kpi-label">${escape(label)}</span><span class="metric-icon">${icon(name)}</span></div><strong class="kpi-value">${escape(value??'—')}</strong><span class="kpi-context">${escape(hint)}</span></article>`;}
+export function initials(name){return (name||'').trim().split(/\s+/).slice(0,2).map(s=>s[0]).join('');}
+export function table(headers,rows){return `<table><thead><tr>${headers.map(h=>`<th>${escape(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(cell=>`<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table>`;}
 export function button(text,{variant='secondary',iconName='',...attributes}={}){const el=document.createElement('button');el.type='button';el.className=`button ${variant}`;el.innerHTML=(iconName?icon(iconName):'')+escape(text);for(const [key,value] of Object.entries(attributes))el.setAttribute(key,value);return el;}
 export function header(title,description){const el=document.createElement('header');el.className='page-header';el.innerHTML=`<div><p class="eyebrow">HYPERCOOL / WORKSPACE</p><h1>${escape(title)}</h1><p>${escape(description)}</p></div><div class="page-actions"></div>`;return el;}
 export function toast(text,type='info'){const region=document.querySelector('#message');region.className=`toast ${type}`;region.replaceChildren();const content=document.createElement('span');content.textContent=text;region.append(content,button('إغلاق',{variant:'ghost','aria-label':'إغلاق الإشعار'}));region.lastChild.onclick=()=>region.replaceChildren();clearTimeout(toast.timer);toast.timer=setTimeout(()=>region.replaceChildren(),8000);}
@@ -20,8 +22,38 @@ export function drawer(title,node,{restore=false}={}){
  if(restore)dialog.addEventListener('close',()=>{marker.replaceWith(node);dialog.remove();},{once:true});
  dialog.showModal();return dialog;
 }
-export async function confirmAction(title,description){return new Promise(resolve=>{const node=document.createElement('div');node.innerHTML=`<p>${escape(description)}</p>`;const yes=button('تأكيد',{variant:'primary'}),no=button('إلغاء');node.append(yes,no);const d=drawer(title,node,{restore:true});d.className='confirmation';let accepted=false;yes.onclick=()=>{accepted=true;d.close();};no.onclick=()=>d.close();d.addEventListener('close',()=>resolve(accepted),{once:true});});}
-export async function requestReason(title){return new Promise(resolve=>{const node=document.createElement('div'),label=document.createElement('label'),input=document.createElement('textarea');label.textContent='سبب التغيير';input.required=true;input.maxLength=1000;label.append(input);node.append(label);const save=button('حفظ التغيير',{variant:'primary'});node.append(save);const d=drawer(title,node,{restore:true});d.className='confirmation';let value=null;save.onclick=()=>{if(!input.value.trim()){input.setCustomValidity('أدخل سبب التغيير');input.reportValidity();return;}value=input.value.trim();d.close();};input.oninput=()=>input.setCustomValidity('');d.addEventListener('close',()=>resolve(value),{once:true});input.focus();});}
+// Shared small-dialog primitive behind every confirm/prompt in the app (confirmAction,
+// requestReason, and page-specific prompts like team.js's role/password dialogs) — one
+// Promise+drawer+validate pattern instead of a copy per call site. `build(node)` fills the
+// dialog body and may return {value(), validate(), focus()}; validate() should itself call
+// setCustomValidity/reportValidity and return false to block closing on invalid input.
+export function promptDrawer(title,build,{confirmLabel='حفظ'}={}){
+ return new Promise(resolve=>{
+  const node=document.createElement('div');
+  const ctrl=build(node)||{};
+  const save=button(confirmLabel,{variant:'primary'}),cancel=button('إلغاء');
+  node.append(save,cancel);
+  const d=drawer(title,node,{restore:true});d.className='confirmation';
+  let result=null;
+  save.onclick=()=>{if(ctrl.validate&&!ctrl.validate())return;result=ctrl.value?ctrl.value():true;d.close();};
+  cancel.onclick=()=>d.close();
+  d.addEventListener('close',()=>resolve(result),{once:true});
+  ctrl.focus?.();
+ });
+}
+export async function confirmAction(title,description){return promptDrawer(title,node=>{node.innerHTML=`<p>${escape(description)}</p>`;},{confirmLabel:'تأكيد'});}
+export async function requestReason(title){
+ return promptDrawer(title,node=>{
+  const label=document.createElement('label'),input=document.createElement('textarea');
+  label.textContent='سبب التغيير';input.required=true;input.maxLength=1000;input.oninput=()=>input.setCustomValidity('');
+  label.append(input);node.append(label);
+  return {
+   value:()=>input.value.trim(),
+   validate:()=>{if(!input.value.trim()){input.setCustomValidity('أدخل سبب التغيير');input.reportValidity();return false;}return true;},
+   focus:()=>input.focus()
+  };
+ },{confirmLabel:'حفظ التغيير'});
+}
 export function skeleton(label='جارٍ تحميل البيانات'){return `<div class="skeleton" role="status" aria-label="${escape(label)}"><div class="skeleton-block"></div><div class="skeleton-block"></div></div>`;}
 export function tooltip(element,text){const wrapper=document.createElement('span');wrapper.className='tooltip-host';const tip=document.createElement('span');tip.className='ui-tooltip';tip.id=`tip-${++sequence}`;tip.setAttribute('role','tooltip');tip.textContent=text;element.setAttribute('aria-describedby',tip.id);element.before(wrapper);wrapper.append(element,tip);return wrapper;}
 export function dropdown(label,entries){const menu=document.createElement('details');menu.className='dropdown';const summary=document.createElement('summary');summary.setAttribute('aria-label',label);summary.innerHTML=icon('users');const items=document.createElement('div');items.className='dropdown-items';for(const [text,action] of entries){const b=button(text,{variant:'ghost'});b.onclick=()=>{menu.open=false;action();};items.append(b);}menu.append(summary,items);menu.addEventListener('keydown',e=>{if(e.key==='Escape'){menu.open=false;summary.focus();}});document.addEventListener('click',e=>{if(!menu.contains(e.target))menu.open=false;});return menu;}

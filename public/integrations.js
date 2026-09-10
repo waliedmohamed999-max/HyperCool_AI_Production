@@ -1,4 +1,4 @@
-import {escape,badge,empty,button,drawer,tabs} from './components/ui/index.js';
+import {escape,badge,empty,button,drawer,tabs,enhance} from './components/ui/index.js';
 const $=selector=>document.querySelector(selector);
 const categoryNames={AI:'الذكاء الاصطناعي',Commerce:'التجارة الإلكترونية',Messaging:'المراسلات',Social:'شبكات التواصل',Productivity:'الإنتاجية'};
 const statusNames={CONNECTED:'متصل',NEEDS_SETUP:'يحتاج إعداد',ERROR:'به خطأ',CONFIGURED_NO_CONNECTOR:'يحتاج انتباه',NOT_SUPPORTED:'غير مدعوم'};
@@ -102,6 +102,7 @@ async function openDetail(id,initialTab=0){
  node.append(overview,config,permissions,history,usage,errors);
  tabs(node,[['نظرة عامة',overview],['الإعداد',config],['الصلاحيات',permissions],['سجل المزامنة',history],['الاستخدام',usage],['الأخطاء',errors]]);
  const dialog=drawer(i.name,node,{restore:true});
+ enhance(node);
  const tabButtons=dialog.querySelectorAll('.ui-tabs .tab');
  if(tabButtons[initialTab])tabButtons[initialTab].click();
 }
