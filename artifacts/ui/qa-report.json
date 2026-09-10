@@ -1,0 +1,379 @@
+{
+  "screens": [
+    {
+      "route": "overview",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "crm",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "planning",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "reports",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "content",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "agents",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "knowledge",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "integrations",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "audit",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "users",
+      "width": 1440,
+      "overflow": {
+        "document": 1440,
+        "viewport": 1440
+      },
+      "violations": []
+    },
+    {
+      "route": "overview",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "crm",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "planning",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "reports",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "content",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "agents",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "knowledge",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "integrations",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "audit",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "users",
+      "width": 1920,
+      "overflow": {
+        "document": 1920,
+        "viewport": 1920
+      },
+      "violations": []
+    },
+    {
+      "route": "overview",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "crm",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "planning",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "reports",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "content",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "agents",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "knowledge",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "integrations",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "audit",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "users",
+      "width": 768,
+      "overflow": {
+        "document": 768,
+        "viewport": 768
+      },
+      "violations": []
+    },
+    {
+      "route": "overview",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    },
+    {
+      "route": "crm",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    },
+    {
+      "route": "planning",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    },
+    {
+      "route": "reports",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    },
+    {
+      "route": "content",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    },
+    {
+      "route": "agents",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    },
+    {
+      "route": "knowledge",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    },
+    {
+      "route": "integrations",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    },
+    {
+      "route": "audit",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    },
+    {
+      "route": "users",
+      "width": 390,
+      "overflow": {
+        "document": 390,
+        "viewport": 390
+      },
+      "violations": []
+    }
+  ],
+  "errors": [],
+  "checks": [
+    "Create content through drawer and original API",
+    "Review and approve content, including confirmation",
+    "Create verified memory through editor",
+    "Calendar month/week/agenda and real content scheduling",
+    "Create customer and open customer drawer",
+    "Create team member with existing reviewer role",
+    "Ctrl+K search and keyboard navigation",
+    "Agent drawer and real run-history endpoint",
+    "Save and open weekly report",
+    "DataTable pagination, search, sorting, and long-name records",
+    "Mobile navigation and Escape focus restoration",
+    "Reviewer restrictions and logout/login"
+  ]
+}

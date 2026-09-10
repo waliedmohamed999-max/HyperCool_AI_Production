@@ -1,0 +1,18 @@
+{
+ "$schema":"http://json-schema.org/draft-07/schema#",
+ "title":"HyperCool normalized decision envelope",
+ "type":"object",
+ "additionalProperties":false,
+ "required":["status","action","rationale","verification","risk_level","escalation_required","missing_data","payload"],
+ "properties":{
+  "status":{"enum":["OK","NEEDS_DATA","HUMAN_REVIEW","BLOCKED","ERROR"]},
+  "action":{"type":"string","minLength":1},
+  "rationale":{"type":"string","minLength":1},
+  "verification":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["field","source","status"],"properties":{"field":{"type":"string","minLength":1},"source":{"type":"string","minLength":1},"status":{"enum":["VERIFIED","NOT_VERIFIED"]}}}},
+  "risk_level":{"enum":["LOW","MEDIUM","HIGH"]},
+  "escalation_required":{"type":"boolean"},
+  "missing_data":{"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true},
+  "next_actions":{"type":"array","items":{"type":"string","minLength":1}},
+  "payload":{"type":["object","null"]}
+ }
+}

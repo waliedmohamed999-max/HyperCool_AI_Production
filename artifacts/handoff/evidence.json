@@ -1,0 +1,6040 @@
+{
+  "capturedAt": "2026-09-10T01:35:21.683Z",
+  "node": "v24.11.1",
+  "inventory": [
+    {
+      "path": "src/agents.js",
+      "bytes": 2470,
+      "lines": 30,
+      "sha256": "f68b545a2d61f50d83805ccb30eaf89d93acf917400d7af93bd30009f20286c3"
+    },
+    {
+      "path": "src/auth.js",
+      "bytes": 5921,
+      "lines": 86,
+      "sha256": "c5cbe2cad036ab30f77c1b0408feaaf031d510bd6d1f53469592c9d5f975d76b"
+    },
+    {
+      "path": "src/autonomy.js",
+      "bytes": 3535,
+      "lines": 44,
+      "sha256": "5ad6b64b8ba1e454663fb9fc292b520abc5b63b56ee112c782faae270c811c05"
+    },
+    {
+      "path": "src/compliance.js",
+      "bytes": 4920,
+      "lines": 69,
+      "sha256": "4ef31dc0e502e2bd2813a5453c3ee7023ff5cc1be07d5ee1352519df2206c3bd"
+    },
+    {
+      "path": "src/connectors.js",
+      "bytes": 7137,
+      "lines": 85,
+      "sha256": "8400ec0d03355ff79c5fc4dd940111b0b872f4cb05bc225a16732230ba91ec01"
+    },
+    {
+      "path": "src/content-ops.js",
+      "bytes": 8130,
+      "lines": 110,
+      "sha256": "1f1f2a4b6b9695cdfdb70f33e906c958b88ff5c8c754b4908a13040c6c79d64e"
+    },
+    {
+      "path": "src/crm.js",
+      "bytes": 21174,
+      "lines": 170,
+      "sha256": "d5fd3245917a2e3e040bfcb9162a3b86ac6c995558c63e7008829eeeefa1f97c"
+    },
+    {
+      "path": "src/domain.js",
+      "bytes": 4880,
+      "lines": 52,
+      "sha256": "a27df9dcb99f89b55f064c4e6faff006cbf64d3aa5002761e9b8acc4d99be084"
+    },
+    {
+      "path": "src/generation.js",
+      "bytes": 4778,
+      "lines": 73,
+      "sha256": "932c20329a4f45ca02bd50d4acf04f9432309ed325392f5d9f63fb65d4263cca"
+    },
+    {
+      "path": "src/integration-ops.js",
+      "bytes": 10973,
+      "lines": 127,
+      "sha256": "3ca5e712a95d4031a1a9e81a75220ad14914d0c6e7b404397193bdeb1d2d98b3"
+    },
+    {
+      "path": "src/knowledge.js",
+      "bytes": 7153,
+      "lines": 66,
+      "sha256": "e8a65b4164ccd798582281352e2ae528cc003bca64a17e03b513385990487f66"
+    },
+    {
+      "path": "src/memory-ops.js",
+      "bytes": 5669,
+      "lines": 95,
+      "sha256": "53a23780d2df90c010411d749a9e019f21cd056414a7c24664f042e16d4b6e3b"
+    },
+    {
+      "path": "src/payload-schemas.js",
+      "bytes": 4423,
+      "lines": 20,
+      "sha256": "b927c6b142ffc106fe37be167a002920444debb917926bdcb762d26bf1da8e65"
+    },
+    {
+      "path": "src/planning.js",
+      "bytes": 10748,
+      "lines": 127,
+      "sha256": "dc8e144f6692823435234b7e21da1c39d183e39a94a320e86e98353dcaeea93b"
+    },
+    {
+      "path": "src/reporting.js",
+      "bytes": 16524,
+      "lines": 203,
+      "sha256": "c57046739770e2c0a100cf2701d762682ac60231300c4d8fd6397f0a20499dd4"
+    },
+    {
+      "path": "src/runtime/approvals.js",
+      "bytes": 2706,
+      "lines": 36,
+      "sha256": "d1f89a868770f134ac78bff144991177a76ac81d6ba2ead38e2e9376a4221e5a"
+    },
+    {
+      "path": "src/runtime/escalations.js",
+      "bytes": 2144,
+      "lines": 32,
+      "sha256": "5978c0c84355f6bf8a85c81045c2fb71c04c1c3364f5ed329baa2619d3f7d233"
+    },
+    {
+      "path": "src/runtime/events.js",
+      "bytes": 2084,
+      "lines": 40,
+      "sha256": "f4ac0164f7790e85e466779bcfb46a073505121122d69cb61bcb9c019041947d"
+    },
+    {
+      "path": "src/runtime/gate.js",
+      "bytes": 1271,
+      "lines": 20,
+      "sha256": "34d387bb9dc4fbc415e179f573d515b724d93c57e3001ae2944c650479f519f4"
+    },
+    {
+      "path": "src/runtime/llmProvider.js",
+      "bytes": 4662,
+      "lines": 82,
+      "sha256": "4fca6310ed2c3ee3f9e6cf23aeb629a5f5facdd440fd78ccfb5b1d759c0892e1"
+    },
+    {
+      "path": "src/runtime/orchestrator.js",
+      "bytes": 2871,
+      "lines": 47,
+      "sha256": "adbe4692aa41dedb385c159c01fbef8306fc38e110929e1dc748984f4d71b172"
+    },
+    {
+      "path": "src/runtime/permissions.js",
+      "bytes": 3108,
+      "lines": 44,
+      "sha256": "81f85b1f3b95e5a46c4cc9f19783191abdee1e03029056e1409d02b98bcb070b"
+    },
+    {
+      "path": "src/runtime/registry.js",
+      "bytes": 1663,
+      "lines": 31,
+      "sha256": "59b13927af4624a26f48b3ccc979e91af869b698ac95bd14bbdffe2098d75215"
+    },
+    {
+      "path": "src/runtime/runtime.js",
+      "bytes": 7113,
+      "lines": 114,
+      "sha256": "d245fb121587da4913c99ef4ce040d61a21d1909f9a4b48d23a6b9a999bcfb78"
+    },
+    {
+      "path": "src/runtime/scheduler.js",
+      "bytes": 3320,
+      "lines": 70,
+      "sha256": "5f81970e15de5c1bb350cc61a7ee08dc4b41fa42ae23d9ae92158b07e2fa7f03"
+    },
+    {
+      "path": "src/runtime/tools.js",
+      "bytes": 9148,
+      "lines": 102,
+      "sha256": "f59f6e7356f384f5fa297611709d9722b4c1707b46120f150424ac1983f7a0ed"
+    },
+    {
+      "path": "src/sales-dashboard.js",
+      "bytes": 10715,
+      "lines": 152,
+      "sha256": "7791663e36560cb23cf50bcb4f982c2281a3a6c43d622170c7bcf19156034ab3"
+    },
+    {
+      "path": "src/server.js",
+      "bytes": 29001,
+      "lines": 352,
+      "sha256": "b2b11c84b68260efb713c502310811933c2af0f89a4a7e677e10cd0657552bbf"
+    },
+    {
+      "path": "src/store.js",
+      "bytes": 2394,
+      "lines": 41,
+      "sha256": "35d9961eb300dfe76286495ca682ee0e05e385bfb322a58e5a3eb4f246b3e60e"
+    },
+    {
+      "path": "src/team-ops.js",
+      "bytes": 4571,
+      "lines": 64,
+      "sha256": "962a884c8711214e2def6360f70dfafe32b5358cab23ea58da13ba3a3938c1c4"
+    },
+    {
+      "path": "public/app.js",
+      "bytes": 17137,
+      "lines": 128,
+      "sha256": "35822190a2230682da051bc3033f5db8acc5e1d195864e421dae768a11a3daf1"
+    },
+    {
+      "path": "public/autonomy.js",
+      "bytes": 9081,
+      "lines": 69,
+      "sha256": "0ebdbae325b537c27f2f995bfe5ebea2e917fad8a31cf49011f2709047649264"
+    },
+    {
+      "path": "public/compliance.js",
+      "bytes": 3400,
+      "lines": 30,
+      "sha256": "12fe8920c09daa172900820500062633405197ef47aaafc532f0f44f4775b865"
+    },
+    {
+      "path": "public/components/layout/app-shell.js",
+      "bytes": 12979,
+      "lines": 49,
+      "sha256": "e737de48c947a170fce53d51dc9fd3081a8a5653ad6b1441d39fb9de785a8138"
+    },
+    {
+      "path": "public/components/ui/index.js",
+      "bytes": 11816,
+      "lines": 52,
+      "sha256": "fadd705ce9f67b1e1ef69701e22c8ae38e32f2f6dfe29cdcbc3d3435d3821973"
+    },
+    {
+      "path": "public/content.js",
+      "bytes": 9195,
+      "lines": 96,
+      "sha256": "f8d1b5c8c27dacd4e19f1ff2e82c28eeb6732d8e1228938f63a1d540f1d564c6"
+    },
+    {
+      "path": "public/crm.js",
+      "bytes": 28938,
+      "lines": 213,
+      "sha256": "403a723167ce6c60301cf5050dcddee5fd411cd19909859161fa24e2e0c6378a"
+    },
+    {
+      "path": "public/format.js",
+      "bytes": 12013,
+      "lines": 134,
+      "sha256": "3871237983c9cf1e884a6cf5f9fbc581faf65f8b347fc804fc53ee24814875a4"
+    },
+    {
+      "path": "public/index.html",
+      "bytes": 22218,
+      "lines": 70,
+      "sha256": "744ac510e9fd5c7c8c6a9f4425d1a530cfe9a5c4a9ab1052ee8940f3728e4dae"
+    },
+    {
+      "path": "public/integrations.js",
+      "bytes": 13171,
+      "lines": 134,
+      "sha256": "8a783686b0ab0903e95bdd64a1992638cbc93990e94ce003b3f4ac86fc1f618a"
+    },
+    {
+      "path": "public/knowledge.js",
+      "bytes": 3839,
+      "lines": 36,
+      "sha256": "879b4f5a087a9eb948e8d23cff0aa606877fec7de1c9506f6a4cd578a4e045f2"
+    },
+    {
+      "path": "public/memory.js",
+      "bytes": 16157,
+      "lines": 156,
+      "sha256": "7774440f783b2fda9612732a1b6691ad40ea1681f7941b5165750d40ec3ae1e4"
+    },
+    {
+      "path": "public/pages/workspace.js",
+      "bytes": 25312,
+      "lines": 87,
+      "sha256": "e58ae0962dd3ac88f2930b6ba3717bdbb95974de12633a22f6c1f7611cdf9d53"
+    },
+    {
+      "path": "public/planning.js",
+      "bytes": 7371,
+      "lines": 47,
+      "sha256": "c73e98e6f2b57014966b26c1d0a255a5ae74b2c0aab38d9270dcfab3c1d12c56"
+    },
+    {
+      "path": "public/reporting.js",
+      "bytes": 14444,
+      "lines": 145,
+      "sha256": "d0daa0fe9270a2d5c69bfbddf81f320e7ef25d66634dba2b4c3d3134a6459cba"
+    },
+    {
+      "path": "public/style.css",
+      "bytes": 210,
+      "lines": 7,
+      "sha256": "73d89f322136465a3e96c3cc5a991c76d27cfa8ba92af0bdd11232ddd97bcdc8"
+    },
+    {
+      "path": "public/styles/base.css",
+      "bytes": 1345,
+      "lines": 2,
+      "sha256": "f8ce372e02ed5d2667fe1bd3ff48b4c517c86cfcdb6d6d8c83ee7cb46817d767"
+    },
+    {
+      "path": "public/styles/components.css",
+      "bytes": 9288,
+      "lines": 7,
+      "sha256": "29a308da1e0a934dce93f651f7ea3f8355e7c28744eb73458ea72d335c746037"
+    },
+    {
+      "path": "public/styles/fonts.css",
+      "bytes": 1760,
+      "lines": 9,
+      "sha256": "f765d46d741219073c2e4c7d09bf9be55e50e4a4a6784724c48dd0ce2c2b9938"
+    },
+    {
+      "path": "public/styles/layout.css",
+      "bytes": 8004,
+      "lines": 9,
+      "sha256": "c96b5f551da904fcc0a9f40381186df9cd8c59b4fcb837ebef7bd6f23c6341c5"
+    },
+    {
+      "path": "public/styles/pages.css",
+      "bytes": 16829,
+      "lines": 95,
+      "sha256": "2f39df7a78813afc73b2097d51a0e644584c4b9e5e3cfefbe966fe94c03e865e"
+    },
+    {
+      "path": "public/styles/tokens.css",
+      "bytes": 1412,
+      "lines": 8,
+      "sha256": "8acc891b78d3174d6dc4a4000f5e1da2664cfe193d4f113b18df132e3ceb5949"
+    },
+    {
+      "path": "public/team.js",
+      "bytes": 12933,
+      "lines": 194,
+      "sha256": "905aec5f942dc983d68bc697bd77b3f7696ac70912d66d4d299fdd24a82e9031"
+    },
+    {
+      "path": "tests/ai.test.js",
+      "bytes": 7449,
+      "lines": 99,
+      "sha256": "8c04a404229e1247807b7ab4058911d5ce572ebe8a7673640cad675ed84012e2"
+    },
+    {
+      "path": "tests/autonomy-api.test.js",
+      "bytes": 2582,
+      "lines": 36,
+      "sha256": "5be658453c5d0eccbbc031f8bf21bd3a7ec370c57c8597a45e7312c56adfa4e3"
+    },
+    {
+      "path": "tests/autonomy.test.js",
+      "bytes": 3030,
+      "lines": 58,
+      "sha256": "0f5c3468acb6fbce294f9597e1b24623836afb14d6737f5a8281430c54d81d5e"
+    },
+    {
+      "path": "tests/compliance-api.test.js",
+      "bytes": 3641,
+      "lines": 43,
+      "sha256": "bbb760dd927c7357ea83e82cb7f24ce48ddead5aa46e967992661c25d11b4dfc"
+    },
+    {
+      "path": "tests/compliance.test.js",
+      "bytes": 5485,
+      "lines": 101,
+      "sha256": "5b7298a80438e6444b53434e0de6d1cb88bf142a73e45bb982f2e8b15d9e50e1"
+    },
+    {
+      "path": "tests/content-ops.test.js",
+      "bytes": 4839,
+      "lines": 87,
+      "sha256": "11a93f818ec4273ec40e87bf1c730bf6e0e75ea8fa65b4b595710742acf502b4"
+    },
+    {
+      "path": "tests/crm-api.test.js",
+      "bytes": 3832,
+      "lines": 41,
+      "sha256": "e32dbba7fc2e4878a35919860e8746db26eb55ef00740dac48bd94e3a057f0ab"
+    },
+    {
+      "path": "tests/crm.test.js",
+      "bytes": 7714,
+      "lines": 81,
+      "sha256": "fa1e797a425f74e44bd57642b7680dcad21a480d567f807bdd5051cd0887b7b9"
+    },
+    {
+      "path": "tests/domain.test.js",
+      "bytes": 1261,
+      "lines": 9,
+      "sha256": "97e29b558381ad17209807bb8950370a47b8e655c02284bcaa15b65ece53230b"
+    },
+    {
+      "path": "tests/executive-report.test.js",
+      "bytes": 7521,
+      "lines": 145,
+      "sha256": "0de4ad95ac87ad2190f548c82468be806dd27729d2c019f942703804ac69b0fc"
+    },
+    {
+      "path": "tests/integration-ops.test.js",
+      "bytes": 7058,
+      "lines": 120,
+      "sha256": "3c9be414618e1e45a520d76fb543ecba1d3fcb457eeffdf37df26ede56d66f26"
+    },
+    {
+      "path": "tests/integration.test.js",
+      "bytes": 6548,
+      "lines": 90,
+      "sha256": "dbbb8e574e7293d66275491f78ae8057ec4498b2294177b8b685f8aa48ef81a0"
+    },
+    {
+      "path": "tests/memory-ops.test.js",
+      "bytes": 5498,
+      "lines": 88,
+      "sha256": "6dd4e4450c7c3089ce7db47c9efd1620309ebd97d736514358b8e5d06faf2a60"
+    },
+    {
+      "path": "tests/memory-propose.test.js",
+      "bytes": 2348,
+      "lines": 40,
+      "sha256": "08bc57b3a28bb9440201b2e84312dcec0f74be7ab1a8618fe7582f31432bbf10"
+    },
+    {
+      "path": "tests/planning-api.test.js",
+      "bytes": 3887,
+      "lines": 45,
+      "sha256": "7452c6c9f0adfff6ac626de85579d22a56ccccaf2bd3debd6e7e0823c430ef0b"
+    },
+    {
+      "path": "tests/planning.test.js",
+      "bytes": 5950,
+      "lines": 80,
+      "sha256": "075abdc73d2e23dcf44054dc959dd771bcee32e9ae6f1836a1402a9d0c3ab241"
+    },
+    {
+      "path": "tests/reporting-api.test.js",
+      "bytes": 2220,
+      "lines": 33,
+      "sha256": "33d3aef1039ab723f2bfd2a06e99f7d3da6b7568f60663ebd0edc2e5eea5a893"
+    },
+    {
+      "path": "tests/reporting.test.js",
+      "bytes": 3456,
+      "lines": 77,
+      "sha256": "28d490f7bdb125d50b8bd511663e2ba5df30496d74a48c7d982d60fc71c1c6b9"
+    },
+    {
+      "path": "tests/runtime-api.test.js",
+      "bytes": 6624,
+      "lines": 89,
+      "sha256": "dfb64b78cf59fe2442d7593effdcf5cb15dc92f530f64eb487c8b1598bedb79d"
+    },
+    {
+      "path": "tests/runtime.test.js",
+      "bytes": 12201,
+      "lines": 225,
+      "sha256": "783be76519883ef5a91b4671105ad425634f8332ade818faa8dc9f2796638aab"
+    },
+    {
+      "path": "tests/sales-dashboard.test.js",
+      "bytes": 9586,
+      "lines": 172,
+      "sha256": "986f8b7d436fd6d0108cdb5a34a58a7ecac9ebcc424177a3c063fa3b18f0a257"
+    },
+    {
+      "path": "tests/scheduler.test.js",
+      "bytes": 5860,
+      "lines": 102,
+      "sha256": "486d658570e3ad0c92e89535018605f733eea01243ba923c9075184acdca53bc"
+    },
+    {
+      "path": "tests/team-ops.test.js",
+      "bytes": 5045,
+      "lines": 86,
+      "sha256": "984adf734486dcf0293bb532ac9bf3336de677db25a8ce4c5debc81da3d51379"
+    },
+    {
+      "path": "agents/compliance.md",
+      "bytes": 1529,
+      "lines": 57,
+      "sha256": "b9d52cc9ebbdd828ca2295ece8e74d556945345486bea97859d0a51403b1a568"
+    },
+    {
+      "path": "agents/copy.md",
+      "bytes": 1829,
+      "lines": 50,
+      "sha256": "08101b48c0f39db4ed6ecb946b9a3f03152c12d354e27b62353500674b80d010"
+    },
+    {
+      "path": "agents/creative.md",
+      "bytes": 1352,
+      "lines": 37,
+      "sha256": "4d4548c5e8b7615cc8c1bd044d219d2b1b536a06a21b0ad3205bcb39c0caa8c6"
+    },
+    {
+      "path": "agents/followup.md",
+      "bytes": 1475,
+      "lines": 46,
+      "sha256": "0e86d49a6e17172fa644f1f340ee07b87c61913d289cfa1c4dcc31e85c9c06e4"
+    },
+    {
+      "path": "agents/frost.md",
+      "bytes": 3051,
+      "lines": 79,
+      "sha256": "781b60f3807fae10264c7604a7e89addf26c768c0644aaff10e31c218cd6f077"
+    },
+    {
+      "path": "agents/global.md",
+      "bytes": 3832,
+      "lines": 68,
+      "sha256": "a67086d24895fa922abcedd5d4b01f649989b0819f4e2bfc0fdfe7a7f0d24a04"
+    },
+    {
+      "path": "agents/intelligence.md",
+      "bytes": 1287,
+      "lines": 39,
+      "sha256": "20ab03cea97538cd1090ba4e2b6c1875577e838c2742370856c760ed04687f94"
+    },
+    {
+      "path": "agents/leads.md",
+      "bytes": 1598,
+      "lines": 54,
+      "sha256": "a82f5cd47d4093f2e2fb03aa92524e54ebdf120d5bfb2c396e32bd7dffdbe17f"
+    },
+    {
+      "path": "agents/memory.md",
+      "bytes": 1506,
+      "lines": 46,
+      "sha256": "b8e7dc32a76ec056041626d112796353f1fb9296aa4df7344a757cfe67ceea15"
+    },
+    {
+      "path": "agents/performance.md",
+      "bytes": 1283,
+      "lines": 45,
+      "sha256": "6351a4b30bd6bdf28caa3a409614e0c72f772934820adb95d4552e6dbc7562dd"
+    },
+    {
+      "path": "agents/publishing.md",
+      "bytes": 1398,
+      "lines": 41,
+      "sha256": "fd907f4585625a4ee50da75c60ec34402553fd9208334b03ce89cf924d97c89c"
+    },
+    {
+      "path": "agents/sales.md",
+      "bytes": 2215,
+      "lines": 66,
+      "sha256": "f8921d359038ed62db620b39ac566d5c3fb87a1969fe11479c8909f5f392312f"
+    },
+    {
+      "path": "agents/strategy.md",
+      "bytes": 2084,
+      "lines": 53,
+      "sha256": "13397c2d931e777305507cbd439c2cf5632c7b2b81113c7890c2819170939f45"
+    },
+    {
+      "path": "agents/tasks.md",
+      "bytes": 12954,
+      "lines": 323,
+      "sha256": "14edf54523b943246e86d758088b0475332913a681d566861eaa79d5bb5186d3"
+    },
+    {
+      "path": "schemas/decision.json",
+      "bytes": 1034,
+      "lines": 19,
+      "sha256": "c59f68b66fcea39327309fc22993ad0b03d40e4bcce875c7f4004788a849512f"
+    }
+  ],
+  "tables": [
+    {
+      "name": "agent_approvals",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "run_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "agent_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "action_type",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "proposed_output",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "risk_level",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "reason",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "decided_by",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "decided_by_name",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "decided_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "agent_autonomy",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "agent_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "level",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "version",
+          "type": "INTEGER",
+          "pk": 0
+        },
+        {
+          "name": "direction",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "reason",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "actor_name",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "at",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "agent_escalations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "run_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "agent_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "priority",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "reason",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "context",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "resolved_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "resolved_by",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "resolved_by_name",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "agent_events",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "type",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "payload",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "run_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "agent_registry",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "name_ar",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "enabled",
+          "type": "INTEGER",
+          "pk": 0
+        },
+        {
+          "name": "provider",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "model",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "agent_runs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "agent_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "trigger_type",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "trigger_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "parent_run_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "input_context",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "output",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "started_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "finished_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "tokens_input",
+          "type": "INTEGER",
+          "pk": 0
+        },
+        {
+          "name": "tokens_output",
+          "type": "INTEGER",
+          "pk": 0
+        },
+        {
+          "name": "estimated_cost",
+          "type": "REAL",
+          "pk": 0
+        },
+        {
+          "name": "latency_ms",
+          "type": "INTEGER",
+          "pk": 0
+        },
+        {
+          "name": "error",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "approval_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "actor_name",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "agent_tool_calls",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "run_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "tool",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "input",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "output",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "at",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "ai_runs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "request_key",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "request_hash",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "calendar_slots",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "date",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "platform",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "compliance_runs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "content_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "request_key",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "crm_followups",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "lead_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "due_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "crm_leads",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "contact_key",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "crm_messages",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "lead_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "event_key",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "crm_requests",
+      "columns": [
+        {
+          "name": "key",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "fingerprint",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "daily_briefs",
+      "columns": [
+        {
+          "name": "date",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "memory",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "kind",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "key",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "version",
+          "type": "INTEGER",
+          "pk": 0
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "products",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "runtime_gate",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "pk": 1
+        },
+        {
+          "name": "paused",
+          "type": "INTEGER",
+          "pk": 0
+        },
+        {
+          "name": "paused_by",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "paused_by_name",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "paused_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "reason",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "schedule_jobs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "content_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "scheduled_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "columns": [
+        {
+          "name": "token",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "user_id",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "csrf",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "expires",
+          "type": "INTEGER",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "state",
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "pk": 1
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "username",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "password",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "pk": 0
+        },
+        {
+          "name": "last_login_at",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    },
+    {
+      "name": "weekly_reports",
+      "columns": [
+        {
+          "name": "week_start",
+          "type": "TEXT",
+          "pk": 1
+        },
+        {
+          "name": "json",
+          "type": "TEXT",
+          "pk": 0
+        }
+      ]
+    }
+  ],
+  "browserErrors": [],
+  "screens": [
+    {
+      "route": "overview",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"overview\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              ".trend-card > .trend-empty > .trend-empty-note > .empty"
+            ],
+            [
+              ".trend-card > .trend-empty > .trend-empty-note > .empty > small"
+            ],
+            [
+              ".tone-a > .spark-empty"
+            ],
+            [
+              ".tone-b > .spark-empty"
+            ],
+            [
+              ".donut-legend > li"
+            ],
+            [
+              ".icon-row-copy > small"
+            ],
+            [
+              ".panel:nth-child(3) > .empty"
+            ],
+            [
+              ".overview-brief > .row-between > .pill[data-status=\"HOLD\"]"
+            ],
+            [
+              ".overview-brief > p:nth-child(2)"
+            ],
+            [
+              "div:nth-child(1) > span > small"
+            ],
+            [
+              ".overview-brief > p:nth-child(4)"
+            ],
+            [
+              ".overview-grid > .panel:nth-child(2) > p"
+            ],
+            [
+              "span[data-status=\"PENDING\"]"
+            ],
+            [
+              ".overview-list > .empty > p"
+            ],
+            [
+              "button[data-go=\"crm\"]"
+            ],
+            [
+              ".overview-wide > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "crm",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"crm\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "span[title=\"CRM محلي — دائمًا متاح\"] > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(1) > .kpi-context"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(2) > .kpi-context"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-hot-leads\"] > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-hot-leads\"] > .kpi-context"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-quotes\"] > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-forecast\"] > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-forecast\"] > .kpi-context"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(6) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(7) > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-followup-center\"] > .kpi-label"
+            ],
+            [
+              "#crm > .report-section:nth-child(7) > .report-section-head > span"
+            ],
+            [
+              "#crm-funnel > .empty"
+            ],
+            [
+              "#crm-funnel > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(8) > .report-section-head > span"
+            ],
+            [
+              "div[data-stage-column=\"NEW\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"QUALIFIED\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"QUOTE_SENT\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"DEMO\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"POST_PURCHASE\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"PARKED\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"WON\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"LOST\"] > p > small"
+            ],
+            [
+              "#crm-hot-leads > .empty"
+            ],
+            [
+              "#crm-hot-leads > .empty > small"
+            ],
+            [
+              "button[data-followup-tab=\"overdue\"]"
+            ],
+            [
+              "button[data-followup-tab=\"thisWeek\"]"
+            ],
+            [
+              "button[data-followup-tab=\"onHold\"]"
+            ],
+            [
+              "button[data-followup-tab=\"done\"]"
+            ],
+            [
+              ".risk-list > .empty"
+            ],
+            [
+              "#crm-inbox > .empty"
+            ],
+            [
+              "#crm-inbox > .empty > small"
+            ],
+            [
+              "#crm-b2b > .empty"
+            ],
+            [
+              "#crm-b2b > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(13) > .report-section-head > span"
+            ],
+            [
+              "#crm-quotes > .empty"
+            ],
+            [
+              "#crm-quotes > .empty > small"
+            ],
+            [
+              "#crm-forecast > .empty"
+            ],
+            [
+              "#crm-ai-insights > .empty"
+            ],
+            [
+              "#crm-ai-insights > .empty > small"
+            ],
+            [
+              "#crm-activity > .empty"
+            ],
+            [
+              "#crm-lead-list > .empty"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "planning",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"planning\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#brief-view > p:nth-child(1)"
+            ],
+            [
+              "#brief-view > p:nth-child(2)"
+            ],
+            [
+              "#brief-view > p:nth-child(3)"
+            ],
+            [
+              "#brief-view > small"
+            ],
+            [
+              ".calendar-output > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"reports\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#report-week-label > small"
+            ],
+            [
+              ".notice"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(1) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(1) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(2) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(2) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(3) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(3) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(3) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(4) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(4) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(4) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(5) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(5) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(5) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(6) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(6) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(6) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(7) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(7) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(7) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(8) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(8) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(8) > .kpi-context"
+            ],
+            [
+              ".kpi-card:nth-child(9) > .kpi-label"
+            ],
+            [
+              ".kpi-card:nth-child(9) > .kpi-context"
+            ],
+            [
+              "div[data-report-nav=\"content\"] > .kpi-label"
+            ],
+            [
+              "div[data-report-nav=\"content\"] > .kpi-context"
+            ],
+            [
+              "div[data-report-nav=\"agents\"] > .kpi-label"
+            ],
+            [
+              "div[data-report-nav=\"agents\"] > .kpi-context"
+            ],
+            [
+              ".panel.report-section > .report-section-head > span"
+            ],
+            [
+              ".panel.report-section > p"
+            ],
+            [
+              "#report-content > .report-section:nth-child(4) > .report-section-head > span"
+            ],
+            [
+              ".report-section:nth-child(4) > .empty"
+            ],
+            [
+              ".report-section:nth-child(4) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(5) > .empty"
+            ],
+            [
+              ".report-section:nth-child(5) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(3) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(4) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .empty"
+            ],
+            [
+              ".report-section:nth-child(6) > p > small"
+            ],
+            [
+              "#report-content > .report-section:nth-child(7) > .report-section-head > span"
+            ],
+            [
+              ".report-section:nth-child(7) > .empty"
+            ],
+            [
+              ".report-section:nth-child(7) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(8) > .empty"
+            ],
+            [
+              ".report-section:nth-child(9) > .empty"
+            ],
+            [
+              ".report-section:nth-child(9) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(10) > .empty"
+            ],
+            [
+              ".report-section:nth-child(10) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(11) > .empty"
+            ],
+            [
+              ".report-section:nth-child(11) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(12) > .empty"
+            ],
+            [
+              ".report-section:nth-child(12) > .empty > small"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "content",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"content\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "article[data-content-kpi=\"drafts\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"drafts\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"complianceFlagged\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"complianceFlagged\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"awaitingApproval\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"awaitingApproval\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"approved\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"approved\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"scheduled\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"scheduled\"] > .kpi-context"
+            ],
+            [
+              ".kpi-card:nth-child(6) > .row-between > .kpi-label"
+            ],
+            [
+              "#stats > .kpi-card:nth-child(6) > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"blocked\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"blocked\"] > .kpi-context"
+            ],
+            [
+              "#tab-11"
+            ],
+            [
+              "#tab-12"
+            ],
+            [
+              "#tab-13"
+            ],
+            [
+              "#content > .section-title > span"
+            ],
+            [
+              ".report-section:nth-child(2) > .report-section-head > span"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(1) > p > small"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(2) > p > small"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(3) > p > small"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(4) > p > small"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(5) > p > small"
+            ],
+            [
+              "#content-frost-insights > .empty > p"
+            ],
+            [
+              "#items > .empty"
+            ],
+            [
+              "#content-ai-rail > p"
+            ],
+            [
+              "#content > .report-section:nth-child(6) > .report-section-head > span"
+            ],
+            [
+              "#content-library > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "agents",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"agents\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(1) > .row-between > .kpi-label"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(1) > .kpi-context"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(2) > .row-between > .kpi-label"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(2) > .kpi-context"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(3) > .row-between > .kpi-label"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(3) > .kpi-context"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(4) > .row-between > .kpi-label"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(4) > .kpi-context"
+            ],
+            [
+              "#frost-status > .row-between > .pill[data-status=\"HOLD\"]"
+            ],
+            [
+              "#frost-status > p"
+            ],
+            [
+              "#approval-center > .section-title > span"
+            ],
+            [
+              "#approval-center-list > .empty"
+            ],
+            [
+              "#agents > .section-title > span"
+            ],
+            [
+              ".card:nth-child(1) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(1) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(1) > p"
+            ],
+            [
+              ".card:nth-child(1) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(1) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(2) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(2) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(2) > p"
+            ],
+            [
+              ".card:nth-child(2) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(2) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(3) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(3) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(3) > p"
+            ],
+            [
+              ".card:nth-child(3) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(3) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(4) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(4) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(4) > p"
+            ],
+            [
+              ".card:nth-child(4) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(4) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(5) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(5) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(5) > p"
+            ],
+            [
+              ".card:nth-child(5) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(5) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(6) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(6) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(6) > p"
+            ],
+            [
+              ".card:nth-child(6) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(6) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(7) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(7) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(7) > p"
+            ],
+            [
+              ".card:nth-child(7) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(7) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(8) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(8) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(8) > p"
+            ],
+            [
+              ".card:nth-child(8) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(8) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(9) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(9) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(9) > p"
+            ],
+            [
+              ".card:nth-child(9) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(9) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(10) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(10) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              ".card:nth-child(10) > p"
+            ],
+            [
+              ".card:nth-child(10) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(10) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(11) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(11) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              ".card:nth-child(11) > p"
+            ],
+            [
+              ".card:nth-child(11) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(11) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(12) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(12) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              ".card:nth-child(12) > p"
+            ],
+            [
+              ".card:nth-child(12) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(12) > small:nth-child(5)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "knowledge",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"knowledge\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(1) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(1) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(2) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(2) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(3) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(3) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(4) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(4) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(5) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(5) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(6) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(6) > .kpi-context"
+            ],
+            [
+              "#memory-approvals > .section-title > span"
+            ],
+            [
+              "#memory-health-list > .empty > p"
+            ],
+            [
+              "button[data-kind=\"\"]"
+            ],
+            [
+              "button[data-kind=\"brand_voice\"]"
+            ],
+            [
+              "button[data-kind=\"product_fact\"]"
+            ],
+            [
+              "button[data-kind=\"price_reference\"]"
+            ],
+            [
+              "button[data-kind=\"approved_claim\"]"
+            ],
+            [
+              "button[data-kind=\"faq\"]"
+            ],
+            [
+              "button[data-kind=\"objection\"]"
+            ],
+            [
+              "button[data-kind=\"policy\"]"
+            ],
+            [
+              "button[data-kind=\"winning_hook\"]"
+            ],
+            [
+              "button[data-kind=\"losing_hook\"]"
+            ],
+            [
+              "button[data-kind=\"lost_deal_reason\"]"
+            ],
+            [
+              "button[data-kind=\"process_rule\"]"
+            ],
+            [
+              "button[data-kind=\"customer_pattern\"]"
+            ],
+            [
+              "button[data-kind=\"competitor_insight\"]"
+            ],
+            [
+              "#memory-list > .empty > p"
+            ],
+            [
+              "#catalog > p"
+            ],
+            [
+              "#product-list > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "integrations",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"integrations\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "article[data-integration-kpi=\"CONNECTED\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"CONNECTED\"] > .kpi-context"
+            ],
+            [
+              "article[data-integration-kpi=\"NEEDS_SETUP\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"NEEDS_SETUP\"] > .kpi-context"
+            ],
+            [
+              "article[data-integration-kpi=\"CONFIGURED_NO_CONNECTOR\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"CONFIGURED_NO_CONNECTOR\"] > .kpi-context"
+            ],
+            [
+              "article[data-integration-kpi=\"ERROR\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"ERROR\"] > .kpi-context"
+            ],
+            [
+              "button[data-integration-category=\"AI\"]"
+            ],
+            [
+              "button[data-integration-category=\"Commerce\"]"
+            ],
+            [
+              "button[data-integration-category=\"Messaging\"]"
+            ],
+            [
+              "button[data-integration-category=\"Social\"]"
+            ],
+            [
+              "button[data-integration-category=\"Productivity\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(2) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(2) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(2) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              "#integrations > .report-section:nth-child(6) > .report-section-head > span"
+            ],
+            [
+              ".risk-item:nth-child(1) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(1) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(2) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(2) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(3) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(3) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(4) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(4) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(5) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(5) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(6) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(6) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "audit",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"audit\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "users",
+      "width": 1440,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"users\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(1) > .row-between > .kpi-label"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(1) > .kpi-context"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(2) > .row-between > .kpi-label"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(2) > .kpi-context"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(3) > .row-between > .kpi-label"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(3) > .kpi-context"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(4) > .row-between > .kpi-label"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(4) > .kpi-context"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(1) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(2) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(3) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(4) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "th:nth-child(5) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "th:nth-child(6) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "th:nth-child(7) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              ".avatar[aria-hidden=\"true\"]"
+            ],
+            [
+              "td:nth-child(4) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-footer > span[aria-live=\"polite\"]"
+            ],
+            [
+              "#team-roles > .card:nth-child(1) > p"
+            ],
+            [
+              "#team-roles > .card:nth-child(2) > p"
+            ],
+            [
+              "#team-roles > .card:nth-child(3) > p"
+            ],
+            [
+              "#users > .report-section:nth-child(4) > .report-section-head > span"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(1) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(2) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(3) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(4) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(3) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(4) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(2) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(2) > td:nth-child(3) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              "td:nth-child(4) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(3) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(4) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(4) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(4) > td:nth-child(3) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(4) > td:nth-child(4) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(5) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(5) > td:nth-child(3) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(5) > td:nth-child(4) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(6) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(6) > td:nth-child(3) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(6) > td:nth-child(4) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(7) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(7) > td:nth-child(3) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              "tr:nth-child(7) > td:nth-child(4) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(8) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(8) > td:nth-child(3) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(8) > td:nth-child(4) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-footer > span[aria-live=\"polite\"]"
+            ],
+            [
+              "#team-invitations > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "overview",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"overview\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              ".trend-card > .trend-empty > .trend-empty-note > .empty"
+            ],
+            [
+              ".trend-card > .trend-empty > .trend-empty-note > .empty > small"
+            ],
+            [
+              ".tone-a > .spark-empty"
+            ],
+            [
+              ".tone-b > .spark-empty"
+            ],
+            [
+              ".donut-legend > li"
+            ],
+            [
+              ".icon-row-copy > small"
+            ],
+            [
+              ".panel:nth-child(2) > .kpi-context"
+            ],
+            [
+              ".panel:nth-child(2) > .trend-empty > .trend-empty-note > .empty"
+            ],
+            [
+              ".panel:nth-child(2) > .trend-empty > .trend-empty-note > .empty > small"
+            ],
+            [
+              ".panel:nth-child(3) > .empty"
+            ],
+            [
+              ".overview-brief > .row-between > .pill[data-status=\"HOLD\"]"
+            ],
+            [
+              ".overview-brief > p:nth-child(2)"
+            ],
+            [
+              "div:nth-child(1) > span > small"
+            ],
+            [
+              ".overview-brief > p:nth-child(4)"
+            ],
+            [
+              ".overview-grid > .panel:nth-child(2) > p"
+            ],
+            [
+              "span[data-status=\"PENDING\"]"
+            ],
+            [
+              ".overview-list > .empty > p"
+            ],
+            [
+              "button[data-go=\"crm\"]"
+            ],
+            [
+              ".overview-wide > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "crm",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"crm\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "span[title=\"CRM محلي — دائمًا متاح\"] > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(1) > .kpi-context"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(2) > .kpi-context"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-hot-leads\"] > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-hot-leads\"] > .kpi-context"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-quotes\"] > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-forecast\"] > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-forecast\"] > .kpi-context"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(6) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(7) > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-followup-center\"] > .kpi-label"
+            ],
+            [
+              "#crm > .report-section:nth-child(7) > .report-section-head > span"
+            ],
+            [
+              "#crm-funnel > .empty"
+            ],
+            [
+              "#crm-funnel > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(8) > .report-section-head > span"
+            ],
+            [
+              "div[data-stage-column=\"NEW\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"QUALIFIED\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"QUOTE_SENT\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"DEMO\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"POST_PURCHASE\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"PARKED\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"WON\"] > p > small"
+            ],
+            [
+              "div[data-stage-column=\"LOST\"] > p > small"
+            ],
+            [
+              "#crm-hot-leads > .empty"
+            ],
+            [
+              "#crm-hot-leads > .empty > small"
+            ],
+            [
+              "button[data-followup-tab=\"overdue\"]"
+            ],
+            [
+              "button[data-followup-tab=\"thisWeek\"]"
+            ],
+            [
+              "button[data-followup-tab=\"onHold\"]"
+            ],
+            [
+              "button[data-followup-tab=\"done\"]"
+            ],
+            [
+              ".risk-list > .empty"
+            ],
+            [
+              "#crm-inbox > .empty"
+            ],
+            [
+              "#crm-inbox > .empty > small"
+            ],
+            [
+              "#crm-b2b > .empty"
+            ],
+            [
+              "#crm-b2b > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(13) > .report-section-head > span"
+            ],
+            [
+              "#crm-quotes > .empty"
+            ],
+            [
+              "#crm-quotes > .empty > small"
+            ],
+            [
+              "#crm-forecast > .empty"
+            ],
+            [
+              "#crm-ai-insights > .empty"
+            ],
+            [
+              "#crm-ai-insights > .empty > small"
+            ],
+            [
+              "#crm-activity > .empty"
+            ],
+            [
+              "#crm-lead-list > .empty"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "planning",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"planning\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#brief-view > p:nth-child(1)"
+            ],
+            [
+              "#brief-view > p:nth-child(2)"
+            ],
+            [
+              "#brief-view > p:nth-child(3)"
+            ],
+            [
+              "#brief-view > small"
+            ],
+            [
+              ".calendar-output > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"reports\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#report-week-label > small"
+            ],
+            [
+              ".notice"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(1) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(1) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(2) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(2) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(3) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(3) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(3) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(4) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(4) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(4) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(5) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(5) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(5) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(6) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(6) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(6) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(7) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(7) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(7) > .kpi-context"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(8) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(8) > .kpi-trend.neutral"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(8) > .kpi-context"
+            ],
+            [
+              ".kpi-card:nth-child(9) > .kpi-label"
+            ],
+            [
+              ".kpi-card:nth-child(9) > .kpi-context"
+            ],
+            [
+              "div[data-report-nav=\"content\"] > .kpi-label"
+            ],
+            [
+              "div[data-report-nav=\"content\"] > .kpi-context"
+            ],
+            [
+              "div[data-report-nav=\"agents\"] > .kpi-label"
+            ],
+            [
+              "div[data-report-nav=\"agents\"] > .kpi-context"
+            ],
+            [
+              ".panel.report-section > .report-section-head > span"
+            ],
+            [
+              ".panel.report-section > p"
+            ],
+            [
+              "#report-content > .report-section:nth-child(4) > .report-section-head > span"
+            ],
+            [
+              ".report-section:nth-child(4) > .empty"
+            ],
+            [
+              ".report-section:nth-child(4) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(5) > .empty"
+            ],
+            [
+              ".report-section:nth-child(5) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(3) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(4) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .empty"
+            ],
+            [
+              ".report-section:nth-child(6) > p > small"
+            ],
+            [
+              "#report-content > .report-section:nth-child(7) > .report-section-head > span"
+            ],
+            [
+              ".report-section:nth-child(7) > .empty"
+            ],
+            [
+              ".report-section:nth-child(7) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(8) > .empty"
+            ],
+            [
+              ".report-section:nth-child(9) > .empty"
+            ],
+            [
+              ".report-section:nth-child(9) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(10) > .empty"
+            ],
+            [
+              ".report-section:nth-child(10) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(11) > .empty"
+            ],
+            [
+              ".report-section:nth-child(11) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(12) > .empty"
+            ],
+            [
+              ".report-section:nth-child(12) > .empty > small"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "content",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"content\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "article[data-content-kpi=\"drafts\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"drafts\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"complianceFlagged\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"complianceFlagged\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"awaitingApproval\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"awaitingApproval\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"approved\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"approved\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"scheduled\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"scheduled\"] > .kpi-context"
+            ],
+            [
+              ".kpi-card:nth-child(6) > .row-between > .kpi-label"
+            ],
+            [
+              "#stats > .kpi-card:nth-child(6) > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"blocked\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"blocked\"] > .kpi-context"
+            ],
+            [
+              "#tab-11"
+            ],
+            [
+              "#tab-12"
+            ],
+            [
+              "#tab-13"
+            ],
+            [
+              "#content > .section-title > span"
+            ],
+            [
+              ".report-section:nth-child(2) > .report-section-head > span"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(1) > p > small"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(2) > p > small"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(3) > p > small"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(4) > p > small"
+            ],
+            [
+              "#content-pipeline > .kanban[aria-label=\"لوحة مراحل المبيعات\"][role=\"region\"] > .kanban-column:nth-child(5) > p > small"
+            ],
+            [
+              "#content-frost-insights > .empty > p"
+            ],
+            [
+              "#items > .empty"
+            ],
+            [
+              "#content-ai-rail > p"
+            ],
+            [
+              "#content > .report-section:nth-child(6) > .report-section-head > span"
+            ],
+            [
+              "#content-library > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "agents",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"agents\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(1) > .row-between > .kpi-label"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(1) > .kpi-context"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(2) > .row-between > .kpi-label"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(2) > .kpi-context"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(3) > .row-between > .kpi-label"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(3) > .kpi-context"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(4) > .row-between > .kpi-label"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(4) > .kpi-context"
+            ],
+            [
+              "#frost-status > .row-between > .pill[data-status=\"HOLD\"]"
+            ],
+            [
+              "#frost-status > p"
+            ],
+            [
+              "#approval-center > .section-title > span"
+            ],
+            [
+              "#approval-center-list > .empty"
+            ],
+            [
+              "#agents > .section-title > span"
+            ],
+            [
+              ".card:nth-child(1) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(1) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(1) > p"
+            ],
+            [
+              ".card:nth-child(1) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(1) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(2) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(2) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(2) > p"
+            ],
+            [
+              ".card:nth-child(2) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(2) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(3) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(3) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(3) > p"
+            ],
+            [
+              ".card:nth-child(3) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(3) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(4) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(4) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(4) > p"
+            ],
+            [
+              ".card:nth-child(4) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(4) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(5) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(5) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(5) > p"
+            ],
+            [
+              ".card:nth-child(5) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(5) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(6) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(6) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(6) > p"
+            ],
+            [
+              ".card:nth-child(6) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(6) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(7) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(7) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(7) > p"
+            ],
+            [
+              ".card:nth-child(7) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(7) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(8) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(8) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(8) > p"
+            ],
+            [
+              ".card:nth-child(8) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(8) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(9) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(9) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(9) > p"
+            ],
+            [
+              ".card:nth-child(9) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(9) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(10) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(10) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              ".card:nth-child(10) > p"
+            ],
+            [
+              ".card:nth-child(10) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(10) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(11) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(11) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              ".card:nth-child(11) > p"
+            ],
+            [
+              ".card:nth-child(11) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(11) > small:nth-child(5)"
+            ],
+            [
+              ".card:nth-child(12) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(12) > .meta > .pill[data-status=\"NEEDS_DATA\"]"
+            ],
+            [
+              ".card:nth-child(12) > p"
+            ],
+            [
+              ".card:nth-child(12) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(12) > small:nth-child(5)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "knowledge",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"knowledge\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(1) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(1) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(2) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(2) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(3) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(3) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(4) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(4) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(5) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(5) > .kpi-context"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(6) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(6) > .kpi-context"
+            ],
+            [
+              "#memory-approvals > .section-title > span"
+            ],
+            [
+              "#memory-health-list > .empty > p"
+            ],
+            [
+              "button[data-kind=\"\"]"
+            ],
+            [
+              "button[data-kind=\"brand_voice\"]"
+            ],
+            [
+              "button[data-kind=\"product_fact\"]"
+            ],
+            [
+              "button[data-kind=\"price_reference\"]"
+            ],
+            [
+              "button[data-kind=\"approved_claim\"]"
+            ],
+            [
+              "button[data-kind=\"faq\"]"
+            ],
+            [
+              "button[data-kind=\"objection\"]"
+            ],
+            [
+              "button[data-kind=\"policy\"]"
+            ],
+            [
+              "button[data-kind=\"winning_hook\"]"
+            ],
+            [
+              "button[data-kind=\"losing_hook\"]"
+            ],
+            [
+              "button[data-kind=\"lost_deal_reason\"]"
+            ],
+            [
+              "button[data-kind=\"process_rule\"]"
+            ],
+            [
+              "button[data-kind=\"customer_pattern\"]"
+            ],
+            [
+              "button[data-kind=\"competitor_insight\"]"
+            ],
+            [
+              "#memory-list > .empty > p"
+            ],
+            [
+              "#catalog > p"
+            ],
+            [
+              "#product-list > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "integrations",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"integrations\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "article[data-integration-kpi=\"CONNECTED\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"CONNECTED\"] > .kpi-context"
+            ],
+            [
+              "article[data-integration-kpi=\"NEEDS_SETUP\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"NEEDS_SETUP\"] > .kpi-context"
+            ],
+            [
+              "article[data-integration-kpi=\"CONFIGURED_NO_CONNECTOR\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"CONFIGURED_NO_CONNECTOR\"] > .kpi-context"
+            ],
+            [
+              "article[data-integration-kpi=\"ERROR\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"ERROR\"] > .kpi-context"
+            ],
+            [
+              "button[data-integration-category=\"AI\"]"
+            ],
+            [
+              "button[data-integration-category=\"Commerce\"]"
+            ],
+            [
+              "button[data-integration-category=\"Messaging\"]"
+            ],
+            [
+              "button[data-integration-category=\"Social\"]"
+            ],
+            [
+              "button[data-integration-category=\"Productivity\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(2) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(2) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(2) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > .row-between > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > .integration-meta > div:nth-child(2) > span"
+            ],
+            [
+              "#integrations > .report-section:nth-child(6) > .report-section-head > span"
+            ],
+            [
+              ".risk-item:nth-child(1) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(1) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(2) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(2) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(3) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(3) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(4) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(4) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(5) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(5) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              ".risk-item:nth-child(6) > .risk-body > .risk-meta"
+            ],
+            [
+              ".risk-item:nth-child(6) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "audit",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"audit\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "users",
+      "width": 1920,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".brand > span"
+            ],
+            [
+              ".brand > small"
+            ],
+            [
+              ".nav-group:nth-child(1)"
+            ],
+            [
+              "a[href$=\"#overview\"] > span"
+            ],
+            [
+              "a[href$=\"#crm\"] > span"
+            ],
+            [
+              "a[href$=\"#planning\"] > span"
+            ],
+            [
+              "a[href$=\"#reports\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(6)"
+            ],
+            [
+              "a[href$=\"#content\"] > span"
+            ],
+            [
+              "a[href$=\"#agents\"] > span"
+            ],
+            [
+              "a[href$=\"#knowledge\"] > span"
+            ],
+            [
+              ".nav-group:nth-child(10)"
+            ],
+            [
+              "a[href$=\"#integrations\"] > span"
+            ],
+            [
+              "a[href$=\"#audit\"] > span"
+            ],
+            [
+              "#nav-users > span"
+            ],
+            [
+              "#user-initials"
+            ],
+            [
+              "#profile-role"
+            ],
+            [
+              "#logout"
+            ],
+            [
+              ".local"
+            ],
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#system-status"
+            ],
+            [
+              "div[data-page=\"users\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(1) > .row-between > .kpi-label"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(1) > .kpi-context"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(2) > .row-between > .kpi-label"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(2) > .kpi-context"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(3) > .row-between > .kpi-label"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(3) > .kpi-context"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(4) > .row-between > .kpi-label"
+            ],
+            [
+              "#team-summary > .kpi-card:nth-child(4) > .kpi-context"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(1) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(2) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(3) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(4) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "th:nth-child(5) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "th:nth-child(6) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "th:nth-child(7) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              ".avatar[aria-hidden=\"true\"]"
+            ],
+            [
+              "td:nth-child(4) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-footer > span[aria-live=\"polite\"]"
+            ],
+            [
+              "#team-roles > .card:nth-child(1) > p"
+            ],
+            [
+              "#team-roles > .card:nth-child(2) > p"
+            ],
+            [
+              "#team-roles > .card:nth-child(3) > p"
+            ],
+            [
+              "#users > .report-section:nth-child(4) > .report-section-head > span"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(1) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(2) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(3) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(4) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(3) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(4) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(2) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(2) > td:nth-child(3) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              "td:nth-child(4) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(3) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(4) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(4) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(4) > td:nth-child(3) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(4) > td:nth-child(4) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(5) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(5) > td:nth-child(3) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(5) > td:nth-child(4) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(6) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(6) > td:nth-child(3) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(6) > td:nth-child(4) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(7) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(7) > td:nth-child(3) > .pill[data-status=\"NEEDS_SETUP\"]"
+            ],
+            [
+              "tr:nth-child(7) > td:nth-child(4) > .pill[data-status=\"CONFIGURED_NO_CONNECTOR\"]"
+            ],
+            [
+              "tr:nth-child(8) > td:nth-child(2) > .pill[data-status=\"CONNECTED\"]"
+            ],
+            [
+              "tr:nth-child(8) > td:nth-child(3) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(8) > td:nth-child(4) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-footer > span[aria-live=\"polite\"]"
+            ],
+            [
+              "#team-invitations > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "overview",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "div[data-page=\"overview\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              ".overview-brief > p:nth-child(2)"
+            ],
+            [
+              ".overview-grid > .panel:nth-child(2) > p"
+            ],
+            [
+              "span[data-status=\"PENDING\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "crm",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(1) > .kpi-context"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(2) > .kpi-context"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-quotes\"] > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-forecast\"] > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(8) > .report-section-head > span"
+            ],
+            [
+              "#crm-b2b > .empty"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "planning",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "div[data-page=\"planning\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#report-week-label > small"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(4) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(5) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(2) > .kpi-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "content",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "article[data-content-kpi=\"drafts\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"awaitingApproval\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"awaitingApproval\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"scheduled\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"blocked\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"blocked\"] > .kpi-context"
+            ],
+            [
+              "#content > .section-title > span"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "agents",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#agent-metrics > .kpi-card:nth-child(3) > .kpi-context"
+            ],
+            [
+              "#agents > .section-title > span"
+            ],
+            [
+              ".card:nth-child(1) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(1) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(2) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(2) > p"
+            ],
+            [
+              ".card:nth-child(2) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(3) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(3) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(4) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(4) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(5) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(5) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(6) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(6) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(7) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(7) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(8) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(8) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(9) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(9) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(10) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(10) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(11) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(11) > p"
+            ],
+            [
+              ".card:nth-child(11) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(12) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(12) > small:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "knowledge",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(2) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(3) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(4) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(5) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(6) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(6) > .kpi-context"
+            ],
+            [
+              "button[data-kind=\"price_reference\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "integrations",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "article[data-integration-kpi=\"CONNECTED\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"NEEDS_SETUP\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"CONFIGURED_NO_CONNECTOR\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"ERROR\"] > .kpi-label"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(2) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > .integration-meta > div:nth-child(1) > span"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "audit",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "div[data-page=\"audit\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "users",
+      "width": 768,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".breadcrumbs > span:nth-child(2)"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(1) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(2) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(3) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(4) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "th:nth-child(5) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "th:nth-child(6) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "th:nth-child(7) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              ".avatar[aria-hidden=\"true\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-footer > span[aria-live=\"polite\"]"
+            ],
+            [
+              "#users > .report-section:nth-child(4) > .report-section-head > span"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(1) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(2) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(3) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(4) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "tr:nth-child(1) > td:nth-child(4) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(3) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(3) > td:nth-child(4) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(8) > td:nth-child(3) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "tr:nth-child(8) > td:nth-child(4) > .pill[data-status=\"ERROR\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-footer > span[aria-live=\"polite\"]"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "overview",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              "div[data-page=\"overview\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ],
+            [
+              ".trend-card > .trend-empty > .trend-empty-note > .empty"
+            ],
+            [
+              ".tone-a > .spark-empty"
+            ],
+            [
+              ".tone-b > .spark-empty"
+            ],
+            [
+              ".donut-legend > li"
+            ],
+            [
+              ".icon-row-copy > small"
+            ],
+            [
+              ".panel:nth-child(2) > .trend-empty > .trend-empty-note > .empty"
+            ],
+            [
+              ".panel:nth-child(2) > .trend-empty > .trend-empty-note > .empty > small"
+            ],
+            [
+              ".panel:nth-child(3) > .empty"
+            ],
+            [
+              ".overview-brief > .row-between > .pill[data-status=\"HOLD\"]"
+            ],
+            [
+              ".overview-brief > p:nth-child(2)"
+            ],
+            [
+              "div:nth-child(1) > span > small"
+            ],
+            [
+              ".overview-brief > p:nth-child(4)"
+            ],
+            [
+              ".overview-grid > .panel:nth-child(2) > p"
+            ],
+            [
+              "span[data-status=\"PENDING\"]"
+            ],
+            [
+              ".overview-list > .empty > p"
+            ],
+            [
+              "button[data-go=\"crm\"]"
+            ],
+            [
+              ".overview-wide > .empty > p"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "crm",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(1) > .kpi-context"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".clickable.kpi-card[data-crm-scroll=\"crm-kanban\"]:nth-child(2) > .kpi-context"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-quotes\"] > .kpi-label"
+            ],
+            [
+              "div[data-crm-scroll=\"crm-forecast\"] > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(8) > .report-section-head > span"
+            ],
+            [
+              "#crm-b2b > .empty"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "planning",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              "div[data-page=\"planning\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "reports",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              "#report-week-label > small"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(2) > .kpi-label"
+            ],
+            [
+              ".clickable[data-report-nav=\"crm\"][role=\"button\"]:nth-child(4) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(5) > .empty > small"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(1) > .kpi-label"
+            ],
+            [
+              ".report-section:nth-child(6) > .kpi-grid > .kpi-card:nth-child(2) > .kpi-label"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "content",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              "article[data-content-kpi=\"drafts\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"awaitingApproval\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"awaitingApproval\"] > .kpi-context"
+            ],
+            [
+              "article[data-content-kpi=\"scheduled\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"blocked\"] > .row-between > .kpi-label"
+            ],
+            [
+              "article[data-content-kpi=\"blocked\"] > .kpi-context"
+            ],
+            [
+              "#content > .section-title > span"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "agents",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              "#agent-metrics > .kpi-card:nth-child(3) > .kpi-context"
+            ],
+            [
+              "#agents > .section-title > span"
+            ],
+            [
+              ".card:nth-child(1) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(1) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(2) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              "#agent-list > .card:nth-child(2) > p"
+            ],
+            [
+              ".card:nth-child(2) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(3) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(3) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(4) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(4) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(5) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(5) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(6) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(6) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(7) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(7) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(8) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(8) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(9) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(9) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(10) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(10) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(11) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(11) > p"
+            ],
+            [
+              ".card:nth-child(11) > small:nth-child(4)"
+            ],
+            [
+              ".card:nth-child(12) > .meta > .pill[data-status=\"L0\"]"
+            ],
+            [
+              ".card:nth-child(12) > small:nth-child(4)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "knowledge",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              "#memory-summary > .kpi-card:nth-child(2) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(3) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(4) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(5) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(6) > .kpi-label"
+            ],
+            [
+              "#memory-summary > .kpi-card:nth-child(6) > .kpi-context"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "integrations",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              "article[data-integration-kpi=\"CONNECTED\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"NEEDS_SETUP\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"CONFIGURED_NO_CONNECTOR\"] > .kpi-label"
+            ],
+            [
+              "article[data-integration-kpi=\"ERROR\"] > .kpi-label"
+            ],
+            [
+              ".integration-card.card:nth-child(1) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(2) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(3) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(4) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > p"
+            ],
+            [
+              ".integration-card.card:nth-child(5) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(6) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(7) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(8) > .integration-meta > div:nth-child(1) > span"
+            ],
+            [
+              ".integration-card.card:nth-child(9) > .integration-meta > div:nth-child(1) > span"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "audit",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              "div[data-page=\"audit\"] > header > div:nth-child(1) > p:nth-child(3)"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "route": "users",
+      "width": 390,
+      "overflow": false,
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "targets": [
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(1) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(2) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(3) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(4) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              ".avatar[aria-hidden=\"true\"]"
+            ],
+            [
+              "#team-members > .data-table > .table-footer > span[aria-live=\"polite\"]"
+            ],
+            [
+              "#users > .report-section:nth-child(4) > .report-section-head > span"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(1) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-scroll[aria-label=\"جدول بيانات قابل للتمرير\"][role=\"region\"] > table > thead > tr > th:nth-child(2) > .table-sort.button[type=\"button\"]"
+            ],
+            [
+              "#team-matrix > .data-table > .table-footer > span[aria-live=\"polite\"]"
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "scope": "Temporary database; empty-state smoke only. Does not prove live integrations or authenticated production data."
+}
