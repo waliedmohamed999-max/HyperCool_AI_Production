@@ -78,8 +78,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const host=req.headers.host;
       if(!host || (publicUrl?host!==publicUrl.host:!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host))) fail(403,'Host not allowed');
       if(req.headers.origin && req.headers.origin!==(publicUrl?.origin||`http://${host}`)) fail(403,'Cross-origin request rejected');
-      if(req.headers['sec-fetch-site']==='cross-site') fail(403,'Cross-site request rejected');
       const url=new URL(req.url,`http://${host}`);
+      // External links may open the public shell; API and embedded requests remain protected.
+      const publicNavigation=req.method==='GET' && url.pathname==='/' &&
+        req.headers['sec-fetch-mode']==='navigate' && req.headers['sec-fetch-dest']==='document';
+      if(req.headers['sec-fetch-site']==='cross-site' && !publicNavigation) fail(403,'Cross-site request rejected');
       if(url.pathname.startsWith('/api/automation/')) {
         authorizeAutomation(req,env);
         const actor={id:'automation',name:'n8n',role:'automation'};

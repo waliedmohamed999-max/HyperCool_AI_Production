@@ -27,12 +27,18 @@ test('hosted origin enforces host and origin and secures session cookies',async(
   const dir=await mkdtemp(join(tmpdir(),'hc-hosting-'));
   const app=await createApp({env:{PUBLIC_ORIGIN:'https://app.example.com',DATA_DIR:dir}});
   await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
-  const request=(host,origin,input)=>new Promise((resolve,reject)=>{
-    const req=http.request({hostname:'127.0.0.1',port:app.server.address().port,path:input?'/api/setup':'/api/auth',method:input?'POST':'GET',headers:{Host:host,...(origin?{Origin:origin}:{}),...(input?{'Content-Type':'application/json'}:{})}},res=>{
+  const request=(host,origin,input,path=input?'/api/setup':'/api/auth',extra={})=>new Promise((resolve,reject)=>{
+    const req=http.request({hostname:'127.0.0.1',port:app.server.address().port,path,method:input?'POST':'GET',headers:{Host:host,...(origin?{Origin:origin}:{}),...(input?{'Content-Type':'application/json'}:{}),...extra}},res=>{
       res.resume();res.on('end',()=>resolve({status:res.statusCode,cookies:res.headers['set-cookie']}));
     });req.on('error',reject);req.end(input?JSON.stringify(input):undefined);
   });
   try {
+    const navigation={'Sec-Fetch-Site':'cross-site','Sec-Fetch-Mode':'navigate','Sec-Fetch-Dest':'document'};
+    assert.equal((await request('app.example.com',null,null,'/',navigation)).status,200);
+    assert.equal((await request('app.example.com',null,null,'/api/auth',navigation)).status,403);
+    assert.equal((await request('app.example.com',null,{},'/api/setup',navigation)).status,403);
+    assert.equal((await request('app.example.com',null,null,'/',{...navigation,'Sec-Fetch-Dest':'iframe'})).status,403);
+    assert.equal((await request('app.example.com',null,null,'/',{...navigation,'Sec-Fetch-Mode':'cors'})).status,403);
     assert.equal((await request('app.example.com')).status,200);
     assert.equal((await request('evil.example.com')).status,403);
     assert.equal((await request('app.example.com','https://evil.example.com')).status,403);
