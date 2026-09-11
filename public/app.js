@@ -15,6 +15,7 @@ import {renderIntegrations,installIntegrationInteractions,checkAllIntegrations} 
 import {renderTeam,installTeamInteractions,clickTeam} from './team.js';
 import {resolveActiveWorkspace,renderWorkspaceGate,hideWorkspaceGate,renderWorkspaceSwitcher} from './components/workspace-switcher.js';
 import {installControlCenter,renderControlCenter} from './pages/control-center.js';
+import {isInviteRoute,renderInvitePage} from './pages/invite.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
 // access so a language switch relabels the whole audit trail with no other code touched.
@@ -56,7 +57,11 @@ window.addEventListener('popstate',()=>showPage(currentPage()));
 window.addEventListener('hashchange',()=>showPage(currentPage()));
 const roles=new Proxy({},{get:(_,role)=>t('navigation.role'+role.charAt(0).toUpperCase()+role.slice(1))});
 let viewData=new Map();
-async function api(path,body){const response=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':auth.csrf||''},body:JSON.stringify(body)}:{});const value=await response.json();if(!response.ok){if(response.status===401){$('#protected').hidden=true;$('#auth-panel').hidden=false;$('#session-bar').hidden=true;}throw new Error(value.error);}if(!body)viewData.set(path,value);return value;}
+// `method` (Phase 4C-2/4C-3 addition): optional HTTP method override for the routes that are
+// genuinely PATCH/PUT/DELETE on the backend (agent config, tool assignment, connection
+// credential, member management) — every pre-existing call site that omits it keeps its exact
+// original behavior (GET with no body, POST with one), byte-for-byte unchanged.
+async function api(path,body,method){const hasBody=body!==undefined&&body!==null;const response=await fetch(path,method||hasBody?{method:method||'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':auth.csrf||''},...(hasBody?{body:JSON.stringify(body)}:{})}:{});const value=await response.json();if(!response.ok){if(response.status===401){$('#protected').hidden=true;$('#auth-panel').hidden=false;$('#session-bar').hidden=true;}throw new Error(value.error);}if(!body)viewData.set(path,value);return value;}
 function message(text,type='info'){toast(text,type);}
 // One confirmation layer for consequential button actions; existing handlers execute once after acceptance.
 const confirmedButtons=new WeakSet();
@@ -65,6 +70,10 @@ async function render(){
   beforeWorkspaceRender();
   viewData=new Map();
   auth=await api('/api/auth');
+  // Phase 4C-3 — the invitation-accept page lives OUTSIDE the normal auth-gated flow (an
+  // invitee may have no session at all yet): handled first, short-circuiting the rest of
+  // this render entirely, whether or not the visitor is currently authenticated.
+  if(isInviteRoute()){await renderInvitePage(auth,api);return;}
   workspaceAuth(auth);
   $('#auth-panel').hidden=!!auth.user;
   $('#protected').hidden=!auth.user;

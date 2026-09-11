@@ -157,3 +157,23 @@ pre-flight `npm run test:ui` smoke run. Fixed by adding the two missing entries 
 whitelist (`src/application.js`); re-verified with a full real-browser Playwright run (login →
 dashboard → Control Center → all 6 tabs → agent drawer → workspace switch), zero console/page
 errors.
+
+## Phase 4C-3 update: Team (Members + Invitations) + a second real bug this phase's own real-browser testing found
+
+Workspace Settings now includes a **Team** section (owner only) — see
+`docs/WORKSPACE_INVITATIONS.md` / `docs/WORKSPACE_MEMBERS.md`.
+
+Building and testing it (by actually clicking Save, not just loading pages) surfaced a second
+real, severe bug from Phase 4C-2 itself: `app.js`'s shared `api(path, body)` helper only ever
+sends `GET` (no body) or `POST` (with a body) — it has no way to request `PATCH`/`PUT`/`DELETE`.
+Every Phase 4C-2 call that needed one of those (agent config `PATCH`, tool assignment `PUT`,
+connection credential `PUT`) was silently sending `POST` instead, which the backend's exact-
+method route matching correctly rejected with a `404` — meaning **every "Save" action in the
+Agent Connections drawer built in Phase 4C-2 was actually broken**, invisible to that phase's
+own testing because it only verified pages *loaded*, never that a save *persisted*. Fixed by
+giving `api()` an optional third `method` argument (every 2-argument call site keeps its exact
+original behavior) and, separately, fixing `control-center.js`'s own internal `api()` pass-
+through wrapper, which was dropping that same third argument before forwarding to the real one
+— a second copy of the identical bug. Re-verified with a real Playwright run that actually
+fills a field, clicks Save, confirms the network request is a `200` on the correct method, and
+re-opens the drawer after a reload to confirm the value persisted.

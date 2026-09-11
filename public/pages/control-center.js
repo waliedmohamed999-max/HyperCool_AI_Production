@@ -39,7 +39,7 @@ export function installControlCenter(){
  header.append(testButton);
 }
 
-async function api(path,body){return apiClient(path,body);}
+async function api(path,body,method){return apiClient(path,body,method);}
 
 /** Phase 4C-2 Part 55 — async race guard: a workspace switch re-renders everything (app.js's
  * existing render() cycle already refetches from scratch); this only ensures a slow, now-
@@ -171,7 +171,7 @@ function startAddConnection(provider){
    const {name,apiKey}=result;
    try{
     const connection=await api('/api/integrations/connections',{integrationDefinitionId:provider.slug,name});
-    await api(`/api/integrations/connections/${connection.id}/credential`,{apiKey});
+    await api(`/api/integrations/connections/${connection.id}/credential`,{apiKey},'PUT');
     toastAndRefresh(t('controlCenter.connectionAdded'));
    }catch(error){toastError(error.message);}
   });
@@ -220,6 +220,10 @@ async function openAgentDrawer(agentId){
  catch(error){node.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
  const overviewPanel=document.createElement('div'),aiPanel=document.createElement('div'),toolsPanel=document.createElement('div'),readinessPanel=document.createElement('div');
  node.replaceChildren();
+ // `tabs()` only builds the tab bar itself (prepended into its container) — it never
+ // appends the panel nodes anywhere; the caller must place them, exactly like every other
+ // `tabs()` call site in this codebase (e.g. public/pages/workspace.js's content tabs).
+ node.append(overviewPanel,aiPanel,toolsPanel,readinessPanel);
  tabs(node,[[t('controlCenter.drawerOverview'),overviewPanel],[t('controlCenter.drawerAiModel'),aiPanel],[t('controlCenter.drawerTools'),toolsPanel],[t('controlCenter.drawerReadiness'),readinessPanel]]);
  paintAgentOverview(overviewPanel,agentId,config,readiness);
  paintAgentAiModel(aiPanel,agentId,config);
@@ -237,7 +241,7 @@ function paintAgentOverview(panel,agentId,config,readiness){
   ${readiness.blockers.length?`<p><strong>${escape(t('controlCenter.blockers'))}:</strong></p><ul>${readiness.blockers.map(b=>`<li>${escape(b)}</li>`).join('')}</ul>`:''}
   ${readiness.warnings.length?`<p><strong>${escape(t('controlCenter.warnings'))}:</strong></p><ul>${readiness.warnings.map(w=>`<li>${escape(w)}</li>`).join('')}</ul>`:''}`;
  const toggle=button(config.enabled?t('controlCenter.disableAgent'):t('controlCenter.enableAgent'),{variant:'secondary'});
- toggle.onclick=async()=>{try{await api(`/api/agents/${agentId}/config`,{enabled:!config.enabled});config.enabled=!config.enabled;paintAgentOverview(panel,agentId,config,readiness);toast(t('common.savedSuccessfully'));}catch(error){toastError(error.message);}};
+ toggle.onclick=async()=>{try{await api(`/api/agents/${agentId}/config`,{enabled:!config.enabled},'PATCH');config.enabled=!config.enabled;paintAgentOverview(panel,agentId,config,readiness);toast(t('common.savedSuccessfully'));}catch(error){toastError(error.message);}};
  panel.append(toggle);
 }
 function paintAgentAiModel(panel,agentId,config){
@@ -251,7 +255,7 @@ function paintAgentAiModel(panel,agentId,config){
  save.onclick=async()=>{
   const val=name=>{const v=panel.querySelector(`[name=${name}]`).value;return v===''?null:v;};
   const patch={aiConnectionId:val('aiConnectionId')||null,model:val('model'),temperature:val('temperature')!==null?Number(val('temperature')):null,maxTokens:val('maxTokens')!==null?Number(val('maxTokens')):null,timeoutMs:val('timeoutMs')!==null?Number(val('timeoutMs')):null};
-  try{await api(`/api/agents/${agentId}/config`,patch);toast(t('common.savedSuccessfully'));}
+  try{await api(`/api/agents/${agentId}/config`,patch,'PATCH');toast(t('common.savedSuccessfully'));}
   catch(error){toastError(error.message);}
  };
  panel.append(save);
@@ -274,12 +278,12 @@ function paintAgentTools(panel,agentId,tools){
     for(const c of connections)select.innerHTML+=`<option value="${c.id}" ${tool.assignment?.connectionId===c.id?'selected':''} ${!c.capabilityGranted?'disabled':''}>${escape(c.name)}${c.capabilityGranted?'':' — '+t('controlCenter.capabilityMissingShort')}</option>`;
    });
    select.onchange=async()=>{
-    try{await api(`/api/agents/${agentId}/tools/${tool.slug}`,{connectionId:select.value||null});toast(t('common.savedSuccessfully'));}
+    try{await api(`/api/agents/${agentId}/tools/${tool.slug}`,{connectionId:select.value||null},'PUT');toast(t('common.savedSuccessfully'));}
     catch(error){toastError(localizeAssignmentError(error.message));}
    };
    enableToggle.onclick=async()=>{
     const nextEnabled=!(tool.assignment?tool.assignment.enabled:true);
-    try{await api(`/api/agents/${agentId}/tools/${tool.slug}`,{enabled:nextEnabled});toast(t('common.savedSuccessfully'));enableToggle.textContent=nextEnabled?t('controlCenter.disableTool'):t('controlCenter.enableTool');}
+    try{await api(`/api/agents/${agentId}/tools/${tool.slug}`,{enabled:nextEnabled},'PUT');toast(t('common.savedSuccessfully'));enableToggle.textContent=nextEnabled?t('controlCenter.disableTool'):t('controlCenter.enableTool');}
     catch(error){toastError(error.message);}
    };
    row.append(selector);
@@ -316,7 +320,8 @@ function renderHealthTab(){
 
 function renderSettingsTab(){
  const w=summary.workspace;
- document.getElementById('cc-panel-settings').innerHTML=`<div class="panel">
+ const container=document.getElementById('cc-panel-settings');
+ container.innerHTML=`<div class="panel">
   <p><strong>${escape(t('controlCenter.workspaceName'))}:</strong> ${escape(w.name)}</p>
   <p><strong>${escape(t('controlCenter.workspaceSlug'))}:</strong> <span dir="ltr">${escape(w.slug)}</span></p>
   <p><strong>${escape(t('controlCenter.yourRole'))}:</strong> ${escape(t('workspace.role'+w.role.charAt(0).toUpperCase()+w.role.slice(1)))}</p>
@@ -325,6 +330,111 @@ function renderSettingsTab(){
   <p><strong>${escape(t('controlCenter.workspaceStatus'))}:</strong> ${badge(w.status,w.status==='ACTIVE'?'CONNECTED':'PENDING')}</p>
   ${w.maxAgentLevel?`<p><strong>${escape(t('controlCenter.safetyCeiling'))}:</strong> ${escape(w.maxAgentLevel)}</p>`:''}
  </div>`;
+ // Member Management + Invitations (Phase 4C-3) — owner-only, matching the exact backend
+ // bar (GET/PATCH/DELETE .../members and .../invitations are all authorize(['owner'])); an
+ // operator viewing Control Center never sees a control here that would just 403.
+ if(w.role!=='owner')return;
+ const teamHost=document.createElement('div');teamHost.id='cc-team';
+ container.append(teamHost);
+ renderTeamSection(teamHost);
+}
+function renderTeamSection(host){
+ const membersPanel=document.createElement('div'),invitationsPanel=document.createElement('div');
+ host.innerHTML=`<h4>${escape(t('invitations.teamTitle'))}</h4>`;
+ host.append(membersPanel,invitationsPanel);
+ tabs(host,[[t('invitations.membersTab'),membersPanel],[t('invitations.invitationsTab'),invitationsPanel]]);
+ const inviteButton=button(t('invitations.inviteMember'),{variant:'primary',iconName:'plus'});
+ inviteButton.onclick=()=>openInviteDrawer(host);
+ membersPanel.append(inviteButton);
+ loadMembers(membersPanel);
+ loadInvitations(invitationsPanel);
+}
+async function loadMembers(panel){
+ let members;
+ try{members=await api('/api/workspaces/members');}
+ catch(error){panel.append(Object.assign(document.createElement('div'),{innerHTML:empty(t('controlCenter.loadFailed'),error.message)}));return;}
+ const list=document.createElement('div');list.className='grid';
+ for(const member of members){
+  const card=document.createElement('article');card.className='card';
+  card.innerHTML=`<div class="row-between"><strong>${escape(member.name)}</strong>${badge(t('invitations.status.'+member.status.toUpperCase()),member.status==='active'?'CONNECTED':member.status==='suspended'?'PENDING':'DISCONNECTED')}</div>
+   <p dir="ltr">${escape(member.username)}</p>
+   <p>${escape(t('workspace.role'+member.role.charAt(0).toUpperCase()+member.role.slice(1)))}${member.isOwner?' · '+escape(t('invitations.ownerBadge')):''}</p>`;
+  const actions=document.createElement('div');actions.className='report-actions';
+  const roleSelect=document.createElement('select');
+  for(const role of ['owner','reviewer','operator'])roleSelect.innerHTML+=`<option value="${role}" ${member.role===role?'selected':''}>${escape(t('workspace.role'+role.charAt(0).toUpperCase()+role.slice(1)))}</option>`;
+  roleSelect.onchange=async()=>{
+   try{await api(`/api/workspaces/members/${member.id}`,{role:roleSelect.value},'PATCH');toast(t('common.savedSuccessfully'));renderControlCenter({api:apiClient,auth:currentAuth});}
+   catch(error){toastError(error.message);roleSelect.value=member.role;}
+  };
+  actions.append(roleSelect);
+  if(member.status!=='removed'){
+   const toggleStatus=button(member.status==='active'?t('invitations.suspend'):t('invitations.reactivate'),{variant:'secondary'});
+   toggleStatus.onclick=async()=>{
+    try{await api(`/api/workspaces/members/${member.id}`,{status:member.status==='active'?'suspended':'active'},'PATCH');toastAndRefresh(t('common.savedSuccessfully'));}
+    catch(error){toastError(error.message);}
+   };
+   const remove=button(t('invitations.removeMember'),{variant:'danger'});
+   remove.onclick=async()=>{
+    const confirmed=await promptDrawer(t('invitations.removeMember'),n=>{n.innerHTML=`<p>${escape(t('invitations.removeConfirm',{name:member.name}))}</p>`;},{confirmLabel:t('invitations.removeMember')});
+    if(!confirmed)return;
+    try{await api(`/api/workspaces/members/${member.id}`,{},'DELETE');toastAndRefresh(t('common.savedSuccessfully'));}
+    catch(error){toastError(error.message);}
+   };
+   actions.append(toggleStatus,remove);
+  }
+  card.append(actions);list.append(card);
+ }
+ panel.append(list);
+}
+async function loadInvitations(panel){
+ let invitations;
+ try{invitations=await api('/api/workspaces/invitations');}
+ catch(error){panel.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+ if(!invitations.length){panel.innerHTML=empty(t('invitations.nonePending'));return;}
+ panel.innerHTML='';
+ for(const inv of invitations){
+  const row=document.createElement('div');row.className='audit-row row-between';
+  row.innerHTML=`<span>${escape(inv.email)} · ${escape(t('workspace.role'+inv.role.charAt(0).toUpperCase()+inv.role.slice(1)))} ${badge(t('invitations.status.'+inv.status),inv.status==='PENDING'?'PENDING':inv.status==='ACCEPTED'?'CONNECTED':'DISCONNECTED')}</span>`;
+  const actions=document.createElement('div');actions.className='report-actions';
+  if(inv.status==='PENDING'){
+   const resend=button(t('invitations.resend'),{variant:'secondary'});
+   resend.onclick=async()=>{
+    try{const result=await api(`/api/workspaces/invitations/${inv.id}/resend`,{});await copyInviteLink(result.token);toastAndRefresh(t('invitations.linkCopied'));}
+    catch(error){toastError(error.message);}
+   };
+   const revoke=button(t('invitations.revoke'),{variant:'danger'});
+   revoke.onclick=async()=>{
+    try{await api(`/api/workspaces/invitations/${inv.id}/revoke`,{});toastAndRefresh(t('common.savedSuccessfully'));}
+    catch(error){toastError(error.message);}
+   };
+   actions.append(resend,revoke);
+  }
+  row.append(actions);panel.append(row);
+ }
+}
+async function copyInviteLink(token){
+ const url=`${location.origin}/#invite/${token}`;
+ try{await navigator.clipboard.writeText(url);}catch{/* clipboard API unavailable — the drawer already shows the link as selectable text */}
+ return url;
+}
+function openInviteDrawer(refreshHost){
+ promptDrawer(t('invitations.inviteMember'),node=>{
+  const emailInput=document.createElement('input');emailInput.name='email';emailInput.type='email';emailInput.required=true;emailInput.maxLength=254;
+  const emailLabel=document.createElement('label');emailLabel.textContent=t('invitations.emailLabel');emailLabel.append(emailInput);
+  const roleSelect=document.createElement('select');roleSelect.name='role';
+  for(const role of ['operator','reviewer','owner'])roleSelect.innerHTML+=`<option value="${role}">${escape(t('workspace.role'+role.charAt(0).toUpperCase()+role.slice(1)))}</option>`;
+  const roleLabel=document.createElement('label');roleLabel.textContent=t('invitations.roleLabel');roleLabel.append(roleSelect);
+  node.append(emailLabel,roleLabel);
+  return {value:()=>({email:emailInput.value.trim(),role:roleSelect.value}),focus:()=>emailInput.focus()};
+ },{confirmLabel:t('invitations.sendInvite')}).then(async result=>{
+  if(!result)return;
+  try{
+   const created=await api('/api/workspaces/invitations',result);
+   const link=await copyInviteLink(created.token);
+   await promptDrawer(t('invitations.linkReadyTitle'),n=>{n.innerHTML=`<p>${escape(t('invitations.linkReadyHint'))}</p><input readonly value="${escape(link)}" dir="ltr" onclick="this.select()">`;},{confirmLabel:t('common.close')});
+   toastAndRefresh(t('invitations.linkCopied'));
+  }catch(error){toastError(error.message);}
+ });
 }
 
 // --- Connection detail / provider drawer ---------------------------------------------------
@@ -335,7 +445,7 @@ function openProviderDrawer(provider){
  for(const c of provider.connections){
   const card=node.querySelector(`[data-connection="${CSS.escape(c.id)}"]`),actions=card.querySelector('.report-actions');
   const test=button(t('controlCenter.testConnection'),{variant:'secondary'});
-  test.onclick=async()=>{test.disabled=true;try{const result=await api(`/api/integrations/connections/${c.id}/test`);toast(t('controlCenter.testResult',{result:result.status}));card.querySelector('.pill').outerHTML=statusBadge(result.status,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',PERMISSION_MISSING:'ERROR',DISCONNECTED:'DISCONNECTED'});}catch(error){toastError(error.message);}finally{test.disabled=false;}};
+  test.onclick=async()=>{test.disabled=true;try{const result=await api(`/api/integrations/connections/${c.id}/test`,{});toast(t('controlCenter.testResult',{result:result.status}));card.querySelector('.pill').outerHTML=statusBadge(result.status,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',PERMISSION_MISSING:'ERROR',DISCONNECTED:'DISCONNECTED'});}catch(error){toastError(error.message);}finally{test.disabled=false;}};
   actions.append(test);
   if(!c.isDefault && provider.connections.length>1){
    const setDefault=button(t('controlCenter.setDefault'),{variant:'ghost'});

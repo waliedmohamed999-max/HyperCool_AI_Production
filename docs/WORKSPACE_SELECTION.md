@@ -202,3 +202,13 @@ blind.
 | `NO_WORKSPACE_ACCESS` | 403 | Authenticated, zero valid memberships, and more than one tenant exists system-wide (the single-tenant case keeps the pre-existing lossless auto-attach — zero regression risk) |
 | `TENANT_SELECTION_REQUIRED` | 409 | >1 valid membership, no matching active selection — response body includes the real `workspaces` list |
 | `TENANT_ACCESS_DENIED` | 403 | `PUT /api/workspaces/active` targeted a tenant the user has no valid membership in — identical response whether that tenant exists at all or not |
+
+## Phase 4C-3 update: memberships now have a real way to be created and revoked
+
+Phase 4C-1 built the selection mechanism; Phase 4C-3 (`docs/WORKSPACE_INVITATIONS.md`,
+`docs/WORKSPACE_MEMBERS.md`) built the first real way memberships come and go — invitations and
+owner-driven member management. No change was needed here: `resolveTenantForUser`'s per-request
+re-validation (§7 above) already handles a membership appearing or disappearing correctly, with
+zero new invalidation code — proven directly by Phase 4C-3's own tests (a suspended/removed
+member loses access on their very next request; a newly accepted invitation's workspace appears
+in `GET /api/workspaces` without requiring re-login).

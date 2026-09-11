@@ -1,4 +1,9 @@
 import {randomUUID} from 'node:crypto';
+import {fail} from './auth.js';
+
+// The three real roles this app has ever had (users.role's own CHECK constraint — src/store.js)
+// — Phase 4C-3 invents no new role and no new permission tier on top of them.
+const VALID_ROLES=['owner','reviewer','operator'];
 
 // Multi-Tenant Control Center — Phase 1 foundation only (deliberately scoped; see
 // docs/MULTI_TENANT_ARCHITECTURE.md for what is and is not built yet). This app was, until
@@ -189,6 +194,56 @@ export function setMaxAgentLevel(db,tenantId,level) {
 }
 export function listTenantMembers(db,tenantId) {
  return db.prepare('SELECT tm.id,tm.user_id AS userId,u.name,u.username,tm.role,tm.status,tm.is_owner AS isOwner,tm.created_at AS createdAt FROM tenant_memberships tm JOIN users u ON u.id=tm.user_id WHERE tm.tenant_id=? ORDER BY tm.created_at').all(tenantId);
+}
+// --- Phase 4C-3: Member Management -------------------------------------------------------
+// `listTenantMembers` above is untouched (existing tests depend on its exact "every row,
+// any status" behavior) — this is the real "who is a current member" view the Members UI
+// needs: 'removed' rows are excluded (they're history, not membership), 'active'/'suspended'
+// both shown (a suspended member is still a real, visible member — just currently blocked).
+export function listActiveMembers(db,tenantId) {
+ return db.prepare("SELECT tm.id,tm.user_id AS userId,u.name,u.username,tm.role,tm.status,tm.is_owner AS isOwner,tm.created_at AS createdAt FROM tenant_memberships tm JOIN users u ON u.id=tm.user_id WHERE tm.tenant_id=? AND tm.status!='removed' ORDER BY tm.created_at").all(tenantId);
+}
+export function countActiveOwners(db,tenantId) {
+ return db.prepare("SELECT COUNT(*) n FROM tenant_memberships WHERE tenant_id=? AND role='owner' AND status='active'").get(tenantId).n;
+}
+/** Tenant-scoped by construction: a membership id from another tenant simply never matches
+ * `tenant_id=?` here — the same "wrong tenant is indistinguishable from nonexistent" 404
+ * every other tenant-scoped getter in this codebase already follows (Part 22: "Tenant A
+ * cannot edit Tenant B membership"). */
+export function getMembership(db,tenantId,membershipId) {
+ const row=db.prepare('SELECT tm.*, u.name, u.username FROM tenant_memberships tm JOIN users u ON u.id=tm.user_id WHERE tm.id=? AND tm.tenant_id=?').get(membershipId,tenantId);
+ if(!row)return null;
+ return {id:row.id,tenantId:row.tenant_id,userId:row.user_id,name:row.name,username:row.username,role:row.role,status:row.status,isOwner:!!row.is_owner,createdAt:row.created_at};
+}
+/**
+ * Role change, RBAC/last-owner-protected (Part 8/9/25): rejects an unknown role outright
+ * (never a role beyond the three real ones), and rejects demoting the tenant's LAST active
+ * owner — regardless of who is asking, including that owner acting on themselves — since a
+ * tenant with zero active owners can never again change its own membership/roles through this
+ * same, only, code path. Route-level authorization (who may call this at all) is a separate,
+ * earlier check in application.js — this is the invariant that must hold no matter who called.
+ */
+export function updateMembershipRole(db,tenantId,membershipId,role) {
+ if(!VALID_ROLES.includes(role))fail(400,'دور غير صالح');
+ const membership=getMembership(db,tenantId,membershipId);
+ if(!membership)fail(404,'العضوية غير موجودة');
+ if(membership.role==='owner' && role!=='owner' && countActiveOwners(db,tenantId)<=1)fail(409,'لا يمكن تخفيض آخر مالك فعّال في هذه المنشأة');
+ db.prepare('UPDATE tenant_memberships SET role=?,is_owner=? WHERE id=? AND tenant_id=?').run(role,role==='owner'?1:0,membershipId,tenantId);
+ return getMembership(db,tenantId,membershipId);
+}
+/**
+ * Status change — 'active'/'suspended' (a real, visible, reversible block) or 'removed' (the
+ * same soft-revoke `removeMembership` already performs, exposed here through the membership-id
+ * route instead of the tenant+user-id one). Same last-owner protection as role changes: the
+ * tenant's last active owner can never be suspended or removed through this path either.
+ */
+export function updateMembershipStatus(db,tenantId,membershipId,status) {
+ if(!['active','suspended','removed'].includes(status))fail(400,'حالة غير صالحة');
+ const membership=getMembership(db,tenantId,membershipId);
+ if(!membership)fail(404,'العضوية غير موجودة');
+ if(membership.role==='owner' && status!=='active' && countActiveOwners(db,tenantId)<=1)fail(409,'لا يمكن تعطيل أو إزالة آخر مالك فعّال في هذه المنشأة');
+ db.prepare('UPDATE tenant_memberships SET status=? WHERE id=? AND tenant_id=?').run(status,membershipId,tenantId);
+ return getMembership(db,tenantId,membershipId);
 }
 /**
  * Creates a brand-new, empty tenant — no credentials, no CRM data, no memory, no logs (spec

@@ -33,7 +33,8 @@ import {promotionEligibility} from './runtime/permissions.js';
 import {installGate,getGateStatus,setPaused,isPaused} from './runtime/gate.js';
 import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
-import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants,listWorkspacesForUser,activateWorkspaceForUser} from './tenancy.js';
+import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants,listWorkspacesForUser,activateWorkspaceForUser,listActiveMembers,getMembership,updateMembershipRole,updateMembershipStatus} from './tenancy.js';
+import {installInvitations,createInvitation,listInvitations,resendInvitation,revokeInvitation,previewInvitation,acceptInvitation,roleForValidToken,checkInvitationRateLimit} from './invitations.js';
 import {installContent,listContent,getContent,getContentOrNull,insertContent,writeContent} from './content.js';
 import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
@@ -107,6 +108,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   const auth=createAuth(store.db);
   installTenancy(store.db);
   ensureDefaultTenant(store.db); // real, lossless backfill — see docs/MULTI_TENANT_ARCHITECTURE.md
+  installInvitations(store.db); // Multi-Tenant Phase 4C-3 — see docs/WORKSPACE_INVITATIONS.md
   installContent(store.db); // migrates legacy state.content into a real tenant-scoped table — see docs/CONTENT_MIGRATION.md
   installAuditLog(store.db); // migrates legacy state.audit into a real tenant-scoped table — see docs/AUDIT_MIGRATION.md
   installKnowledge(store.db);
@@ -348,9 +350,42 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         res.setHeader('Set-Cookie',`hc_session=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secureCookie}`);
         return send(200,{user:result.user,csrf:result.csrf});
       }
+      // Workspace Invitations (Phase 4C-3) — the two PUBLIC, token-authenticated routes.
+      // Deliberately unauthenticated (a fresh invitee has no session yet) and therefore
+      // handled here, alongside /api/auth|setup|login, before the generic authorize()+CSRF
+      // gate below — the invitation TOKEN is these routes' entire authority, never a session.
+      // IP-based rate limiting (checkInvitationRateLimit) guards the token-guessing surface.
+      const invitationPreview=url.pathname.match(/^\/api\/invitations\/([\w-]+)\/preview$/);
+      if(req.method==='GET' && invitationPreview) {
+        checkInvitationRateLimit(req.socket.remoteAddress);
+        return send(200,previewInvitation(store.db,invitationPreview[1]));
+      }
+      const invitationRegister=url.pathname.match(/^\/api\/invitations\/([\w-]+)\/register$/);
+      if(req.method==='POST' && invitationRegister) {
+        checkInvitationRateLimit(req.socket.remoteAddress);
+        const token=invitationRegister[1],input=await body(req);
+        const role=roleForValidToken(store.db,token); // re-validates the token fully; throws the real reason otherwise
+        const created=auth.createUser({username:input.username,name:input.name,password:input.password},role);
+        const accepted=acceptInvitation(store.db,token,created.id);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_INVITATION_ACCEPTED',itemId:accepted.tenantId,actorId:created.id,actorName:created.name,at:new Date().toISOString()},accepted.tenantId);
+        const result=auth.session(created);
+        res.setHeader('Set-Cookie',`hc_session=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secureCookie}`);
+        return send(200,{user:result.user,csrf:result.csrf,workspace:{id:accepted.tenantId,name:accepted.tenantName,role:accepted.role}});
+      }
       if(url.pathname.startsWith('/api/')) {
         authorize(session,['owner','reviewer','operator']);
         if(req.method!=='GET' && req.headers['x-csrf-token']!==session.csrf) fail(403,'رمز حماية الجلسة غير صالح');
+      }
+      // The one AUTHENTICATED-but-tenant-independent invitation route: accepting a NEW
+      // invitation must work even for a multi-membership user whose OTHER memberships are
+      // currently ambiguous (TENANT_SELECTION_REQUIRED) — it only ever needs session.user.id,
+      // same placement rationale as the Phase 4C-1 workspace-selection routes below.
+      const invitationAccept=url.pathname.match(/^\/api\/invitations\/([\w-]+)\/accept$/);
+      if(req.method==='POST' && invitationAccept) {
+        checkInvitationRateLimit(req.socket.remoteAddress);
+        const accepted=acceptInvitation(store.db,invitationAccept[1],session.user.id);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_INVITATION_ACCEPTED',itemId:accepted.tenantId,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},accepted.tenantId);
+        return send(200,{workspace:{id:accepted.tenantId,name:accepted.tenantName,role:accepted.role}});
       }
       // Workspace selection (Phase 4C-1) — deliberately handled here, BEFORE the generic
       // `tenantResolutionError` re-throw below, and using ONLY `session.user.id` (never
@@ -377,6 +412,68 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only
       // safe outcome for an unresolved multi-membership session on any non-workspace route).
       if(url.pathname.startsWith('/api/') && tenantResolutionError) throw tenantResolutionError;
+      // Workspace Invitations + Member Management (Phase 4C-3) — owner-only throughout,
+      // matching the exact same bar /api/users already sets for every account-identity-
+      // adjacent action in this codebase. `session.tenantId` (server-resolved above, never a
+      // client value) scopes every one of these — a membership/invitation id from another
+      // tenant simply never matches (tenancy.js/invitations.js's own tenant_id=? filters),
+      // the same "wrong tenant is indistinguishable from nonexistent" 404 every other
+      // tenant-scoped getter in this app already follows.
+      if(url.pathname==='/api/workspaces/invitations') {
+        authorize(session,['owner']);
+        if(req.method==='GET')return send(200,listInvitations(store.db,session.tenantId));
+        if(req.method==='POST') {
+          const input=await body(req);
+          const {invitation,token}=createInvitation(store.db,session.tenantId,{email:input.email,role:input.role},session.user.id);
+          recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_INVITATION_CREATED',itemId:invitation.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+          // The raw token is returned ONLY here, ONLY once, ONLY to the authorizing owner —
+          // never persisted plaintext (invitations.js stores only its hash), never returned
+          // by the list endpoint, never logged (Part 32/70). The frontend uses it to build a
+          // one-time copy-link and never stores it beyond that.
+          return send(201,{...invitation,token});
+        }
+      }
+      const invitationResend=url.pathname.match(/^\/api\/workspaces\/invitations\/([\w-]+)\/resend$/);
+      if(req.method==='POST' && invitationResend) {
+        authorize(session,['owner']);
+        const {invitation,token}=resendInvitation(store.db,session.tenantId,invitationResend[1]);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_INVITATION_RESENT',itemId:invitation.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,{...invitation,token});
+      }
+      const invitationRevoke=url.pathname.match(/^\/api\/workspaces\/invitations\/([\w-]+)\/revoke$/);
+      if(req.method==='POST' && invitationRevoke) {
+        authorize(session,['owner']);
+        const invitation=revokeInvitation(store.db,session.tenantId,invitationRevoke[1]);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_INVITATION_REVOKED',itemId:invitation.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,invitation);
+      }
+      if(req.method==='GET' && url.pathname==='/api/workspaces/members') {
+        authorize(session,['owner']);
+        return send(200,listActiveMembers(store.db,session.tenantId));
+      }
+      const memberItem=url.pathname.match(/^\/api\/workspaces\/members\/([\w-]+)$/);
+      if(memberItem) {
+        authorize(session,['owner']);
+        if(req.method==='PATCH') {
+          const input=await body(req);
+          let updated=getMembership(store.db,session.tenantId,memberItem[1]);
+          if(!updated)fail(404,'العضوية غير موجودة');
+          if(input.role!==undefined && input.role!==updated.role) {
+            updated=updateMembershipRole(store.db,session.tenantId,memberItem[1],input.role);
+            recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_MEMBER_ROLE_CHANGED',itemId:memberItem[1],detail:input.role,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+          }
+          if(input.status!==undefined && input.status!==updated.status) {
+            updated=updateMembershipStatus(store.db,session.tenantId,memberItem[1],input.status);
+            recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_MEMBER_STATUS_CHANGED',itemId:memberItem[1],detail:input.status,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+          }
+          return send(200,updated);
+        }
+        if(req.method==='DELETE') {
+          const updated=updateMembershipStatus(store.db,session.tenantId,memberItem[1],'removed');
+          recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_MEMBER_REMOVED',itemId:memberItem[1],actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+          return send(200,updated);
+        }
+      }
       if(req.method==='POST' && url.pathname==='/api/logout') {auth.logout(session);res.setHeader('Set-Cookie',`hc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`);return send(200,{ok:true});}
       if(req.method==='POST' && url.pathname==='/api/preferences/locale') {
         const input=await body(req);
@@ -1174,8 +1271,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
       if(req.method==='GET' && files[url.pathname]) {
         const file=files[url.pathname];

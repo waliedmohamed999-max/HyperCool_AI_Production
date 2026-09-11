@@ -174,3 +174,15 @@ triggers, instead of letting `AgentRuntime.run()` silently fall back to its own 
 Frost-routed (event-triggered) runs are therefore attributed to the triggering event's real
 tenant, not just "the one that exists" — the same as manually-triggered runs (`POST
 /api/agents/:id/run`), which already passed `session.tenantId` explicitly.
+
+## Phase 4C-3 update: workspace invitations + member management
+
+`resolveTenantForUser(db, userId)` above is now called with a third argument,
+`activeTenantIdFromSession` (Phase 4C-1 — see `docs/WORKSPACE_SELECTION.md`); everything in
+this document about it being looked up fresh from real `tenant_memberships` on every request,
+never trusted from client input, is unchanged and is exactly what makes Phase 4C-3's
+invitation acceptance and member suspension/removal safe with zero new invalidation logic (see
+`docs/WORKSPACE_INVITATIONS.md` and `docs/WORKSPACE_MEMBERS.md` for the full detail). The new
+`workspace_invitations` table follows the same tenant-scoping discipline as every table in this
+document's classification: every read/write filters `tenant_id=?`, and a foreign id is
+indistinguishable from a nonexistent one (404), never a distinguishable "not yours" response.
