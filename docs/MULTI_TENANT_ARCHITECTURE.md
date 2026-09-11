@@ -236,6 +236,26 @@ Phase 3.5 closed that gap on both sides:
 With this, every automated code path in the codebase — HTTP routes, the scheduler, and every
 webhook handler — either resolves a real, verified tenant or fails loud. Full suite: 297/297.
 
+## Phase 4A — Integration Connection Core, multiple connections, Credentials Vault
+
+Before this phase, a tenant could hold at most ONE credential per provider (`integration_
+credentials`, one row per `(tenant_id, provider)`) — enough for one Salla store, one WhatsApp
+number, one Microsoft mailbox. Phase 4A introduces `integration_connections` (multiple rows
+per tenant per provider, a real default-connection concept, and a `CONNECTION_SELECTION_
+REQUIRED` resolution rule for the ambiguous case) plus a per-connection encrypted Credentials
+Vault and a DB-backed OAuth state mechanism — see `docs/INTEGRATION_CONNECTION_ARCHITECTURE.md`,
+`docs/CREDENTIALS_VAULT.md`, and `docs/OAUTH_SECURITY.md` for the full design.
+
+The central architectural decision was a **compatibility bridge**, not a rewrite: all 6
+existing provider OAuth modules keep reading/writing the legacy `integration_credentials`
+table completely unchanged, while `credentials.js`'s own functions mirror every write into
+the new model as a best-effort side effect. `webhook-tenant-resolver.js` and the scheduler's
+Microsoft connection job were both cut over to read `integration_connections` instead of the
+legacy table (now that it is kept reliably in sync), while multi-connection OAuth itself was
+proven end-to-end through one concrete provider (Salla — "Main Store" + "Riyadh Store" as two
+real, independently-connected, independently-health-checked connections for one tenant).
+Full suite after this phase: 330/330.
+
 ## What is deliberately NOT built yet
 
 This was an explicit, informed scoping decision (the owner chose "start with the safe
@@ -259,8 +279,10 @@ piece) — these are real, substantial next-phase items, not oversights:
   (confirmed by the Phase 2 audit); real-time handoff/alerting is done via
   `agent_escalations` (tenant-scoped) and the Operations Log (also tenant-scoped, Phase 3).
 - **Multiple named connections per integration** (spec Part 9: "2 Salla stores, 3 Meta
-  Pages"). Today a tenant can have exactly one connection per provider — this is also why
-  webhook routing resolves to "the one connection this tenant has," not "which of several."
+  Pages") — the data model, vault, health checks, and OAuth flow now support this for real
+  (Phase 4A, see `docs/INTEGRATION_CONNECTION_ARCHITECTURE.md`), proven end-to-end for Salla.
+  WhatsApp/Meta/Microsoft/X/LinkedIn still resolve to "the one (mirrored) connection this
+  tenant has" — their generic multi-connection OAuth flow is not wired up yet, only Salla's.
 - **The Integration & Agent Control Center UI** — no dashboard page exists yet for an owner
   to create a second tenant, connect its integrations, or configure its agents without
   directly touching the database. Deliberately deferred again this pass, per the explicit
@@ -275,5 +297,9 @@ piece) — these are real, substantial next-phase items, not oversights:
 - **Cache/storage isolation**, **Platform Super Admin role**, **populating Salla's
   `external_account_id` at real connect time** (blocked on a live Salla app to verify the
   exact API call against) — unchanged; still not built.
+- **Agent Tool Mapping / tool-to-connection assignment, and a Control Center UI for the new
+  Integration Connections** — explicitly Phase 4B/4C per the owner's own phase split; Phase
+  4A built the connection-ID-ready backend model these depend on, deliberately without an
+  agent knowing which connection to use for a given call yet.
 
 None of the above were silently skipped — each is a real, scoped, buildable next phase.

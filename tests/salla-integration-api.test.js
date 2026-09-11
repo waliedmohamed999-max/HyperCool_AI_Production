@@ -32,6 +32,11 @@ test('Salla webhook endpoint: rejects a wrong token, accepts a correct one, and 
   const tenantId=resolveTenantForUser(app.store.db,owner.data.user.id);
   const now=new Date().toISOString();
   app.store.db.prepare('INSERT INTO integration_credentials (tenant_id,provider,access_token_enc,connected_at,updated_at) VALUES (?,?,?,?,?)').run(tenantId,'salla','placeholder',now,now);
+  // Multi-Tenant Phase 4A: webhook tenant routing reads `integration_connections`, not the
+  // legacy table above (see resolveTenantForSallaMerchant) — this mirrors what the
+  // compatibility bridge would have created from a real OAuth connect.
+  const connectionId=crypto.randomUUID();
+  app.store.db.prepare("INSERT INTO integration_connections (id,tenant_id,integration_definition_id,name,status,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").run(connectionId,tenantId,'salla','الاتصال الرئيسي','CONNECTED',1,now,now);
   const badAuth=await call('/api/webhooks/salla','{"event":"order.created","data":{"id":"o1"},"merchant":12345}',null,{headers:{authorization:'Bearer wrong'}});
   assert.equal(badAuth.status,401);
   // Multi-Tenant Phase 3.5 (Part B9): a Salla webhook now only resolves to a tenant it can
@@ -41,7 +46,7 @@ test('Salla webhook endpoint: rejects a wrong token, accepts a correct one, and 
   // very first Salla webhook delivery (see resolveTenantForSallaMerchant).
   const good=await call('/api/webhooks/salla','{"event":"order.created","data":{"id":"o1"},"created_at":"2030-01-01T00:00:00Z","merchant":12345}',null,{headers:{authorization:'Bearer a-real-webhook-secret'}});
   assert.equal(good.status,200);assert.equal(good.data.replayed,false);assert.equal(good.data.internalType,'ORDER_CREATED');
-  const registered=app.store.db.prepare("SELECT external_account_id FROM integration_credentials WHERE provider='salla'").get();
+  const registered=app.store.db.prepare("SELECT external_account_id FROM integration_connections WHERE integration_definition_id='salla'").get();
   assert.equal(registered.external_account_id,'12345');
   const replay=await call('/api/webhooks/salla','{"event":"order.created","data":{"id":"o1"},"created_at":"2030-01-01T00:00:00Z","merchant":12345}',null,{headers:{authorization:'Bearer a-real-webhook-secret'}});
   assert.equal(replay.status,200);assert.equal(replay.data.replayed,true);

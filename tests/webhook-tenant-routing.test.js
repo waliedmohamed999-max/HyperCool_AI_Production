@@ -116,18 +116,22 @@ test('B15 — a WhatsApp webhook payload that CLAIMS to belong to Tenant B is ro
 
 test('B3/bootstrap safety — Salla merchant self-registration only fires with exactly one unregistered candidate; two candidates stay unresolved rather than guessing',async()=>{
  const env={SALLA_WEBHOOK_SECRET:'salla-secret'};
- const {app,call,cleanup,ownerA,ownerB,tenantA,tenantB}=await twoTenants(env);
+ const {app,call,cleanup,tenantA,tenantB}=await twoTenants(env);
  try{
   const now=new Date().toISOString();
   // Both tenants have a real Salla connection, neither has a merchant id recorded yet —
-  // exactly the ambiguous case where guessing would be a real cross-tenant risk.
+  // exactly the ambiguous case where guessing would be a real cross-tenant risk. Multi-Tenant
+  // Phase 4A: routing reads `integration_connections` (see resolveTenantForSallaMerchant),
+  // so both candidates must exist there, not just in the legacy table.
   app.store.db.prepare('INSERT INTO integration_credentials (tenant_id,provider,access_token_enc,connected_at,updated_at) VALUES (?,?,?,?,?)').run(tenantA,'salla','placeholder-a',now,now);
   app.store.db.prepare('INSERT INTO integration_credentials (tenant_id,provider,access_token_enc,connected_at,updated_at) VALUES (?,?,?,?,?)').run(tenantB,'salla','placeholder-b',now,now);
+  app.store.db.prepare("INSERT INTO integration_connections (id,tenant_id,integration_definition_id,name,status,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").run(crypto.randomUUID(),tenantA,'salla','الاتصال الرئيسي','CONNECTED',1,now,now);
+  app.store.db.prepare("INSERT INTO integration_connections (id,tenant_id,integration_definition_id,name,status,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").run(crypto.randomUUID(),tenantB,'salla','الاتصال الرئيسي','CONNECTED',1,now,now);
   const raw='{"event":"order.created","data":{"id":"o1"},"merchant":99999}';
   const res=await call('/api/webhooks/salla',raw,null,{headers:{authorization:'Bearer salla-secret'}});
   assert.equal(res.status,200);
   assert.equal(res.data.status,'WEBHOOK_TENANT_UNRESOLVED'); // two candidates — correctly refuses to guess
-  const stillUnregistered=app.store.db.prepare("SELECT COUNT(*) n FROM integration_credentials WHERE provider='salla' AND external_account_id IS NULL").get().n;
+  const stillUnregistered=app.store.db.prepare("SELECT COUNT(*) n FROM integration_connections WHERE integration_definition_id='salla' AND external_account_id IS NULL").get().n;
   assert.equal(stillUnregistered,2); // neither row was mutated
  }finally{await cleanup();}
 });

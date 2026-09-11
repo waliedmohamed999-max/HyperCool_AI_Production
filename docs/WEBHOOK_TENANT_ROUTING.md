@@ -17,9 +17,21 @@ signature/token verification, never before (`src/runtime/webhook-tenant-resolver
 
 | Provider | Verified identity used | Matched against |
 |---|---|---|
-| WhatsApp (Meta) | `value.metadata.phone_number_id` (real Meta webhook field) | `integration_credentials.metadata.whatsapp.phoneNumberId`, populated at real OAuth-connect time (`meta-oauth.js`) |
-| Microsoft 365 | `item.subscriptionId` (real Graph notification field) | `integration_credentials.metadata.mailSubscription.id`, populated at real `/api/integrations/microsoft/subscribe` time |
-| Salla | `body.merchant` (real Salla webhook field) | `integration_credentials.external_account_id` for provider `salla` — see the Salla-specific note below |
+| WhatsApp (Meta) | `value.metadata.phone_number_id` (real Meta webhook field) | `integration_connections.external_account_metadata.whatsapp.phoneNumberId` for definition `meta`, mirrored at real OAuth-connect time |
+| Microsoft 365 | `item.subscriptionId` (real Graph notification field) | `integration_connections.external_account_metadata.mailSubscription.id` for definition `microsoft365`, mirrored at real `/api/integrations/microsoft/subscribe` time |
+| Salla | `body.merchant` (real Salla webhook field) | `integration_connections.external_account_id` for definition `salla` — see the Salla-specific note below |
+
+> **Multi-Tenant Phase 4A update:** `webhook-tenant-resolver.js`'s three resolver functions
+> were cut over from the legacy `integration_credentials` table to `integration_connections`
+> (see `docs/INTEGRATION_CONNECTION_ARCHITECTURE.md`). This is a pure storage cutover — the
+> rule above (provider-verified identity only, resolved after signature verification) and
+> every test's expected behavior are unchanged. `integration_connections` is kept populated as
+> a superset of the legacy table by the compatibility bridge (`src/runtime/credentials.js` →
+> `src/integrations/legacy-sync.js`), so every existing single-connection provider (WhatsApp/
+> Meta/Microsoft/X/LinkedIn) keeps routing correctly with zero code change to those provider
+> modules. The Salla self-registration bootstrap below was additionally widened from
+> "one tenant-wide candidate" to "one candidate connection anywhere" — the correct scope now
+> that a tenant can hold more than one Salla connection (Phase 54's multi-store proof).
 
 ## No new schema (Part B3/B4)
 
@@ -40,13 +52,16 @@ convention against, and guessing a field name risks silently breaking real webho
 Leaving Salla webhooks permanently unresolved would have broken the one real tenant's
 already-working Salla integration the moment fail-closed routing shipped. Instead,
 `resolveTenantForSallaMerchant` self-registers the merchant id from the FIRST real webhook —
-but only when it is unambiguous: exactly one Salla-connected tenant has no
-`external_account_id` recorded yet. With one candidate, there is no guess (there is only one
-tenant it could possibly belong to). The moment a SECOND such candidate exists, this
-correctly refuses to register anything and falls through to `WEBHOOK_TENANT_UNRESOLVED`
-instead — proven directly in `tests/webhook-tenant-routing.test.js`'s bootstrap-ambiguity
-test (two Salla-connected tenants, neither registered yet → the delivery is unresolved and
-neither row is mutated).
+but only when it is unambiguous: exactly one Salla connection ANYWHERE (across every tenant)
+has no `external_account_id` recorded yet. With one candidate, there is no guess (there is
+only one connection it could possibly belong to — enforced by this table's own partial unique
+index on `(integration_definition_id, external_account_id)`, which makes a real merchant id
+belonging to two connections impossible). The moment a SECOND such candidate exists — a
+second tenant, or a second store for the SAME tenant, both still unresolved — this correctly
+refuses to register anything and falls through to `WEBHOOK_TENANT_UNRESOLVED` instead —
+proven directly in `tests/webhook-tenant-routing.test.js`'s bootstrap-ambiguity test (two
+Salla connections, neither registered yet → the delivery is unresolved and neither row is
+mutated).
 
 ## Unknown identity: `WEBHOOK_TENANT_UNRESOLVED` (Part B6)
 
@@ -96,12 +111,16 @@ only in Tenant A's run list).
 
 - Meta Page/Instagram webhooks: no route for these exists in this codebase today (only
   `/api/webhooks/meta/whatsapp`) — nothing to route.
-- Multiple named connections per integration (two Salla stores, three Meta Pages for one
-  tenant) — still one connection per provider per tenant, unchanged from Phase 1.
 - A UI or API to inspect `TENANT_UNRESOLVED` diagnostic events (see above).
 - Populating Salla's `external_account_id` at real connect time (would replace the
   self-registration bootstrap with a direct lookup) — blocked on having a live Salla app to
-  verify the exact API call against, same as before this phase.
+  verify the exact API call against, same as before this phase. This is true for BOTH the
+  legacy Salla OAuth route and the new generic multi-connection one (Phase 4A) — neither ever
+  resolves a merchant id itself; both rely on the same self-registration bootstrap above.
+- Multiple named WhatsApp numbers / Meta Pages / Microsoft accounts / X accounts / LinkedIn
+  organizations for one tenant still route through a single mirrored "default" connection per
+  provider (Phase 4A only proved the multi-connection model end-to-end for Salla) — see
+  `docs/INTEGRATION_CONNECTION_ARCHITECTURE.md`'s per-provider scope notes.
 
 ## Verification performed
 
@@ -114,4 +133,11 @@ webhook→event→agent-run propagation test. Every existing webhook test across
 and `feature-flags.test.js` was updated to establish a real (mocked) provider connection
 before sending a webhook that expects to be processed — exactly what a real deployment must
 do now, and a stricter, more honest test than what existed before this phase (which could
-process a webhook with no connection at all). Full suite: 297/297 green.
+process a webhook with no connection at all). Full suite at the time: 297/297 green.
+
+**Multi-Tenant Phase 4A update:** `salla-integration-api.test.js` and
+`webhook-tenant-routing.test.js`'s bootstrap-ambiguity test were both updated to seed
+`integration_connections` rows (not just the legacy table) to match the cutover above; both
+still assert the exact same routing/ambiguity behavior as before. Full suite after Phase 4A:
+330/330 green (297 pre-existing + 24 new `integration-connections.test.js` service-layer tests
++ 9 new `integration-connections-api.test.js` HTTP tests).

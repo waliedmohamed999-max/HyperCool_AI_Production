@@ -36,8 +36,16 @@ entire tick would abort, and NEITHER tenant's jobs would run.
 `ACTIVE`/`TRIAL` tenant, then loops over them SEQUENTIALLY (not parallel — bounded,
 predictable load; see "Locking" below), calling each TENANT_JOB once per tenant with an
 explicit `tenantId`. The CONNECTION_JOB loops separately over whichever tenants actually
-have a `microsoft365` row in `integration_credentials` (queried directly — never assumed to
+have a non-disconnected `microsoft365` connection (queried directly — never assumed to
 be "the" tenant).
+
+**Multi-Tenant Phase 4A update:** the CONNECTION_JOB's tenant enumeration was cut over from
+`integration_credentials` to `integration_connections` (`WHERE integration_definition_id=
+'microsoft365' AND status!='DISCONNECTED'`) — see `docs/INTEGRATION_CONNECTION_ARCHITECTURE.md`.
+The actual renewal call (`renewMicrosoftSubscriptionIfNeeded`) still reads/writes the legacy
+`integration_credentials` metadata unchanged; its own `updateCredentialsMetadata` call now
+passes `env` so the compatibility bridge mirrors the renewed subscription's expiry back into
+`integration_connections` too, keeping the two in sync without a second write path.
 
 `tick()`'s return shape changed from a flat object (`{dailyBrief, weeklyReport, ...}`) to
 `{at, tenants: {[tenantId]: {dailyBrief, weeklyReport, followupSweep, schedulePrepare}},

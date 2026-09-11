@@ -39,6 +39,12 @@ import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
 import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
 import {resolveTenantForWhatsAppPhoneNumberId,resolveTenantForMicrosoftSubscription,resolveTenantForSallaMerchant} from './runtime/webhook-tenant-resolver.js';
+import {installIntegrationDefinitions,listIntegrationDefinitions,getIntegrationDefinition} from './integrations/definitions.js';
+import {installIntegrationConnections,createConnection,listConnections,getConnection,getConnectionOrNull,updateConnection,setDefaultConnection,getDefaultConnection,resolveProviderAccount,disconnectConnection,deleteConnection} from './integrations/connections.js';
+import {installCredentialsVault,storeCredential,getCredentialMeta,removeCredential} from './integrations/vault.js';
+import {installOAuthStates,createOAuthState,consumeOAuthState} from './integrations/oauth-state.js';
+import {migrateLegacyIntegrationCredentials} from './integrations/migration.js';
+import {testConnectionHealth} from './integrations/health.js';
 import {verifySallaWebhook,processSallaWebhook} from './runtime/salla-webhooks.js';
 import {handleVerificationChallenge,verifyMetaSignature,normalizeWhatsAppWebhook} from './runtime/meta-webhooks.js';
 import {metaOAuthConfigured,createMetaAuthorizeUrl,consumeMetaState,exchangeCodeAndResolveAssets,saveMetaConnection,metaOAuthStatus,disconnectMeta,resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from './runtime/meta-oauth.js';
@@ -107,7 +113,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installApprovals(store.db);
   installEscalations(store.db);
   installGate(store.db);
+  installIntegrationDefinitions(store.db); // Multi-Tenant Phase 4A — global integration catalog, see docs/INTEGRATION_CONNECTION_ARCHITECTURE.md
+  installIntegrationConnections(store.db);
+  installCredentialsVault(store.db);
+  installOAuthStates(store.db);
   installCredentials(store.db);
+  migrateLegacyIntegrationCredentials(store.db,env); // one-time-per-row copy into the new connection+vault model
   installWebhookEvents(store.db);
   installWhatsAppTemplates(store.db);
   seedRegistry(store.db);
@@ -607,7 +618,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(!publicUrl)fail(400,'يتطلب اشتراك الويبهوك نطاقًا عامًا (PUBLIC_ORIGIN) — لا يقبل Graph عناوين محلية');
         const notificationUrl=new URL('/api/webhooks/microsoft/mail',publicUrl).href;
         const subscription=await createMailSubscription({store,env,fetcher},{notificationUrl,clientState:env.MICROSOFT_WEBHOOK_SECRET});
-        updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{id:subscription.subscriptionId,expiresAt:subscription.expiresAt,resource:subscription.resource,createdAt:new Date().toISOString()}});
+        updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{id:subscription.subscriptionId,expiresAt:subscription.expiresAt,resource:subscription.resource,createdAt:new Date().toISOString()}},session.tenantId,env);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'MICROSOFT_SUBSCRIPTION_CREATED',itemId:subscription.subscriptionId,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,subscription);
       }
@@ -671,6 +682,166 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         disconnectLinkedIn(store.db);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_DISCONNECTED',itemId:'linkedin',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
+      }
+      // ---------------------------------------------------------------------------------
+      // Multi-Tenant Phase 4A — generic, multi-connection Integration Connection routes.
+      // The six single-connection OAuth route blocks above are UNCHANGED and remain the
+      // active path for meta/microsoft365/x/linkedin/whatsapp (and Salla's own default
+      // connection). These new routes are ADDITIVE: they operate on `integration_connections`
+      // (see src/integrations/connections.js), which the compatibility bridge in
+      // credentials.js keeps mirrored from every legacy write. Only Salla is wired through
+      // the generic OAuth start/callback below (the chosen multi-store proof-of-concept —
+      // see docs/INTEGRATION_CONNECTION_ARCHITECTURE.md); other OAuth providers 501 on the
+      // generic OAuth path and keep using their dedicated routes above. Credential
+      // management (owner-only) never returns a secret — only safe metadata.
+      // ---------------------------------------------------------------------------------
+      if(req.method==='GET' && url.pathname==='/api/integrations/definitions') {
+        authorize(session,['owner','operator']);
+        return send(200,listIntegrationDefinitions(store.db));
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/connections') {
+        authorize(session,['owner','operator']);
+        return send(200,listConnections(store.db,{integrationDefinitionId:url.searchParams.get('provider')||undefined},session.tenantId));
+      }
+      if(req.method==='POST' && url.pathname==='/api/integrations/connections') {
+        authorize(session,['owner']);
+        const input=await body(req);
+        if(typeof input.integrationDefinitionId!=='string')fail(400,'integrationDefinitionId مطلوب');
+        const connection=createConnection(store.db,{integrationDefinitionId:input.integrationDefinitionId,name:typeof input.name==='string'&&input.name.trim()?input.name.trim():'اتصال جديد',connectedBy:session.user.id},session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'INTEGRATION_CONNECTION_CREATED',itemId:connection.id,provider:connection.integrationDefinitionId,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(201,connection);
+      }
+      const connectionItem=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)$/);
+      if(req.method==='GET' && connectionItem) {
+        authorize(session,['owner','operator']);
+        return send(200,getConnection(store.db,connectionItem[1],session.tenantId));
+      }
+      if(req.method==='PATCH' && connectionItem) {
+        authorize(session,['owner']);
+        const input=await body(req);
+        if(typeof input.name!=='string'||!input.name.trim())fail(400,'name مطلوب');
+        return send(200,updateConnection(store.db,connectionItem[1],{name:input.name.trim()},session.tenantId));
+      }
+      if(req.method==='DELETE' && connectionItem) {
+        authorize(session,['owner']);
+        const connection=deleteConnection(store.db,connectionItem[1],session.tenantId);
+        removeCredential(store.db,connection.id,session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'INTEGRATION_CONNECTION_DELETED',itemId:connection.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,connection);
+      }
+      const connectionDisconnect=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/disconnect$/);
+      if(req.method==='POST' && connectionDisconnect) {
+        authorize(session,['owner']);
+        const connection=disconnectConnection(store.db,connectionDisconnect[1],session.tenantId);
+        removeCredential(store.db,connection.id,session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'INTEGRATION_CONNECTION_DISCONNECTED',itemId:connection.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,connection);
+      }
+      const connectionSetDefault=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/set-default$/);
+      if(req.method==='POST' && connectionSetDefault) {
+        authorize(session,['owner']);
+        const connection=setDefaultConnection(store.db,connectionSetDefault[1],session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'INTEGRATION_CONNECTION_SET_DEFAULT',itemId:connection.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,connection);
+      }
+      const connectionTest=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/test$/);
+      if(req.method==='POST' && connectionTest) {
+        authorize(session,['owner']);
+        const connection=getConnection(store.db,connectionTest[1],session.tenantId);
+        const result=await testConnectionHealth(connection,{store,env,fetcher});
+        const now=new Date().toISOString();
+        const updated=updateConnection(store.db,connection.id,{
+         status:result.status,lastHealthCheck:now,
+         lastSuccessAt:result.status==='CONNECTED'?now:connection.lastSuccessAt,
+         lastErrorAt:(result.status==='ERROR'||result.status==='TOKEN_EXPIRED')?now:connection.lastErrorAt,
+         lastErrorCode:result.errors?.[0]||null,lastErrorMessageSafe:result.safeMessage||null
+        },session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'INTEGRATION_CONNECTION_TESTED',itemId:connection.id,result:result.status,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+        return send(200,{...result,connection:updated});
+      }
+      const connectionReconnect=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/reconnect$/);
+      if(req.method==='POST' && connectionReconnect) {
+        authorize(session,['owner']);
+        const connection=getConnection(store.db,connectionReconnect[1],session.tenantId);
+        const definition=getIntegrationDefinition(store.db,connection.integrationDefinitionId);
+        if(definition?.authType==='API_KEY')fail(400,'أعد الربط عبر مسار بيانات الاعتماد (credential) لا عبر reconnect');
+        if(connection.integrationDefinitionId!=='salla')fail(501,'إعادة الربط العامة غير متاحة بعد لهذا المزوّد — استخدم مسار الربط الحالي لهذا التكامل');
+        return send(200,{reauthorizeUrl:`/api/integrations/oauth/${connection.integrationDefinitionId}/start?connectionId=${connection.id}`});
+      }
+      // API_KEY connect flow (Anthropic/OpenAI, Phase 26): backend tests the submitted key
+      // for real BEFORE persisting anything — a failing key is never stored and the
+      // connection is never marked CONNECTED. Response never echoes the key back.
+      const connectionCredential=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/credential$/);
+      if(req.method==='PUT' && connectionCredential) {
+        authorize(session,['owner']);
+        const connection=getConnection(store.db,connectionCredential[1],session.tenantId);
+        const definition=getIntegrationDefinition(store.db,connection.integrationDefinitionId);
+        if(!definition||definition.authType!=='API_KEY')fail(400,'هذا التكامل لا يُدار عبر مسار مفتاح API — استخدم تدفق OAuth الخاص به');
+        const input=await body(req);
+        if(typeof input.apiKey!=='string'||!input.apiKey.trim())fail(400,'apiKey مطلوب');
+        const apiKey=input.apiKey.trim();
+        const testEnv=connection.integrationDefinitionId==='anthropic'?{...env,ANTHROPIC_API_KEY:apiKey}:connection.integrationDefinitionId==='openai'?{...env,OPENAI_API_KEY:apiKey}:null;
+        const testResult=connection.integrationDefinitionId==='anthropic'?await testAnthropicConnection({env:testEnv,fetcher})
+         :connection.integrationDefinitionId==='openai'?await testOpenAIConnection({env:testEnv,fetcher})
+         :{result:'NOT_CONFIGURED',code:'UNSUPPORTED_API_KEY_PROVIDER'};
+        const now=new Date().toISOString();
+        if(testResult.result!=='OK') {
+         updateConnection(store.db,connection.id,{status:'ERROR',lastHealthCheck:now,lastErrorAt:now,lastErrorCode:testResult.code||testResult.result,lastErrorMessageSafe:testResult.code||testResult.result},session.tenantId);
+         recordAudit(store.db,{id:crypto.randomUUID(),action:'CREDENTIAL_TEST_FAILED',itemId:connection.id,errorCode:testResult.code||testResult.result,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+         fail(422,`فشل اختبار المفتاح: ${testResult.code||testResult.result}`);
+        }
+        storeCredential(store.db,env,{connectionId:connection.id,credentialType:'api_key',payload:{apiKey}},session.tenantId);
+        updateConnection(store.db,connection.id,{status:'CONNECTED',connectedBy:session.user.id,connectedAt:connection.connectedAt||now,lastHealthCheck:now,lastSuccessAt:now,lastErrorAt:null,lastErrorCode:null,lastErrorMessageSafe:null},session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CREDENTIAL_CREATED',itemId:connection.id,provider:connection.integrationDefinitionId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+        return send(200,getCredentialMeta(store.db,connection.id,session.tenantId));
+      }
+      // Generic OAuth start/callback — Salla only in this pass (see block comment above).
+      // Deliberately a SEPARATE path (/api/integrations/oauth/:slug/...) from the existing
+      // /api/integrations/salla/oauth/... routes so the two flows never collide: the old
+      // route always operates on Salla's single mirrored "default" connection, this one can
+      // create/refresh any specific connection (Phase 54's multi-store proof).
+      const genericOAuthStart=url.pathname.match(/^\/api\/integrations\/oauth\/([\w-]+)\/start$/);
+      if(req.method==='GET' && genericOAuthStart) {
+        authorize(session,['owner']);
+        const slug=genericOAuthStart[1];
+        if(slug!=='salla')fail(501,'تدفق الربط العام (متعدد الاتصالات) غير متاح بعد لهذا التكامل — استخدم مسار الربط الحالي');
+        if(!getIntegrationDefinition(store.db,slug))fail(400,'تكامل غير معروف');
+        const existingId=url.searchParams.get('connectionId')||null;
+        const connection=existingId
+         ?getConnection(store.db,existingId,session.tenantId)
+         :createConnection(store.db,{integrationDefinitionId:slug,name:url.searchParams.get('name')||'متجر سلة جديد',connectedBy:session.user.id},session.tenantId);
+        const stateToken=createOAuthState(store.db,{tenantId:session.tenantId,userId:session.user.id,integrationDefinitionId:slug,connectionId:connection.id},env);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'OAUTH_STARTED',itemId:connection.id,provider:slug,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        res.writeHead(302,{Location:createAuthorizeUrl(env,session.user.id,stateToken)});return res.end();
+      }
+      const genericOAuthCallback=url.pathname.match(/^\/api\/integrations\/oauth\/([\w-]+)\/callback$/);
+      if(req.method==='GET' && genericOAuthCallback) {
+        authorize(session,['owner']);
+        const slug=genericOAuthCallback[1];
+        if(slug!=='salla')fail(501,'تدفق الربط العام (متعدد الاتصالات) غير متاح بعد لهذا التكامل');
+        const code=url.searchParams.get('code'),state=url.searchParams.get('state');
+        if(!code||!state)fail(400,'استجابة ربط ناقصة (code/state)');
+        let consumed;
+        try{consumed=consumeOAuthState(store.db,state,{userId:session.user.id,integrationDefinitionId:slug},env);}
+        catch(error){
+         recordAudit(store.db,{id:crypto.randomUUID(),action:'OAUTH_FAILED',itemId:slug,errorCode:error.code||'OAUTH_STATE_INVALID',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+         throw error;
+        }
+        if(consumed.tenantId!==session.tenantId)fail(403,'طلب الربط لا يخص هذه المنشأة');
+        // Note (matches salla-oauth.js's own honest limitation): the merchant/store id is NOT
+        // resolved here — there is no live Salla app in this environment to verify the exact
+        // "fetch the merchant profile" endpoint against, and guessing one risks silently
+        // breaking real webhook routing. externalAccountId stays null until a real webhook
+        // resolves it (see webhook-tenant-resolver.js) or a verified profile call is added.
+        const tokens=await exchangeCodeForTokens({env,fetcher,code});
+        storeCredential(store.db,env,{connectionId:consumed.connectionId,credentialType:'oauth_tokens',payload:{accessToken:tokens.accessToken,refreshToken:tokens.refreshToken,expiresAt:tokens.expiresAt}},session.tenantId);
+        const now=new Date().toISOString();
+        const connection=updateConnection(store.db,consumed.connectionId,{
+         status:'CONNECTED',externalAccountType:slug,scopes:tokens.scopes,
+         connectedBy:session.user.id,connectedAt:now,lastSuccessAt:now,lastErrorAt:null,lastErrorCode:null,lastErrorMessageSafe:null
+        },session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'OAUTH_COMPLETED',itemId:connection.id,provider:slug,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+        res.writeHead(302,{Location:'/#integrations'});return res.end();
       }
       // Manual reply outside the agent runtime — same permission/opt-out/approval-category
       // checks as the microsoft_sendEmail agent tool, never a second, looser path.

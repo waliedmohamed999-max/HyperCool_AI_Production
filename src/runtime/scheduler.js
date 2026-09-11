@@ -54,25 +54,28 @@ export async function renewMicrosoftSubscriptionIfNeeded({store,env,fetcher=fetc
  if(!isExpiringSoon(subscription.expiresAt,6*3600000))return {skipped:'NOT_DUE'};
  try {
   const renewed=await renewMailSubscription({store,env,fetcher},subscription.id);
-  updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{...subscription,expiresAt:renewed.expiresAt,lastRenewedAt:new Date().toISOString()}},tenantId);
+  updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{...subscription,expiresAt:renewed.expiresAt,lastRenewedAt:new Date().toISOString()}},tenantId,env);
   return {renewed:true,expiresAt:renewed.expiresAt};
  } catch(error) {
-  updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{...subscription,lastRenewalError:error.message,lastRenewalAttemptAt:new Date().toISOString()}},tenantId);
+  updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{...subscription,lastRenewalError:error.message,lastRenewalAttemptAt:new Date().toISOString()}},tenantId,env);
   throw error;
  }
 }
 /**
- * CONNECTION_JOB (Part A section, spec Phase 3.5): a Microsoft mail subscription is a
- * per-tenant connection, not a platform-wide one — `integration_credentials` already scopes
- * it by `tenant_id` (Phase 1). This enumerates every tenant that actually has a microsoft365
- * connection on record (never assumes "the" tenant) and renews each independently; one
- * tenant's renewal failure is caught and reported per-tenant, never allowed to stop the loop
- * for the others (Part A14 — failure isolation).
+ * CONNECTION_JOB (Part A section, spec Phase 3.5; cut over to `integration_connections` in
+ * Phase 4A Part 45): a Microsoft mail subscription is a per-tenant connection, not a
+ * platform-wide one. This enumerates every tenant that actually has a non-disconnected
+ * microsoft365 connection on record (never assumes "the" tenant) and renews each
+ * independently; one tenant's renewal failure is caught and reported per-tenant, never
+ * allowed to stop the loop for the others (Part A14 — failure isolation). The actual renewal
+ * still reads/writes the legacy `integration_credentials` metadata via getCredentialsMeta/
+ * updateCredentialsMetadata below — those calls' own compatibility-bridge side effect (see
+ * credentials.js) is what keeps `integration_connections` in sync going forward.
  */
 async function renewMicrosoftSubscriptionsForAllTenants({store,env,fetcher}) {
  let tenantIds=[];
- try{tenantIds=store.db.prepare("SELECT DISTINCT tenant_id AS tenantId FROM integration_credentials WHERE provider='microsoft365'").all().map(row=>row.tenantId);}
- catch{tenantIds=[];} // a fixture that never called installCredentials() has no such table — same "not connected" default as getCredentialsMeta's own try/catch
+ try{tenantIds=store.db.prepare("SELECT DISTINCT tenant_id AS tenantId FROM integration_connections WHERE integration_definition_id='microsoft365' AND status!='DISCONNECTED'").all().map(row=>row.tenantId);}
+ catch{tenantIds=[];} // a fixture that never called installIntegrationConnections() has no such table — same "not connected" default as getCredentialsMeta's own try/catch
  const results={};
  for(const tenantId of tenantIds) {
   try{results[tenantId]=await renewMicrosoftSubscriptionIfNeeded({store,env,fetcher,tenantId});}

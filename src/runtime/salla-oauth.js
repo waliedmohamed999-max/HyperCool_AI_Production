@@ -16,10 +16,17 @@ export function oauthConfigured(env) {
 // server process (see docs/agent-runtime.md), so this never needs to survive a restart;
 // a state older than 10 minutes is treated as expired.
 const pendingStates=new Map();
-export function createAuthorizeUrl(env,userId) {
+// Multi-Tenant Phase 4A: `externalState`, when supplied, is a real DB-backed token from the
+// new generic multi-connection OAuth flow (src/integrations/oauth-state.js) — this function
+// then builds the exact same authorize URL but does NOT touch its own in-memory
+// `pendingStates` map at all (that map is only ever consulted by consumeState below, which
+// the new flow never calls). The existing single-connection route
+// (`/api/integrations/salla/oauth/start`) is completely unchanged: it never passes this
+// argument, so it keeps generating and consuming its own in-memory state exactly as before.
+export function createAuthorizeUrl(env,userId,externalState=null) {
  if(!oauthConfigured(env))throw new ConnectorError('SALLA_OAUTH_NOT_CONFIGURED');
- const state=randomBytes(24).toString('base64url');
- pendingStates.set(state,{userId,at:Date.now()});
+ const state=externalState||randomBytes(24).toString('base64url');
+ if(!externalState)pendingStates.set(state,{userId,at:Date.now()});
  const url=new URL(AUTHORIZE_URL);
  url.searchParams.set('client_id',env.SALLA_CLIENT_ID);
  url.searchParams.set('response_type','code');

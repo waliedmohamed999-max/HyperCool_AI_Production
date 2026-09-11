@@ -1,6 +1,7 @@
 import {randomBytes,createCipheriv,createDecipheriv,timingSafeEqual} from 'node:crypto';
 import {fail} from '../auth.js';
 import {resolveActiveTenantId} from '../tenancy.js';
+import {syncConnectionFromLegacyCredential,markLegacyCredentialDisconnected} from '../integrations/legacy-sync.js';
 
 // Generic encrypted OAuth/API-credential store for any integration that needs one (Salla
 // today; the same table/functions work for a future integration without a new schema).
@@ -100,6 +101,10 @@ export function saveCredentials(db,env,provider,{accessToken,refreshToken,expire
  db.prepare(`INSERT INTO integration_credentials (tenant_id,provider,access_token_enc,refresh_token_enc,expires_at,scopes,external_account_id,extra_enc,metadata,connected_by,connected_by_name,connected_at,updated_at)
   VALUES (@tenantId,@provider,@accessTokenEnc,@refreshTokenEnc,@expiresAt,@scopes,@externalAccountId,@extraEnc,@metadata,@connectedBy,@connectedByName,@connectedAt,@updatedAt)
   ON CONFLICT(tenant_id,provider) DO UPDATE SET access_token_enc=excluded.access_token_enc,refresh_token_enc=excluded.refresh_token_enc,expires_at=excluded.expires_at,scopes=excluded.scopes,external_account_id=COALESCE(excluded.external_account_id,integration_credentials.external_account_id),extra_enc=COALESCE(excluded.extra_enc,integration_credentials.extra_enc),metadata=COALESCE(excluded.metadata,integration_credentials.metadata),connected_by=COALESCE(excluded.connected_by,integration_credentials.connected_by),connected_by_name=COALESCE(excluded.connected_by_name,integration_credentials.connected_by_name),updated_at=excluded.updated_at`).run(row);
+ // Multi-Tenant Phase 4A (Part 40, compatibility bridge): mirror this write into the new
+ // integration_connections + vault model as a best-effort side effect — a sync failure must
+ // never break this function's own, already-proven behavior for its existing callers.
+ try{const full=getCredentials(db,env,provider,resolvedTenantId);if(full)syncConnectionFromLegacyCredential(db,env,resolvedTenantId,provider,full,user);}catch{/* best-effort mirror only */}
  return getCredentialsMeta(db,provider,resolvedTenantId);
 }
 // Decrypted tokens never leave this module except through this function, called only by
@@ -142,16 +147,24 @@ export function getCredentialsMeta(db,provider,tenantId=null) {
 // encrypted token columns at all — for operational state that belongs next to a
 // connection (e.g. Microsoft's mail webhook subscription id/expiry) but isn't itself a
 // secret and shouldn't require re-supplying the access token just to update.
-export function updateCredentialsMetadata(db,provider,patch,tenantId=null) {
+export function updateCredentialsMetadata(db,provider,patch,tenantId=null,env=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
  const row=db.prepare('SELECT metadata FROM integration_credentials WHERE provider=? AND tenant_id=?').get(provider,resolvedTenantId);
  if(!row)return null;
  const merged={...(row.metadata?JSON.parse(row.metadata):{}),...patch};
  db.prepare('UPDATE integration_credentials SET metadata=?,updated_at=? WHERE provider=? AND tenant_id=?').run(JSON.stringify(merged),new Date().toISOString(),provider,resolvedTenantId);
+ // Best-effort mirror (see saveCredentials above) — this is exactly how a Microsoft mail
+ // subscription id/expiry reaches the new model, since that flow updates metadata only,
+ // never the token itself. `env` is optional here (existing callers never passed one) —
+ // without it the mirror simply cannot decrypt to re-sync and silently no-ops, same as
+ // before this phase; callers that want the new model kept fresh now pass `env` explicitly.
+ if(env)try{const full=getCredentials(db,env,provider,resolvedTenantId);if(full)syncConnectionFromLegacyCredential(db,env,resolvedTenantId,provider,full,null);}catch{/* best-effort mirror only */}
  return merged;
 }
 export function clearCredentials(db,provider,tenantId=null) {
- db.prepare('DELETE FROM integration_credentials WHERE provider=? AND tenant_id=?').run(provider,tenantId||resolveActiveTenantId(db));
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ try{markLegacyCredentialDisconnected(db,resolvedTenantId,provider);}catch{/* best-effort mirror only */}
+ db.prepare('DELETE FROM integration_credentials WHERE provider=? AND tenant_id=?').run(provider,resolvedTenantId);
 }
 export function isExpiringSoon(expiresAt,withinMs=300000) {
  if(!expiresAt)return false;
