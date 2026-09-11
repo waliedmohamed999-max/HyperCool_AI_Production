@@ -137,3 +137,75 @@ whatsapp/meta/microsoft365/x/linkedin today. Making those genuinely `MULTI` woul
 each of those five OAuth flows its own per-connection credential row instead of one shared
 `(tenant, provider)` slot — real, scoped future work, not something this phase claims to have
 already done.
+
+## Phase 4B.1: Connection Capability Enforcement
+
+Phase 4B built `ToolDefinition.capability` and `IntegrationDefinition.capabilities` as real
+fields, but nothing ever cross-checked one against the other, or against what a *specific
+connection* actually has permission to do — `resolveToolConnection` validated provider match
+and health only. A tool could resolve a connection whose real OAuth grant never included the
+scope it needs, discoverable only via a live 403 at the provider. Phase 4B.1 closes this.
+
+### The rule (`src/runtime/capability-map.js`)
+
+A small, explicit table maps `(provider, ToolDefinition.capability) → the real OAuth scope(s)
+that grant it` — see the file itself for the exact mapping and the reasoning behind each
+provider's entry (in particular Salla's single `products.read` scope covering three separate
+tool capabilities, and Meta's `publishing` capability being satisfied by whatever this app
+actually requests today, not the theoretical ideal — both explained inline).
+
+`connectionGrantsCapability(provider, capability, scopes)` returns true when:
+1. the capability has no entry for that provider at all (an internal/AI capability, or a
+   provider this table doesn't model — the existing provider/health checks are the only gate,
+   unchanged), **or**
+2. the connection has **no recorded scopes at all** (`scopes: []` — a legacy or manually-seeded
+   connection this app has no real grant data for; never invented as "missing" any more than
+   it would be invented as "present" — Part 6: "لا تعتبر supported-by-provider = granted"), **or**
+3. at least one of the scopes that grant it is actually present in the connection's real
+   `scopes` array (populated from the live OAuth grant at connect/refresh time — see
+   `legacy-sync.js` and the generic multi-connection callback in `application.js`).
+
+Never cached: every check reads `connection.scopes` live, so a reconnect, refresh, or a
+merchant/user revoking a scope is reflected on the very next check — there is no stored
+"capability" value anywhere to go stale or need invalidating.
+
+### Where it's enforced
+
+`resolveToolConnection` (`tool-assignments.js`) checks capability in **both** paths — an
+explicit assignment connection, and the tenant-default connection resolved via
+`resolveProviderAccount` — after the provider-match and health checks, and always **before**
+the tool handler (and therefore before any credential retrieval or provider API call) is ever
+reached. A missing capability produces `{blocked:true, reason:'CONNECTION_CAPABILITY_MISSING'}`,
+which `runtime.js`'s `executeTool` surfaces as its own `CONNECTION_CAPABILITY_MISSING` tool-call
+status (previously folded into the generic `CONNECTION_REQUIRED`), and which
+`evaluateToolReadiness` (`agent-readiness.js`) surfaces as its own `ToolReadiness` status —
+flowing into `evaluateAgentReadiness`'s existing, reason-agnostic aggregation exactly like any
+other non-`READY` tool status (BLOCKED if required, PARTIAL if optional — no special-casing
+needed, since that aggregation was already generic).
+
+### A real, honest gap this audit found (not fixed, by design)
+
+No current `AgentDefinition`'s **required** tool has an external capability dependency — every
+required tool across all 12 agents is internal-only (`integrationSlug: null`), by the
+deliberate Phase 4B design that no tenant is ever forced to connect a specific provider just to
+enable an agent (Part 52). This means "a required tool with a missing capability blocks the
+agent" cannot be demonstrated today with a *literal* end-to-end example — it is proven instead
+by combining two independently-verified facts: `evaluateToolReadiness` correctly returns
+`CONNECTION_CAPABILITY_MISSING` (tested directly), and `evaluateAgentReadiness`'s required-tool
+aggregation blocks on *any* non-`READY` status, not specific reason strings (tested directly
+against a required tool disabled outright). Documented here rather than silently claimed as
+"tested end-to-end" when it isn't.
+
+### Provider capability matrix
+
+| Provider | Connection Mode | Capabilities Supported (`IntegrationDefinition`) | Capabilities Actually Enforced (`capability-map.js`) | Scope Source | Known Limitations |
+|---|---|---|---|---|---|
+| Salla | MULTI | `products.read`, `stock.read`, `orders.read` | `commerce.products.read`, `commerce.price.read`, `commerce.stock.read` (all via the one `products.read` scope — price/stock are fields on the same product resource, not separate scopes), `orders.read` | `salla-oauth.js` `DEFAULT_SCOPES`: `offline_access, products.read, orders.read, customers.read` | `customers.read` is granted but no tool uses it yet |
+| WhatsApp | SINGLE | `messages.receive`, `messages.send`, `templates.read` | `messaging.send` (via `whatsapp_business_messaging`) | Shares Meta's OAuth grant (no separate WhatsApp identity) | `messages.receive`/`templates.read` aren't capability-gated — no tool declares them as a required capability |
+| Meta | SINGLE | `publishing`, `messaging`, `analytics` | `publishing` (via `instagram_content_publish` OR `pages_manage_metadata`) | `meta-oauth.js` `DEFAULT_SCOPES` | `pages_manage_posts` — Meta's own documented requirement for a Facebook Page `/feed` post — is **not** currently requested; a pre-existing scope gap this hardening pass surfaces honestly rather than hides. `messaging`/`analytics` aren't capability-gated |
+| Microsoft 365 | SINGLE | `mail.read`, `mail.send`, `calendar.read`, `calendar.write` | `mail.send` (`Mail.Send`), `calendar.read`/`calendar.write` (`Calendars.Read`/`Calendars.ReadWrite`) | `microsoft-oauth.js` `DEFAULT_SCOPES` + `CALENDAR_SCOPES` (calendar scopes only requested when `MICROSOFT_ENABLE_CALENDAR=true`) | A tenant connected before `MICROSOFT_ENABLE_CALENDAR` was set will correctly show `CONNECTION_CAPABILITY_MISSING` for calendar tools until reconnected — accurate, not a bug. `mail.read` isn't capability-gated |
+| X | SINGLE | `publish`, `analytics` | `publish` (via `tweet.write`) | `x-oauth.js` `DEFAULT_SCOPES` | `analytics` isn't capability-gated |
+| LinkedIn | SINGLE | `organization.publish`, `analytics` | `organization.publish` (via `w_organization_social` OR `rw_organization_admin`) | `linkedin-oauth.js` `DEFAULT_SCOPES` | `analytics` isn't capability-gated |
+| Anthropic | MULTI | `llm.generate`, `llm.tools`, `llm.structured` | Not scope-gated — `API_KEY` auth has no OAuth scope model; access is all-or-nothing per key | N/A | Correctly has no `capability-map.js` entry |
+| OpenAI | MULTI | `llm.generate`, `llm.tools`, `llm.structured` | Same as Anthropic | N/A | Same |
+| Canva | UNAVAILABLE | *(none declared)* | N/A — tool `isAvailable:false` | N/A | No real implementation anywhere in this codebase |

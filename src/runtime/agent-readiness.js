@@ -54,6 +54,11 @@ export function evaluateToolReadiness(db,env,{tenantId,agentId,toolSlug},legacyC
  if(resolution.blocked) {
   if(resolution.reason==='TOOL_DISABLED')return {status:'DISABLED',toolSlug,reason:resolution.reason};
   if(resolution.reason==='CONNECTION_UNHEALTHY')return {status:'CONNECTION_UNHEALTHY',toolSlug,reason:resolution.reason,detail:resolution.detail};
+  // Phase 4B.1 — a real, distinct status: the connection is the right provider and healthy,
+  // but its actual granted OAuth scopes don't cover what this tool needs (never conflated
+  // with the generic CONNECTION_REQUIRED bucket — a UI needs to tell an operator "reconnect
+  // with more permissions" apart from "connect something at all").
+  if(resolution.reason==='CONNECTION_CAPABILITY_MISSING')return {status:'CONNECTION_CAPABILITY_MISSING',toolSlug,reason:resolution.reason};
   if(CONNECTION_REQUIRED_REASONS.has(resolution.reason))return {status:'CONNECTION_REQUIRED',toolSlug,reason:resolution.reason};
   return {status:'CONNECTION_REQUIRED',toolSlug,reason:resolution.reason};
  }

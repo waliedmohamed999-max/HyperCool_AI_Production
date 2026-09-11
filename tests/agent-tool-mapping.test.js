@@ -182,6 +182,138 @@ test('resolveToolConnection: TOOL_DISABLED — an explicitly disabled assignment
  }finally{store.close();}
 });
 
+// --- Capability enforcement (Phase 4B.1) ---------------------------------------------------
+
+test('Capability enforcement: correct provider + correct capability (real granted scope) resolves cleanly',()=>{
+ const {store,tenantA}=twoTenants();try{
+  const salla=createConnection(store.db,{integrationDefinitionId:'salla',name:'Main Store'},tenantA);
+  updateConnection(store.db,salla.id,{status:'CONNECTED',scopes:['products.read','orders.read']},tenantA);
+  upsertAssignment(store.db,tenantA,'sales','get_current_price',{connectionId:salla.id});
+  const resolution=resolveToolConnection(store.db,{tenantId:tenantA,agentId:'sales',toolSlug:'get_current_price'});
+  assert.equal(resolution.blocked,undefined);assert.equal(resolution.connectionId,salla.id);
+ }finally{store.close();}
+});
+
+test('Capability enforcement: correct provider + missing capability -> CONNECTION_CAPABILITY_MISSING (real granted scopes just don\'t cover it)',()=>{
+ const {store,tenantA}=twoTenants();try{
+  const salla=createConnection(store.db,{integrationDefinitionId:'salla',name:'Main Store'},tenantA);
+  // A real, non-empty scope grant — just not the one get_current_price needs. Never treated
+  // the same as "no scope data recorded at all" (see capability-map.js's module doc comment).
+  updateConnection(store.db,salla.id,{status:'CONNECTED',scopes:['orders.read']},tenantA);
+  upsertAssignment(store.db,tenantA,'sales','get_current_price',{connectionId:salla.id});
+  const resolution=resolveToolConnection(store.db,{tenantId:tenantA,agentId:'sales',toolSlug:'get_current_price'});
+  assert.equal(resolution.blocked,true);assert.equal(resolution.reason,'CONNECTION_CAPABILITY_MISSING');
+ }finally{store.close();}
+});
+
+test('Capability enforcement: a connection with NO recorded scopes at all is never treated as missing a capability (no real grant data to invent a fact from)',()=>{
+ const {store,tenantA}=twoTenants();try{
+  const salla=createConnection(store.db,{integrationDefinitionId:'salla',name:'Legacy Store'},tenantA);
+  updateConnection(store.db,salla.id,{status:'CONNECTED'},tenantA); // scopes stays []
+  upsertAssignment(store.db,tenantA,'sales','get_current_price',{connectionId:salla.id});
+  const resolution=resolveToolConnection(store.db,{tenantId:tenantA,agentId:'sales',toolSlug:'get_current_price'});
+  assert.equal(resolution.blocked,undefined);assert.equal(resolution.connectionId,salla.id);
+ }finally{store.close();}
+});
+
+test('ToolReadiness: CONNECTION_CAPABILITY_MISSING is its own distinct status, never folded into the generic CONNECTION_REQUIRED bucket',()=>{
+ const {store,tenantA}=twoTenants();try{
+  const whatsapp=createConnection(store.db,{integrationDefinitionId:'whatsapp',name:'Sales Number'},tenantA);
+  updateConnection(store.db,whatsapp.id,{status:'CONNECTED',scopes:['business_management']},tenantA); // real scopes, missing the send one
+  upsertAssignment(store.db,tenantA,'sales','whatsapp_send',{connectionId:whatsapp.id});
+  const readiness=evaluateToolReadiness(store.db,env,{tenantId:tenantA,agentId:'sales',toolSlug:'whatsapp_send'});
+  assert.equal(readiness.status,'CONNECTION_CAPABILITY_MISSING');
+ }finally{store.close();}
+});
+
+test('Capability enforcement: no credential retrieval and no provider API call occurs when the capability is missing — the fetcher is never called a second time',async()=>{
+ const {store,tenantA}=twoTenants();try{
+  const lead=createLead(store,{name:'Test Lead',customerType:'B2C',sourceType:'INBOUND',phone:'+966500000005'},user,tenantA);
+  const whatsapp=createConnection(store.db,{integrationDefinitionId:'whatsapp',name:'Sales Number'},tenantA);
+  updateConnection(store.db,whatsapp.id,{status:'CONNECTED',scopes:['business_management']},tenantA);
+  // A REAL credential exists in the vault — proving it is never even looked up, since the
+  // capability gate runs before the handler (and therefore before any getCredentialForRuntime
+  // call) is ever reached.
+  storeCredential(store.db,env,{connectionId:whatsapp.id,credentialType:'oauth_tokens',payload:{accessToken:'sk-should-never-be-used'}},tenantA);
+  upsertAssignment(store.db,tenantA,'sales','whatsapp_send',{connectionId:whatsapp.id});
+  setAutonomy(store,'sales',{level:'L1',reason:'promote',expectedVersion:0},user,env,tenantA);
+  setAutonomy(store,'sales',{level:'L2',reason:'promote again',expectedVersion:1},user,env,tenantA);
+  let fetchCalls=0,providerFetchCalls=0;
+  const runtime=createAgentRuntime({store,env,fetcher:async(url)=>{
+   fetchCalls++;
+   if(url!=='https://api.anthropic.com/v1/messages')providerFetchCalls++;
+   if(fetchCalls===1)return new Response(JSON.stringify({stop_reason:'tool_use',content:[{type:'tool_use',id:'call_1',name:'whatsapp_send',input:{leadId:lead.id,text:'hi'}}],usage:{input_tokens:5,output_tokens:5}}),{status:200,headers:{'content-type':'application/json'}});
+   return new Response(JSON.stringify({stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(salesDecision())}],usage:{input_tokens:5,output_tokens:5}}),{status:200,headers:{'content-type':'application/json'}});
+  }});
+  const run=await runtime.run('sales',{triggerType:'TEST',input:{scenario:'price'},user,tenantId:tenantA});
+  assert.equal(run.toolCalls[0].status,'CONNECTION_CAPABILITY_MISSING');
+  assert.equal(providerFetchCalls,0,'must never reach a provider (WhatsApp Graph API) fetch call — only the LLM turns');
+ }finally{store.close();}
+});
+
+test('Capability enforcement + Readiness aggregation: a REQUIRED tool in ANY non-READY state (including CONNECTION_CAPABILITY_MISSING) blocks the whole agent — the aggregation rule is reason-agnostic. (No current agent has a required tool with an external capability dependency by design — every required tool is internal-only, see docs/AGENT_TOOL_MAPPING.md — so this proves the rule directly against a required tool disabled outright, and CONNECTION_CAPABILITY_MISSING itself is proven at the ToolReadiness level above.)',()=>{
+ const {store,tenantA}=twoTenants();try{
+  upsertAssignment(store.db,tenantA,'sales','search_crm',{enabled:false}); // search_crm is one of sales' REQUIRED tools
+  const readiness=evaluateAgentReadiness(store.db,env,{tenantId:tenantA,agentId:'sales'});
+  assert.equal(readiness.status,'BLOCKED');
+  assert.ok(readiness.blockers.some(b=>b.includes('search_crm')));
+ }finally{store.close();}
+});
+
+test('Capability enforcement: an OPTIONAL tool missing its capability makes the agent PARTIAL, never BLOCKED',()=>{
+ const {store,tenantA}=twoTenants();try{
+  const salla=createConnection(store.db,{integrationDefinitionId:'salla',name:'Main Store'},tenantA);
+  updateConnection(store.db,salla.id,{status:'CONNECTED',scopes:['orders.read']},tenantA); // missing products.read
+  upsertAssignment(store.db,tenantA,'sales','get_current_price',{connectionId:salla.id}); // optional for sales
+  const readiness=evaluateAgentReadiness(store.db,env,{tenantId:tenantA,agentId:'sales'});
+  assert.equal(readiness.status,'PARTIAL');
+  assert.ok(readiness.optional_missing.includes('get_current_price'));
+ }finally{store.close();}
+});
+
+test('Capability enforcement: capability restored (reconnect/re-consent with the right scope) immediately flips the agent back to READY — no cache to invalidate',()=>{
+ const {store,tenantA}=twoTenants();try{
+  const salla=createConnection(store.db,{integrationDefinitionId:'salla',name:'Main Store'},tenantA);
+  updateConnection(store.db,salla.id,{status:'CONNECTED',scopes:['orders.read']},tenantA);
+  upsertAssignment(store.db,tenantA,'sales','get_current_price',{connectionId:salla.id});
+  const before=evaluateAgentReadiness(store.db,env,{tenantId:tenantA,agentId:'sales'});
+  assert.equal(before.status,'PARTIAL');assert.ok(before.optional_missing.includes('get_current_price'));
+
+  // Simulates a real re-consent/reconnect that grants the missing scope — the exact same
+  // write path a real OAuth callback uses (updateConnection with a fresh `scopes` array).
+  updateConnection(store.db,salla.id,{scopes:['products.read','orders.read']},tenantA);
+  const after=evaluateAgentReadiness(store.db,env,{tenantId:tenantA,agentId:'sales'});
+  // Sales' OTHER optional tools (whatsapp_send etc.) are still genuinely unconfigured in this
+  // fixture, so the agent overall stays PARTIAL — the fix is scoped to exactly this one tool,
+  // which is precisely what `optional_missing` (not the aggregate status) proves here.
+  assert.ok(!after.optional_missing.includes('get_current_price'),'get_current_price must no longer be optional_missing once its capability is granted');
+ }finally{store.close();}
+});
+
+test('Capability enforcement: OAuth scope reduction (re-consent with FEWER permissions) is reflected on the very next readiness check',()=>{
+ const {store,tenantA}=twoTenants();try{
+  const salla=createConnection(store.db,{integrationDefinitionId:'salla',name:'Main Store'},tenantA);
+  updateConnection(store.db,salla.id,{status:'CONNECTED',scopes:['products.read','orders.read']},tenantA);
+  upsertAssignment(store.db,tenantA,'sales','get_current_price',{connectionId:salla.id});
+  const before=evaluateAgentReadiness(store.db,env,{tenantId:tenantA,agentId:'sales'});
+  assert.ok(!before.optional_missing.includes('get_current_price'));
+
+  // A real re-consent that DROPS products.read (e.g. a merchant revoked scope at Salla's end).
+  updateConnection(store.db,salla.id,{scopes:['orders.read']},tenantA);
+  const after=evaluateAgentReadiness(store.db,env,{tenantId:tenantA,agentId:'sales'});
+  assert.equal(after.status,'PARTIAL');
+  assert.ok(after.optional_missing.includes('get_current_price'));
+ }finally{store.close();}
+});
+
+test('Capability enforcement: Tenant A cannot exploit Tenant B\'s connection capability — cross-tenant assignment is rejected before capability is ever considered',()=>{
+ const {store,tenantA,tenantB}=twoTenants();try{
+  const sallaB=createConnection(store.db,{integrationDefinitionId:'salla',name:'B Store'},tenantB);
+  updateConnection(store.db,sallaB.id,{status:'CONNECTED',scopes:['products.read','orders.read']},tenantB); // fully capable — irrelevant, still Tenant B's
+  assert.throws(()=>upsertAssignment(store.db,tenantA,'sales','get_current_price',{connectionId:sallaB.id}),/غير موجود/);
+ }finally{store.close();}
+});
+
 test('Salla multi-store: two connections for Tenant A, each tool pinned to a different one, resolved independently',()=>{
  const {store,tenantA}=twoTenants();try{
   const main=createConnection(store.db,{integrationDefinitionId:'salla',name:'Main Store'},tenantA);

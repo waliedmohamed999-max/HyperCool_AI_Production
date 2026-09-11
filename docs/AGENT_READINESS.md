@@ -20,6 +20,7 @@ because it exists").
 | `READY` | Tool resolves cleanly — no assignment (legacy pass-through and either no integration or the legacy static/env path is configured), or a healthy resolved connection |
 | `CONNECTION_REQUIRED` | `CONNECTION_NOT_FOUND`, `CONNECTION_PROVIDER_MISMATCH`, `CONNECTION_SELECTION_REQUIRED`, or the legacy static path is genuinely unconfigured |
 | `CONNECTION_UNHEALTHY` | An explicitly assigned connection exists but is not `CONNECTED`/`DEGRADED` |
+| `CONNECTION_CAPABILITY_MISSING` | *(Phase 4B.1)* The connection is the right provider and healthy, but its real granted OAuth scopes don't cover what this tool needs — see `docs/CONNECTION_AWARE_RUNTIME.md`'s capability enforcement section. Never folded into `CONNECTION_REQUIRED`: an operator needs to know "reconnect with more permissions" is different from "connect something at all" |
 | `DISABLED` | The tool's own assignment is disabled, or `ToolDefinition.isAvailable=false` (Canva, `salla_syncOrders`) |
 | `PERMISSION_BLOCKED` | *(reserved — permission-level blocking is reported at the agent run level via `FORBIDDEN`/`WAITING_APPROVAL`, not duplicated here)* |
 
@@ -78,6 +79,13 @@ around it.
 
 `GET /api/agents/:agentId/readiness` (owner/operator) — `application.js`, wraps
 `evaluateAgentReadiness` directly; no cached/stored readiness anywhere.
+
+*(Phase 4B.1)* `GET /api/agents/:agentId/tools` now also returns a `readiness` field per tool
+(via `evaluateAllToolsReadiness`, which was built in Phase 4B but never actually wired into a
+route until this pass) — `status`/`reason` only, no credential. `GET /api/tools/:id/connections`
+returns a `capabilityGranted` boolean per candidate connection (`scopes` itself is already
+non-secret metadata, unchanged) — so a UI can show, per connection option, whether it actually
+covers what the tool needs before an operator picks it, not just that it's the right provider.
 
 ## Tests
 

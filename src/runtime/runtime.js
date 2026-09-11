@@ -168,7 +168,11 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
      const resolution=resolveToolConnection(db,{tenantId:resolvedTenantId,agentId,toolSlug:name});
      assignmentId=resolution.assignmentId||null;
      if(resolution.blocked) {
-      status=resolution.reason==='CONNECTION_UNHEALTHY'?'CONNECTION_UNHEALTHY':'CONNECTION_REQUIRED';
+      // Phase 4B.1 — CONNECTION_CAPABILITY_MISSING is its own status, distinct from the
+      // generic CONNECTION_REQUIRED: the connection is real, the right provider, and healthy
+      // — it just never granted the scope this tool needs. Reported before any credential
+      // retrieval or provider API call (resolveToolConnection already refused the handler).
+      status=resolution.reason==='CONNECTION_UNHEALTHY'?'CONNECTION_UNHEALTHY':resolution.reason==='CONNECTION_CAPABILITY_MISSING'?'CONNECTION_CAPABILITY_MISSING':'CONNECTION_REQUIRED';
       output={status,reason:resolution.reason,detail:resolution.detail||null};
      } else {
       connectionId=resolution.connectionId||null;

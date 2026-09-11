@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {fail} from '../auth.js';
 import {getToolDefinition} from './tool-definitions.js';
 import {getConnectionOrNull,resolveProviderAccount} from '../integrations/connections.js';
+import {connectionGrantsCapability} from './capability-map.js';
 
 // AgentToolAssignment — Multi-Tenant Phase 4B (Part 7-12). Tenant-scoped, OPT-IN
 // refinements layered on top of the existing default-allow Tool Registry (runtime/tools.js):
@@ -130,12 +131,18 @@ export function resolveToolConnection(db,{tenantId,agentId,toolSlug}) {
    if(connection.integrationDefinitionId!==tool.integrationSlug)return {blocked:true,reason:'CONNECTION_PROVIDER_MISMATCH',assignmentId:assignment.id,connectionId:connection.id,tool};
    if(connection.status==='DISCONNECTED')return {blocked:true,reason:'CONNECTION_UNHEALTHY',detail:connection.status,assignmentId:assignment.id,connectionId:connection.id,tool};
    if(!DEGRADED_OK_STATUSES.has(connection.status) && !tool.isReadOnly)return {blocked:true,reason:'CONNECTION_UNHEALTHY',detail:connection.status,assignmentId:assignment.id,connectionId:connection.id,tool};
+   // Phase 4B.1 — checked AFTER provider/health (a disconnected connection is already a more
+   // specific, more actionable failure than "missing capability" would be) and BEFORE the
+   // connection is ever handed to a handler, i.e. before any credential retrieval or provider
+   // API call (Part 3).
+   if(!connectionGrantsCapability(tool.integrationSlug,tool.capability,connection.scopes))return {blocked:true,reason:'CONNECTION_CAPABILITY_MISSING',assignmentId:assignment.id,connectionId:connection.id,tool};
    return {connectionId:connection.id,assignmentId:assignment.id,connection,tool};
   }
   if(!tool.requiresConnection)return {connectionId:null,assignmentId:assignment.id,tool};
   try {
    const resolved=resolveProviderAccount(db,tool.integrationSlug,tenantId);
    if(!resolved)return {connectionId:null,assignmentId:assignment.id,tool};
+   if(!connectionGrantsCapability(tool.integrationSlug,tool.capability,resolved.scopes))return {blocked:true,reason:'CONNECTION_CAPABILITY_MISSING',assignmentId:assignment.id,connectionId:resolved.id,tool};
    return {connectionId:resolved.id,assignmentId:assignment.id,connection:resolved,tool};
   } catch(error) {
    if(error.code==='CONNECTION_SELECTION_REQUIRED')return {blocked:true,reason:'CONNECTION_SELECTION_REQUIRED',connections:error.connections,assignmentId:assignment.id,tool};

@@ -62,6 +62,7 @@ import {installTenantAgentConfigs,getTenantAgentConfig,updateTenantAgentConfig,l
 import {installToolDefinitions,listToolDefinitions,getToolDefinition} from './runtime/tool-definitions.js';
 import {installAgentToolAssignments,listAssignmentsForAgent,upsertAssignment,deleteAssignment,findAssignmentsUsingConnection} from './runtime/tool-assignments.js';
 import {evaluateAgentReadiness,evaluateAllToolsReadiness} from './runtime/agent-readiness.js';
+import {connectionGrantsCapability} from './runtime/capability-map.js';
 import {levels as autonomyLevels} from './autonomy.js';
 
 const packageVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
@@ -496,7 +497,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(!getAgent(store.db,agentId))fail(404,'وكيل غير موجود');
         const assignments=new Map(listAssignmentsForAgent(store.db,session.tenantId,agentId).map(a=>[a.toolSlug,a]));
         const tools=listToolDefinitions(store.db).filter(t=>!t.allowedAgents||t.allowedAgents.includes(agentId));
-        return send(200,tools.map(tool=>({...tool,assignment:assignments.get(tool.slug)||null})));
+        // Phase 4B.1 (Part 10) — each tool's live readiness (READY / CONNECTION_REQUIRED /
+        // CONNECTION_UNHEALTHY / CONNECTION_CAPABILITY_MISSING / DISABLED), so a UI can show
+        // exactly why a tool isn't usable without a second round-trip — never a credential.
+        const readinessBySlug=new Map(evaluateAllToolsReadiness(store.db,env,{tenantId:session.tenantId,agentId}).map(r=>[r.toolSlug,r]));
+        return send(200,tools.map(tool=>({...tool,assignment:assignments.get(tool.slug)||null,readiness:readinessBySlug.get(tool.slug)||null})));
       }
       const agentToolItem=url.pathname.match(/^\/api\/agents\/([\w-]+)\/tools\/([\w-]+)$/);
       if(agentToolItem) {
@@ -524,7 +529,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const tool=getToolDefinition(store.db,toolConnections[1]);
         if(!tool)fail(404,'أداة غير معروفة');
         if(!tool.integrationSlug)return send(200,[]);
-        return send(200,listConnections(store.db,{integrationDefinitionId:tool.integrationSlug},session.tenantId));
+        // Phase 4B.1 (Part 10) — `capabilityGranted` tells a UI, per candidate connection,
+        // whether its actual OAuth scopes cover what this tool needs — never just "supported
+        // by the provider in general" (Part 6). `scopes` itself is already non-secret (see
+        // connections.js hydrate); no credential is ever included here.
+        const connections=listConnections(store.db,{integrationDefinitionId:tool.integrationSlug},session.tenantId);
+        return send(200,connections.map(c=>({...c,capabilityGranted:connectionGrantsCapability(tool.integrationSlug,tool.capability,c.scopes)})));
       }
       const agentReadiness=url.pathname.match(/^\/api\/agents\/([\w-]+)\/readiness$/);
       if(req.method==='GET' && agentReadiness) {
