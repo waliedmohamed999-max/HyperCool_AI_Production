@@ -3,9 +3,12 @@ import {createContent} from './domain.js';
 import {fail} from './auth.js';
 import {generationContext} from './knowledge.js';
 import {generateCopy,ConnectorError} from './connectors.js';
+import {insertContent} from './content.js';
+import {recordAudit} from './audit.js';
+import {resolveActiveTenantId} from './tenancy.js';
 
-export function listAiRuns(db,limit=50) {
- return db.prepare('SELECT status,json FROM ai_runs ORDER BY rowid DESC LIMIT ?').all(limit).map(row=>({...JSON.parse(row.json),status:row.status}));
+export function listAiRuns(db,limit=50,tenantId=null) {
+ return db.prepare('SELECT status,json FROM ai_runs WHERE tenant_id=? ORDER BY rowid DESC LIMIT ?').all(tenantId||resolveActiveTenantId(db),limit).map(row=>({...JSON.parse(row.json),status:row.status}));
 }
 // Optional creative-brief fields: purely additive context for the copy agent (see
 // connectors.js generateCopy's system suffix). None are required; omitting all of them
@@ -21,14 +24,15 @@ export function createGenerator(store,env,fetcher) {
  // A process exit may occur after the provider billed the call; never replay automatically.
  db.prepare("UPDATE ai_runs SET status='INTERRUPTED' WHERE status='RUNNING'").run();
  let active=false;
- return async function generate(input,user) {
+ return async function generate(input,user,tenantId=null) {
   if(typeof input.requestKey!=='string'||! /^[a-zA-Z0-9-]{16,100}$/.test(input.requestKey))fail(400,'مفتاح الطلب غير صالح');
   if(typeof input.productId!=='string'||input.productId.length>100)fail(400,'معرف المنتج غير صالح');
   const brief=briefInput(input);
   const request={productId:input.productId,title:input.title,platform:input.platform,date:input.date,brief};
   createContent({...request,body:'validation',url:'https://hyper-cool.com/'});
+  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
   const fingerprint=createHash('sha256').update(JSON.stringify(request)).digest('hex');
-  const previous=db.prepare('SELECT * FROM ai_runs WHERE request_key=?').get(input.requestKey);
+  const previous=db.prepare('SELECT * FROM ai_runs WHERE tenant_id=? AND request_key=?').get(resolvedTenantId,input.requestKey);
   if(previous) {
    if(previous.actor_id!==user.id || previous.request_hash!==fingerprint)fail(409,'مفتاح الطلب مستخدم لطلب آخر');
    return {...JSON.parse(previous.json),status:previous.status,replayed:true};
@@ -37,7 +41,7 @@ export function createGenerator(store,env,fetcher) {
   if(!env.ANTHROPIC_API_KEY||!env.ANTHROPIC_MODEL)fail(409,'أضف مفتاح Anthropic واسم الموديل في إعدادات الخادم');
   const context=generationContext(db,{...input,brief});
   const run={id:randomUUID(),status:'RUNNING',createdAt:new Date().toISOString(),actorId:user.id,productId:input.productId,title:input.title,brief,model:env.ANTHROPIC_MODEL};
-  db.prepare('INSERT INTO ai_runs VALUES (?,?,?,?,?,?)').run(run.id,input.requestKey,fingerprint,user.id,run.status,JSON.stringify(run));
+  db.prepare('INSERT INTO ai_runs (id,tenant_id,request_key,request_hash,actor_id,status,json) VALUES (?,?,?,?,?,?,?)').run(run.id,resolvedTenantId,input.requestKey,fingerprint,user.id,run.status,JSON.stringify(run));
   active=true;
   try {
    const result=await generateCopy({env,context,fetcher});
@@ -54,9 +58,9 @@ export function createGenerator(store,env,fetcher) {
     const content=createContent({...request,body:copy.arabic_copy,url:context.product.url});
     // Human review remains mandatory; the model's verification is not human approval.
     Object.assign(content,{createdBy:user.id,origin:'AI',englishCopy:copy.english_copy,aiRunId:run.id,aiDecision:decision,sourceContext:context});
-    store.mutate(state=>{
-     state.content.unshift(content);
-     state.audit.unshift({id:randomUUID(),action:'AI_DRAFT_CREATED',itemId:content.id,actorId:user.id,actorName:user.name,actorRole:user.role,at:new Date().toISOString()});
+    insertContent(db,content,tenantId);
+    store.mutate(()=>{
+     recordAudit(db,{id:randomUUID(),action:'AI_DRAFT_CREATED',itemId:content.id,actorId:user.id,actorName:user.name,actorRole:user.role,at:new Date().toISOString()},tenantId);
      Object.assign(run,{status:'COMPLETED',contentId:content.id,usage:result.usage});
      db.prepare('UPDATE ai_runs SET status=?,json=? WHERE id=?').run(run.status,JSON.stringify(run),run.id);
     });

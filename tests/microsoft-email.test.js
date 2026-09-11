@@ -14,6 +14,7 @@ import {handleValidationHandshake,processMicrosoftNotifications} from '../src/ru
 import {renewMicrosoftSubscriptionIfNeeded} from '../src/runtime/scheduler.js';
 import {buildToolRegistry} from '../src/runtime/tools.js';
 import {canUseTool} from '../src/runtime/permissions.js';
+import {installAuditLog} from '../src/audit.js';
 
 const owner={id:'owner-1',name:'Owner',role:'owner'};
 const connector={id:'connector:microsoft365',name:'موصل Microsoft 365',role:'automation'};
@@ -22,7 +23,7 @@ function jsonResponse(value,status=200){return new Response(JSON.stringify(value
 
 function fixture(){
  const store=openStore(':memory:');
- installCRM(store.db);installEvents(store.db);installEscalations(store.db);installApprovals(store.db);installCredentials(store.db);installWebhookEvents(store.db);
+ installCRM(store.db);installEvents(store.db);installEscalations(store.db);installApprovals(store.db);installCredentials(store.db);installWebhookEvents(store.db);installAuditLog(store.db);
  return store;
 }
 

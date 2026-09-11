@@ -5,6 +5,9 @@ import {listComplianceChecksSince} from './compliance.js';
 import {listAutonomyChanges} from './autonomy.js';
 import {listLeads,listFollowups} from './crm.js';
 import {currentMemory} from './knowledge.js';
+import {resolveActiveTenantId} from './tenancy.js';
+import {listContent} from './content.js';
+import {listAuditLog,recordAudit} from './audit.js';
 
 function dayOfWeek(date) {return new Date(date+'T12:00:00Z').getUTCDay();}
 function riyadhMidnightUtc(date) {return new Date(Date.parse(date)-10800000).toISOString();}
@@ -17,29 +20,45 @@ export function currentWeekStart(now=Date.now()) {
  const today=new Date(now+10800000).toISOString().slice(0,10);
  return new Date(Date.parse(today)-dayOfWeek(today)*86400000).toISOString().slice(0,10);
 }
+// Multi-Tenant Phase 2 (spec Part 16 — Reports isolation), extended in Phase 3.
+// `weekly_reports`' PK changes from `week_start` alone to `(tenant_id, week_start)` — two
+// tenants can now both have a report for the same Sunday, and (as of Phase 3, now that
+// `content_items`/`audit_logs` are both real tenant-scoped tables) the report's CONTENTS are
+// also correctly scoped to that tenant, not just the row itself.
 export function installReporting(db) {
- db.exec('CREATE TABLE IF NOT EXISTS weekly_reports (week_start TEXT PRIMARY KEY, json TEXT NOT NULL);');
+ const legacy=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='weekly_reports'").get();
+ if(legacy) {
+  const columns=db.prepare('PRAGMA table_info(weekly_reports)').all().map(c=>c.name);
+  if(!columns.includes('tenant_id')) {
+   const tenantId=resolveActiveTenantId(db);
+   db.exec('ALTER TABLE weekly_reports RENAME TO weekly_reports_pre_tenant;');
+   db.exec('CREATE TABLE weekly_reports (tenant_id TEXT NOT NULL, week_start TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(tenant_id,week_start));');
+   db.prepare('INSERT INTO weekly_reports (tenant_id,week_start,json) SELECT ?,week_start,json FROM weekly_reports_pre_tenant').run(tenantId);
+   db.exec('DROP TABLE weekly_reports_pre_tenant;');
+  }
+  return;
+ }
+ db.exec('CREATE TABLE IF NOT EXISTS weekly_reports (tenant_id TEXT NOT NULL, week_start TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(tenant_id,week_start));');
 }
-export function listWeeklyReports(db) {
- return db.prepare('SELECT json FROM weekly_reports ORDER BY week_start DESC LIMIT 12').all().map(row=>JSON.parse(row.json));
+export function listWeeklyReports(db,tenantId=null) {
+ return db.prepare('SELECT json FROM weekly_reports WHERE tenant_id=? ORDER BY week_start DESC LIMIT 12').all(tenantId||resolveActiveTenantId(db)).map(row=>JSON.parse(row.json));
 }
 // Aggregates only what this system actually recorded — no store analytics, ad spend or social engagement are connected, so those stay null rather than guessed.
-export function buildWeeklyReport(store,weekStart) {
+export function buildWeeklyReport(store,weekStart,tenantId=null) {
  validDate(weekStart);
  if(dayOfWeek(weekStart)!==0)fail(400,'بداية الأسبوع يجب أن تكون يوم الأحد');
  const weekEnd=new Date(Date.parse(weekStart)+7*86400000).toISOString().slice(0,10);
  const startInstant=riyadhMidnightUtc(weekStart),endInstant=riyadhMidnightUtc(weekEnd);
  const inWeek=iso=>typeof iso==='string' && iso>=startInstant && iso<endInstant;
- const state=store.read();
- const contentInWeek=state.content.filter(item=>item.date>=weekStart && item.date<weekEnd);
- const auditInWeek=state.audit.filter(entry=>inWeek(entry.at));
- const compliance=listComplianceChecksSince(store.db,startInstant).filter(run=>inWeek(run.finishedAt||run.createdAt));
+ const contentInWeek=listContent(store.db,tenantId).filter(item=>item.date>=weekStart && item.date<weekEnd);
+ const auditInWeek=listAuditLog(store.db,{tenantId}).filter(entry=>inWeek(entry.at));
+ const compliance=listComplianceChecksSince(store.db,startInstant,tenantId).filter(run=>inWeek(run.finishedAt||run.createdAt));
  const complianceCompleted=compliance.filter(run=>run.status==='COMPLETED');
  const autonomyChanges=listAutonomyChanges(store.db,startInstant).filter(entry=>inWeek(entry.at));
- const jobs=listJobs(store.db).filter(job=>inWeek(job.createdAt));
- const slots=listSlots(store.db).filter(slot=>slot.date>=weekStart && slot.date<weekEnd);
- const leadsInWeek=listLeads(store.db).filter(lead=>inWeek(lead.createdAt));
- const followupsInWeek=listFollowups(store.db).filter(followup=>inWeek(followup.createdAt));
+ const jobs=listJobs(store.db,tenantId).filter(job=>inWeek(job.createdAt));
+ const slots=listSlots(store.db,tenantId).filter(slot=>slot.date>=weekStart && slot.date<weekEnd);
+ const leadsInWeek=listLeads(store.db,tenantId).filter(lead=>inWeek(lead.createdAt));
+ const followupsInWeek=listFollowups(store.db,tenantId).filter(followup=>inWeek(followup.createdAt));
  return {
   weekStart,weekEnd,timezone:'Asia/Riyadh',generatedAt:new Date().toISOString(),
   content:{total:contentInWeek.length,byPlatform:countBy(contentInWeek,item=>item.platform),byStatus:countBy(contentInWeek,item=>item.status)},
@@ -142,11 +161,11 @@ export function computeQuickSummary({kpis,funnel,pipeline,agents,approvalsAndRis
  * section the dashboard needs. Agent/approval/escalation rows are passed in by
  * the caller (server.js) rather than imported here — see the note above.
  */
-export function buildExecutiveReport(store,weekStart,{agents=[],agentRuns=[],escalations=[],approvals=[],env={}}={}) {
- const base=buildWeeklyReport(store,weekStart);
+export function buildExecutiveReport(store,weekStart,{agents=[],agentRuns=[],escalations=[],approvals=[],env={},tenantId=null}={}) {
+ const base=buildWeeklyReport(store,weekStart,tenantId);
  const previousWeekStart=new Date(Date.parse(weekStart)-7*86400000).toISOString().slice(0,10);
- const previousBase=buildWeeklyReport(store,previousWeekStart);
- const allLeads=listLeads(store.db);
+ const previousBase=buildWeeklyReport(store,previousWeekStart,tenantId);
+ const allLeads=listLeads(store.db,tenantId);
  const leadsThisWeek=allLeads.filter(lead=>lead.createdAt>=base.weekStart+'T00:00:00.000Z' && lead.createdAt<base.weekEnd+'T00:00:00.000Z');
  const leadsPrevWeek=allLeads.filter(lead=>lead.createdAt>=previousBase.weekStart+'T00:00:00.000Z' && lead.createdAt<previousBase.weekEnd+'T00:00:00.000Z');
  const wonThisWeek=allLeads.filter(lead=>lead.stage==='WON' && lead.updatedAt>=base.weekStart+'T00:00:00.000Z' && lead.updatedAt<base.weekEnd+'T00:00:00.000Z');
@@ -156,8 +175,8 @@ export function buildExecutiveReport(store,weekStart,{agents=[],agentRuns=[],esc
  const qualified=list=>list.filter(lead=>lead.stage!=='NEW').length;
  const hot=list=>list.filter(lead=>lead.temperature==='HOT').length;
  const quoted=list=>list.filter(lead=>['QUOTE_SENT','POST_PURCHASE','WON'].includes(lead.stage)).length;
- const state=store.read();
- const contentPendingApproval=state.content.filter(item=>item.status==='REVIEWED').length;
+ const content=listContent(store.db,tenantId);
+ const contentPendingApproval=content.filter(item=>item.status==='REVIEWED').length;
 
  const kpis={
   leadsCreated:computeComparison(leadsThisWeek.length,leadsPrevWeek.length),
@@ -177,9 +196,9 @@ export function buildExecutiveReport(store,weekStart,{agents=[],agentRuns=[],esc
  const pipeline=computePipeline(allLeads,base.weekStart,base.weekEnd);
  const agentRunsThisWeek=agentRuns.filter(run=>run.started_at>=base.weekStart+'T00:00:00.000Z' && run.started_at<base.weekEnd+'T00:00:00.000Z');
  const agentMetrics=computeAgentMetrics(agentRunsThisWeek,escalations,agents);
- const approvalsAndRisks=computeApprovalsAndRisks(state.content,approvals,escalations);
- const market=computeMarketSignals(currentMemory(store.db));
- const nextWeekPlan=computeNextWeekPlan(listSlots(store.db),base.weekEnd);
+ const approvalsAndRisks=computeApprovalsAndRisks(content,approvals,escalations);
+ const market=computeMarketSignals(currentMemory(store.db,tenantId));
+ const nextWeekPlan=computeNextWeekPlan(listSlots(store.db,tenantId),base.weekEnd);
  const quickSummary=computeQuickSummary({kpis,funnel,pipeline,agents:agentMetrics,approvalsAndRisks});
 
  return {
@@ -189,14 +208,15 @@ export function buildExecutiveReport(store,weekStart,{agents=[],agentRuns=[],esc
   kpis,funnel,pipeline,agents:agentMetrics,approvalsAndRisks,market,nextWeekPlan,quickSummary
  };
 }
-export function saveWeeklyReport(store,weekStart,user,extras=null) {
- return store.mutate(state=>{
+export function saveWeeklyReport(store,weekStart,user,extras=null,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
+ return store.mutate(()=>{
   validDate(weekStart);
-  const prior=store.db.prepare('SELECT json FROM weekly_reports WHERE week_start=?').get(weekStart);
+  const prior=store.db.prepare('SELECT json FROM weekly_reports WHERE tenant_id=? AND week_start=?').get(resolvedTenantId,weekStart);
   if(prior)return {...JSON.parse(prior.json),replayed:true};
-  const report=extras?buildExecutiveReport(store,weekStart,extras):buildWeeklyReport(store,weekStart);
-  store.db.prepare('INSERT INTO weekly_reports VALUES (?,?)').run(weekStart,JSON.stringify(report));
-  state.audit.unshift({id:randomUUID(),action:'WEEKLY_REPORT_CREATED',itemId:weekStart,actorId:user.id,actorName:user.name,actorRole:user.role,at:new Date().toISOString()});
+  const report=extras?buildExecutiveReport(store,weekStart,{...extras,tenantId:resolvedTenantId}):buildWeeklyReport(store,weekStart,resolvedTenantId);
+  store.db.prepare('INSERT INTO weekly_reports (tenant_id,week_start,json) VALUES (?,?,?)').run(resolvedTenantId,weekStart,JSON.stringify(report));
+  recordAudit(store.db,{id:randomUUID(),action:'WEEKLY_REPORT_CREATED',itemId:weekStart,actorId:user.id,actorName:user.name,actorRole:user.role,at:new Date().toISOString()},resolvedTenantId);
   return report;
  });
 }

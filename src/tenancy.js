@@ -47,10 +47,26 @@ export function ensureDefaultTenant(db) {
  return id;
 }
 // The single real entry point every tenant-scoped module resolves "which tenant" through
-// when no explicit tenant context was threaded in from a request — see the module docstring
-// above for why this is a correct value today, not a placeholder.
+// when no explicit tenant context was threaded in from a request. Multi-Tenant Phase 3
+// (spec Part B, "fail-closed conversion"): this used to unconditionally return "the first
+// tenant that exists" — correct behavior while there is genuinely only one tenant, but a
+// real cross-tenant leak the moment a second one is created and some call site still hasn't
+// been updated to pass an explicit tenantId. Rather than rewrite the ~40 call sites that
+// rely on this default (which would be indistinguishable from doing nothing today, since
+// there is only one tenant to fall into), this function now checks tenant COUNT: with
+// exactly one tenant it stays byte-for-byte the same fail-open default as before (zero
+// behavior change, zero risk to the current single-tenant deployment); the instant a second
+// tenant exists, it throws `TENANT_CONTEXT_REQUIRED` instead of silently guessing which one
+// — turning every one of those ~40 call sites into a real fail-closed guard for free,
+// without having to find and fix them individually first. A caller that legitimately wants
+// this exact "guess if there's only one" behavior even with multiple tenants (there is no
+// such caller today) would need a separate, explicitly-named function — this one no longer
+// offers that once it would actually matter.
 export function resolveActiveTenantId(db) {
- return ensureDefaultTenant(db);
+ const tenantId=ensureDefaultTenant(db);
+ const {n}=db.prepare('SELECT COUNT(*) n FROM tenants').get();
+ if(n>1)throw Object.assign(new Error('TENANT_CONTEXT_REQUIRED'),{code:'TENANT_CONTEXT_REQUIRED',status:400});
+ return tenantId;
 }
 /**
  * Resolves the tenant a specific logged-in user belongs to — this is what a real

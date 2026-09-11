@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 import {openStore} from '../src/store.js';
 import {createContent,reviewContent,approveContent} from '../src/domain.js';
 import {installPlanning,createCalendar,listSlots,listJobs,scheduleContent,cancelJobs,prepareDue,buildBrief,saveDailyBrief,riyadhDate,authorizeAutomation} from '../src/planning.js';
+import {installContent,insertContent,writeContent} from '../src/content.js';
+import {installAuditLog} from '../src/audit.js';
 const owner={id:'owner',name:'Owner',role:'owner'};
 const now=Date.parse('2030-01-01T00:00:00Z');
-function setup(){const store=openStore(':memory:');installPlanning(store.db);createCalendar(store,'2030-01-01',owner);return store;}
+function setup(){const store=openStore(':memory:');installPlanning(store.db);installContent(store.db);installAuditLog(store.db);createCalendar(store,'2030-01-01',owner);return store;}
 function approved(store,overrides={}) {
  let item=createContent({title:'Test',body:'Test',date:'2030-01-01',platform:'X',url:'https://hyper-cool.com/offers',...overrides});
  item=reviewContent(item,{reviewer:'Reviewer',evidence:'Verified',facts:true,claims:true,link:true,asset:true});item.review.userId='reviewer';item=approveContent(item,{owner:'Owner'});item.approval.userId=owner.id;
- store.mutate(state=>state.content.push(item));return item;
+ insertContent(store.db,item);return item;
 }
 test('30-day calendar follows Saudi cadence and does not duplicate overlapping requests',()=>{
  const store=setup();try{
@@ -34,7 +36,7 @@ test('schedule snapshots require current approval and deduplicate due preparatio
  assert.deepEqual(prepareDue(store,owner,due),{ready:1,blocked:0,externalActions:0});
  const auditCount=store.read().audit.length;prepareDue(store,owner,due);assert.equal(store.read().audit.length,auditCount);
  assert.equal(listJobs(store.db)[0].idempotencyKey,job.idempotencyKey);
- store.mutate(state=>{state.content[0].body='tampered';});
+ writeContent(store.db,{...item,body:'tampered'});
  assert.equal(prepareDue(store,owner,due).blocked,1);
  assert.equal(listJobs(store.db)[0].status,'BLOCKED');
  }finally{store.close();}

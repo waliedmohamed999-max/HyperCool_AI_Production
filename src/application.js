@@ -33,7 +33,9 @@ import {promotionEligibility} from './runtime/permissions.js';
 import {installGate,getGateStatus,setPaused,isPaused} from './runtime/gate.js';
 import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
-import {installTenancy,ensureDefaultTenant,resolveTenantForUser} from './tenancy.js';
+import {installTenancy,ensureDefaultTenant,resolveTenantForUser,resolveActiveTenantId} from './tenancy.js';
+import {installContent,listContent,getContent,getContentOrNull,insertContent,writeContent} from './content.js';
+import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
 import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
 import {verifySallaWebhook,processSallaWebhook} from './runtime/salla-webhooks.js';
@@ -90,6 +92,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   const auth=createAuth(store.db);
   installTenancy(store.db);
   ensureDefaultTenant(store.db); // real, lossless backfill — see docs/MULTI_TENANT_ARCHITECTURE.md
+  installContent(store.db); // migrates legacy state.content into a real tenant-scoped table — see docs/CONTENT_MIGRATION.md
+  installAuditLog(store.db); // migrates legacy state.audit into a real tenant-scoped table — see docs/AUDIT_MIGRATION.md
   installKnowledge(store.db);
   installPlanning(store.db);
   installCRM(store.db);
@@ -109,8 +113,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   const eventBus=createEventBus(store.db);
   const agentRuntime=createAgentRuntime({store,env,fetcher,eventBus});
   const {routes:orchestratorRoutes}=installOrchestrator(eventBus,agentRuntime,store.db);
-  function reportExtras() {
-    return {agents:listRegistryAgents(store.db),agentRuns:listRuns(store.db,{limit:2000}),escalations:listEscalations(store.db),approvals:listApprovals(store.db),env};
+  function reportExtras(tenantId=null) {
+    return {agents:listRegistryAgents(store.db),agentRuns:listRuns(store.db,{limit:2000},tenantId),escalations:listEscalations(store.db,{},tenantId),approvals:listApprovals(store.db,{},tenantId),env};
   }
   const scheduler=createScheduler({store,agentRuntime,env,getExtras:reportExtras,fetcher,eventBus});
   const generate=createGenerator(store,env,fetcher);
@@ -209,16 +213,21 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const normalized=normalizeWhatsAppWebhook(store.db,payload);
         const paused=isPaused(store.db);
         const connectorActor={id:'connector:whatsapp',name:'موصل واتساب',role:'automation'};
+        // No per-tenant webhook routing exists yet (Multi-Tenant Phase 2/3 — see
+        // docs/MULTI_TENANT_ARCHITECTURE.md): every WhatsApp connection today belongs to
+        // the one active tenant, so resolving it once here and tagging both the lead and
+        // its events with it is correct today, not a fallback masking a real gap.
+        const webhookTenantId=resolveActiveTenantId(store.db);
         for(const item of normalized.messages) {
           if(item.replayed||item.error||!item.phone)continue;
-          const {lead}=findOrCreateLeadFromChannel(store,{phone:item.phone,name:item.name,channel:'WhatsApp'},connectorActor);
+          const {lead}=findOrCreateLeadFromChannel(store,{phone:item.phone,name:item.name,channel:'WhatsApp'},connectorActor,webhookTenantId);
           const message=recordChannelMessage(store,{leadId:lead.id,channel:'WhatsApp',direction:'INBOUND',text:item.text,externalMessageId:item.externalMessageId,messageType:item.messageType,media:item.media||null},connectorActor);
           if(message.replayed)continue;
-          if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'WhatsApp'});
+          if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'WhatsApp',tenantId:webhookTenantId});
           // The pause gate stops autonomous AGENT action, never the recording of the message
           // itself — a paused system must still capture what the customer said, exactly like
           // the internal scheduler's own tick() only skips its own triggered work, not intake.
-          if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'WhatsApp',text:item.text});
+          if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'WhatsApp',text:item.text,tenantId:webhookTenantId});
         }
         for(const item of normalized.statuses) {
           if(item.replayed)continue;
@@ -240,19 +249,20 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const result=processMicrosoftNotifications(store.db,payload,env);
         const paused=isPaused(store.db);
         const connectorActor={id:'connector:microsoft365',name:'موصل Microsoft 365',role:'automation'};
+        const webhookTenantId=resolveActiveTenantId(store.db); // see the WhatsApp webhook above for why this is correct today
         for(const {messageId} of result.toFetch) {
           try {
            const graphMessage=await getMessage({store,env,fetcher},messageId);
            if(!graphMessage||graphMessage.isDraft)continue; // never ingest our own drafts as if a customer sent them
            const fromAddress=graphMessage.from?.emailAddress?.address||null;
            if(!fromAddress)continue;
-           const {lead}=findOrCreateLeadFromChannel(store,{email:fromAddress,name:graphMessage.from?.emailAddress?.name,channel:'Email'},connectorActor);
+           const {lead}=findOrCreateLeadFromChannel(store,{email:fromAddress,name:graphMessage.from?.emailAddress?.name,channel:'Email'},connectorActor,webhookTenantId);
            const message=recordChannelMessage(store,{leadId:lead.id,channel:'Email',direction:'INBOUND',text:graphMessage.bodyPreview||'',subject:graphMessage.subject||null,externalMessageId:graphMessage.id,internetMessageId:graphMessage.internetMessageId,externalThreadId:graphMessage.conversationId,messageType:'email'},connectorActor);
            if(message.replayed)continue;
-           if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'Email'});
-           if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'Email',text:message.text});
+           if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'Email',tenantId:webhookTenantId});
+           if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'Email',text:message.text,tenantId:webhookTenantId});
           } catch(error) {
-           store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'EMAIL_INGEST_FAILED',itemId:messageId,errorCode:error.message,at:new Date().toISOString()});});
+           recordAudit(store.db,{id:crypto.randomUUID(),action:'EMAIL_INGEST_FAILED',itemId:messageId,errorCode:error.message,at:new Date().toISOString()},webhookTenantId);
           }
         }
         return send(200,{toFetch:result.toFetch.length,rejected:result.rejected,replayed:result.replayed});
@@ -306,13 +316,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(req.method==='GET') return send(200,auth.list());
         if(req.method==='POST') {
           const created=auth.createUser(await body(req));
-          store.mutate(state=>{state.audit.unshift({id:crypto.randomUUID(),action:'USER_CREATED',itemId:created.id,actorId:session.user.id,actorName:session.user.name,actorRole:session.user.role,at:new Date().toISOString()});});
+          recordAudit(store.db,{id:crypto.randomUUID(),action:'USER_CREATED',itemId:created.id,actorId:session.user.id,actorName:session.user.name,actorRole:session.user.role,at:new Date().toISOString()},session.tenantId);
           return send(201,created);
         }
       }
       if(req.method==='GET' && url.pathname==='/api/team/dashboard') {
         authorize(session,['owner']);
-        return send(200,buildTeamDashboard(store.db,{auditEntries:store.read().audit}));
+        return send(200,buildTeamDashboard(store.db,{auditEntries:listAuditLog(store.db,{tenantId:session.tenantId})}));
       }
       const userAction=url.pathname.match(/^\/api\/users\/([\w-]+)\/(role|suspend|reactivate|remove|reset-access|revoke-sessions)$/);
       if(req.method==='POST' && userAction) {
@@ -338,7 +348,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         } else if(action==='revoke-sessions') {
           auth.revokeSessions(id);auditAction='USER_SESSIONS_REVOKED';
         }
-        store.mutate(state=>{state.audit.unshift({id:crypto.randomUUID(),action:auditAction,itemId:id,itemName,actorId:session.user.id,actorName:session.user.name,actorRole:session.user.role,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:auditAction,itemId:id,itemName,actorId:session.user.id,actorName:session.user.name,actorRole:session.user.role,at:new Date().toISOString()},session.tenantId);
         return send(200,action==='remove'?{ok:true}:auth.get(id)||{ok:true});
       }
       if(req.method==='GET' && url.pathname==='/api/agents') {
@@ -355,7 +365,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           const missing=required.filter(key=>!integrations[key]?.configured);
           const runtimeStatus=!registryRow?.enabled?'DISABLED':!llm.configured?'WAITING_LLM':missing.length?'WAITING_INTEGRATION':'ONLINE';
           const runtimeLabel=runtimeStatus==='DISABLED'?'معطّل':runtimeStatus==='WAITING_LLM'?'بانتظار إعداد مزود الذكاء الاصطناعي':runtimeStatus==='WAITING_INTEGRATION'?`جاهز داخليًا — بانتظار: ${missing.map(k=>integrationNames[k]||k).join('، ')}`:'جاهز للعمل داخليًا';
-          const recentRuns=listRuns(store.db,{agentId:agent.id,limit:10});
+          const recentRuns=listRuns(store.db,{agentId:agent.id,limit:10},session.tenantId);
           return {...agent,level:autonomy[agent.id].level,autonomyVersion:autonomy[agent.id].version,autonomyUpdatedAt:autonomy[agent.id].at,autonomyUpdatedBy:autonomy[agent.id].actorName,autonomyReason:autonomy[agent.id].reason,
            runtimeStatus,runtimeLabel,enabled:!!registryRow?.enabled,requiredIntegrations:required,missingIntegrations:missing,
            modelConfig:registryRow?{provider:registryRow.provider,model:registryRow.model,temperature:registryRow.temperature,maxTokens:registryRow.max_tokens}:null,
@@ -385,29 +395,29 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const agentHealth=url.pathname.match(/^\/api\/agents\/([\w-]+)\/health$/);
       if(req.method==='GET' && agentHealth)return send(200,promotionEligibility(store.db,agentHealth[1]));
       const agentRuns=url.pathname.match(/^\/api\/agents\/([\w-]+)\/runs$/);
-      if(req.method==='GET' && agentRuns)return send(200,listRuns(store.db,{agentId:agentRuns[1],limit:50}));
+      if(req.method==='GET' && agentRuns)return send(200,listRuns(store.db,{agentId:agentRuns[1],limit:50},session.tenantId));
       const agentRunTrigger=url.pathname.match(/^\/api\/agents\/([\w-]+)\/run$/);
       if(req.method==='POST' && agentRunTrigger) {
         authorize(session,['owner','operator']);
         checkLlmRateLimit(session.user.id);
         const input=await body(req);
         if(typeof input.scenario!=='string'||!input.scenario.trim()||input.scenario.length>4000)fail(400,'أدخل سيناريو الاختبار (حتى 4000 حرف)');
-        return send(200,await agentRuntime.run(agentRunTrigger[1],{triggerType:'TEST',input:{scenario:input.scenario.trim(),current_datetime:new Date().toISOString(),timezone:'Asia/Riyadh'},user:session.user}));
+        return send(200,await agentRuntime.run(agentRunTrigger[1],{triggerType:'TEST',input:{scenario:input.scenario.trim(),current_datetime:new Date().toISOString(),timezone:'Asia/Riyadh'},user:session.user,tenantId:session.tenantId}));
       }
       const runDetail=url.pathname.match(/^\/api\/agents\/runs\/([\w-]+)$/);
       if(req.method==='GET' && runDetail) {
-        const run=getRun(store.db,runDetail[1]);
+        const run=getRun(store.db,runDetail[1],session.tenantId);
         if(!run)fail(404,'التشغيلة غير موجودة');
         return send(200,{...run,toolCalls:listToolCalls(store.db,runDetail[1])});
       }
       if(url.pathname==='/api/approvals') {
-        if(req.method==='GET')return send(200,listApprovals(store.db,{status:url.searchParams.get('status')||undefined}));
+        if(req.method==='GET')return send(200,listApprovals(store.db,{status:url.searchParams.get('status')||undefined},session.tenantId));
       }
       const approvalDecide=url.pathname.match(/^\/api\/approvals\/([\w-]+)\/decide$/);
       if(req.method==='POST' && approvalDecide) {
         authorize(session,['owner']);
         const input=await body(req);
-        const decided=decideApproval(store.db,approvalDecide[1],input.decision,session.user);
+        const decided=decideApproval(store.db,approvalDecide[1],input.decision,session.user,session.tenantId);
         // Execution-on-approval, scoped to exactly one action type: an approved email send.
         // This is the one place in the whole Approval Center where deciding APPROVED also
         // performs the real side effect — every other approval type (memory, permission
@@ -428,11 +438,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
         return send(200,decided);
       }
-      if(req.method==='GET' && url.pathname==='/api/escalations')return send(200,listEscalations(store.db,{status:url.searchParams.get('status')||undefined}));
+      if(req.method==='GET' && url.pathname==='/api/escalations')return send(200,listEscalations(store.db,{status:url.searchParams.get('status')||undefined},session.tenantId));
       const escalationResolve=url.pathname.match(/^\/api\/escalations\/([\w-]+)\/resolve$/);
       if(req.method==='POST' && escalationResolve) {
         authorize(session,['owner']);
-        return send(200,resolveEscalation(store.db,escalationResolve[1],session.user));
+        return send(200,resolveEscalation(store.db,escalationResolve[1],session.user,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/frost/daily-brief')return send(200,buildDailyBrief({store,db:store.db,listEscalations,listRuns,buildBriefFn:buildBrief}));
       if(req.method==='GET' && url.pathname==='/api/frost/status')return send(200,{gate:getGateStatus(store.db),schedulerRunning:scheduler.running(),routes:orchestratorRoutes});
@@ -442,10 +452,10 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const autonomyRoute=url.pathname.match(/^\/api\/agents\/([\w-]+)\/autonomy$/);
       if(autonomyRoute) {
         if(req.method==='GET')return send(200,listAutonomyLog(store.db,autonomyRoute[1]));
-        if(req.method==='POST') {authorize(session,['owner']);return send(201,setAutonomy(store,autonomyRoute[1],await body(req),session.user,env));}
+        if(req.method==='POST') {authorize(session,['owner']);return send(201,setAutonomy(store,autonomyRoute[1],await body(req),session.user,env,session.tenantId));}
       }
       if(req.method==='GET' && url.pathname==='/api/connections') return send(200,connectionStatus(env));
-      if(req.method==='GET' && url.pathname==='/api/integrations/dashboard') return send(200,buildIntegrationsDashboard(store,{env,aiRuns:listAiRuns(store.db),complianceRuns:listComplianceChecksSince(store.db,'1970-01-01T00:00:00.000Z'),agentRuns:listRuns(store.db,{limit:2000})}));
+      if(req.method==='GET' && url.pathname==='/api/integrations/dashboard') return send(200,buildIntegrationsDashboard(store,{env,aiRuns:listAiRuns(store.db,50,session.tenantId),complianceRuns:listComplianceChecksSince(store.db,'1970-01-01T00:00:00.000Z',session.tenantId),agentRuns:listRuns(store.db,{limit:2000},session.tenantId),tenantId:session.tenantId}));
       const integrationTest=url.pathname.match(/^\/api\/integrations\/([\w-]+)\/test$/);
       if(req.method==='POST' && integrationTest) {
         authorize(session,['owner']);
@@ -477,18 +487,18 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         consumeState(state,session.user.id);
         const tokens=await exchangeCodeForTokens({env,fetcher,code});
         saveCredentials(store.db,env,'salla',tokens,session.user);
-        store.mutate(state=>{state.audit.unshift({id:crypto.randomUUID(),action:'SALLA_OAUTH_CONNECTED',itemId:'salla',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_OAUTH_CONNECTED',itemId:'salla',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/salla/disconnect') {
         authorize(session,['owner']);
         disconnectSalla(store.db);
-        store.mutate(state=>{state.audit.unshift({id:crypto.randomUUID(),action:'SALLA_OAUTH_DISCONNECTED',itemId:'salla',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_OAUTH_DISCONNECTED',itemId:'salla',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
       if(req.method==='GET' && url.pathname==='/api/webhooks/salla/events') {
         authorize(session,['owner']);
-        return send(200,listWebhookEvents(store.db,{source:'salla',limit:Number(url.searchParams.get('limit'))||50}));
+        return send(200,listWebhookEvents(store.db,{source:'salla',limit:Number(url.searchParams.get('limit'))||50},session.tenantId));
       }
       // Meta OAuth (owner only, same bar as Salla above).
       if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/status') {
@@ -506,18 +516,18 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         consumeMetaState(oauthState,session.user.id);
         const assets=await exchangeCodeAndResolveAssets({env,fetcher,code});
         saveMetaConnection(store.db,env,assets,session.user);
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'META_OAUTH_CONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'META_OAUTH_CONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/meta/disconnect') {
         authorize(session,['owner']);
         disconnectMeta(store.db);
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'META_OAUTH_DISCONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'META_OAUTH_DISCONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
       if(req.method==='GET' && url.pathname==='/api/webhooks/meta/events') {
         authorize(session,['owner']);
-        return send(200,listWebhookEvents(store.db,{source:'meta',limit:Number(url.searchParams.get('limit'))||50}));
+        return send(200,listWebhookEvents(store.db,{source:'meta',limit:Number(url.searchParams.get('limit'))||50},session.tenantId));
       }
       // WhatsApp templates — real approval status pulled from Meta, never invented locally.
       if(req.method==='GET' && url.pathname==='/api/whatsapp/templates') {
@@ -527,7 +537,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && url.pathname==='/api/whatsapp/templates/sync') {
         authorize(session,['owner']);
         const result=await syncWhatsAppTemplates({store,env,fetcher});
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'WHATSAPP_TEMPLATES_SYNCED',itemId:'whatsapp',count:result.synced,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'WHATSAPP_TEMPLATES_SYNCED',itemId:'whatsapp',count:result.synced,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,result);
       }
       // Manual send outside the agent runtime — an owner/operator replying by hand from the
@@ -563,7 +573,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const tokens=await exchangeMicrosoftCodeForTokens({env,fetcher,code});
         const profile=await resolveConnectedProfile({env,fetcher,accessToken:tokens.accessToken});
         saveMicrosoftConnection(store.db,env,tokens,profile,session.user);
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'MICROSOFT_CONNECTED',itemId:'microsoft365',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'MICROSOFT_CONNECTED',itemId:'microsoft365',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/microsoft/disconnect') {
@@ -573,7 +583,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const meta=getCredentialsMeta(store.db,'microsoft365');
         if(meta?.metadata?.mailSubscription?.id)await deleteMailSubscription({store,env,fetcher},meta.metadata.mailSubscription.id);
         disconnectMicrosoft(store.db);
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'MICROSOFT_DISCONNECTED',itemId:'microsoft365',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'MICROSOFT_DISCONNECTED',itemId:'microsoft365',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
       // Creates the real Graph subscription that makes /api/webhooks/microsoft/mail
@@ -586,7 +596,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const notificationUrl=new URL('/api/webhooks/microsoft/mail',publicUrl).href;
         const subscription=await createMailSubscription({store,env,fetcher},{notificationUrl,clientState:env.MICROSOFT_WEBHOOK_SECRET});
         updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{id:subscription.subscriptionId,expiresAt:subscription.expiresAt,resource:subscription.resource,createdAt:new Date().toISOString()}});
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'MICROSOFT_SUBSCRIPTION_CREATED',itemId:subscription.subscriptionId,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'MICROSOFT_SUBSCRIPTION_CREATED',itemId:subscription.subscriptionId,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,subscription);
       }
       // X OAuth (owner only, same bar as Salla/Meta/Microsoft above). PKCE's code_verifier
@@ -608,13 +618,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const tokens=await exchangeXCodeForTokens({env,fetcher,code,codeVerifier});
         const profile=await resolveXProfile({fetcher,accessToken:tokens.accessToken});
         saveXConnection(store.db,env,tokens,profile,session.user);
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'X_CONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'X_CONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/x/disconnect') {
         authorize(session,['owner']);
         disconnectX(store.db);
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'X_DISCONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'X_DISCONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
       // LinkedIn OAuth (owner only, same bar as above). Organization resolution is a real,
@@ -640,14 +650,14 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         try{organization=(await resolveAdministeredOrganizations({fetcher,accessToken:tokens.accessToken}))[0]||null;}
         catch{organization=null;} // rw_organization_admin not granted yet — connection still succeeds as identity-only.
         saveLinkedInConnection(store.db,env,tokens,profile,organization,session.user);
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'LINKEDIN_CONNECTED',itemId:'linkedin',organizationId:organization?.id||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
-        if(organization)store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'LINKEDIN_ORGANIZATION_SELECTED',itemId:organization.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_CONNECTED',itemId:'linkedin',organizationId:organization?.id||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        if(organization)recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_ORGANIZATION_SELECTED',itemId:organization.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/linkedin/disconnect') {
         authorize(session,['owner']);
         disconnectLinkedIn(store.db);
-        store.mutate(auditState=>{auditState.audit.unshift({id:crypto.randomUUID(),action:'LINKEDIN_DISCONNECTED',itemId:'linkedin',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_DISCONNECTED',itemId:'linkedin',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
       // Manual reply outside the agent runtime — same permission/opt-out/approval-category
@@ -665,48 +675,48 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(['quote','discount','large_b2b','legal'].includes(category)) {
          const approval=createApproval(store.db,{runId:null,agentId:'human',actionType:'send_marketing_message',
           proposedOutput:{leadId:id,to:lead.email,cc:input.cc||[],subject:input.subject,bodyHtml:input.bodyHtml,category},
-          riskLevel:category==='legal'?'HIGH':'MEDIUM',reason:`${session.user.name} drafted a ${category} email to ${lead.email} — requires owner approval before sending.`});
+          riskLevel:category==='legal'?'HIGH':'MEDIUM',reason:`${session.user.name} drafted a ${category} email to ${lead.email} — requires owner approval before sending.`,tenantId:session.tenantId});
          return send(200,{status:'WAITING_APPROVAL',approvalId:approval.id});
         }
         const result=await sendMail({store,env,fetcher},{to:lead.email,cc:input.cc,subject:input.subject,bodyHtml:input.bodyHtml});
         if(result.status==='SENT')recordChannelMessage(store,{leadId:id,channel:'Email',direction:'OUTBOUND',text:input.bodyHtml,subject:input.subject,cc:input.cc||null,messageType:'email'},session.user);
         return send(200,result);
       }
-      if(req.method==='GET' && url.pathname==='/api/memory') return send(200,listMemory(store.db));
-      if(req.method==='GET' && url.pathname==='/api/memory/dashboard') return send(200,buildMemoryWorkspace(store,{pendingApprovals:listApprovals(store.db,{status:'PENDING'}).filter(a=>a.action_type==='memory_policy_change')}));
+      if(req.method==='GET' && url.pathname==='/api/memory') return send(200,listMemory(store.db,session.tenantId));
+      if(req.method==='GET' && url.pathname==='/api/memory/dashboard') return send(200,buildMemoryWorkspace(store,{pendingApprovals:listApprovals(store.db,{status:'PENDING'},session.tenantId).filter(a=>a.action_type==='memory_policy_change')}));
       if(req.method==='GET' && url.pathname==='/api/memory/usage') return send(200,computeMemoryUsage(store.db,url.searchParams.get('key')||''));
       if(req.method==='POST' && url.pathname==='/api/memory') {
         authorize(session,['owner']);
         const input=await body(req);
-        return send(201,store.mutate(state=>{const entry=saveMemory(store.db,input,session.user);state.audit.unshift({id:crypto.randomUUID(),action:'MEMORY_VERSION_SAVED',itemId:entry.id,actorId:session.user.id,actorName:session.user.name,at:entry.verifiedAt});return entry;}));
+        return send(201,store.mutate(()=>{const entry=saveMemory(store.db,input,session.user,session.tenantId);recordAudit(store.db,{id:crypto.randomUUID(),action:'MEMORY_VERSION_SAVED',itemId:entry.id,actorId:session.user.id,actorName:session.user.name,at:entry.verifiedAt},session.tenantId);return entry;}));
       }
       if(req.method==='POST' && url.pathname==='/api/memory/propose') {
         authorize(session,['owner','operator']);
-        return send(201,proposeMemoryUpdate(store.db,await body(req),session.user));
+        return send(201,proposeMemoryUpdate(store.db,await body(req),session.user,session.tenantId));
       }
-      if(req.method==='GET' && url.pathname==='/api/products') return send(200,listProducts(store.db));
+      if(req.method==='GET' && url.pathname==='/api/products') return send(200,listProducts(store.db,session.tenantId));
       if(req.method==='POST' && url.pathname==='/api/salla/sync') {
         authorize(session,['owner']);
         if(syncing)fail(409,'مزامنة سلة قيد التنفيذ');
         syncing=true;
-        try{const resolved=await resolveSallaAccessToken({store,env,fetcher});const products=await importSalla({env,fetcher,accessToken:resolved?.token});store.mutate(state=>{replaceProducts(store.db,products,false);state.audit.unshift({id:crypto.randomUUID(),action:'SALLA_CATALOG_SYNCED',itemId:'catalog',count:products.length,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});return send(200,{count:products.length,syncedAt:new Date().toISOString()});}
-        catch(error){store.mutate(state=>{state.audit.unshift({id:crypto.randomUUID(),action:'SALLA_CATALOG_SYNC_FAILED',itemId:'catalog',errorCode:error instanceof ConnectorError?error.code:'UNKNOWN',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});});throw error;}
+        try{const resolved=await resolveSallaAccessToken({store,env,fetcher});const products=await importSalla({env,fetcher,accessToken:resolved?.token});store.mutate(()=>{replaceProducts(store.db,products,false,session.tenantId);recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_CATALOG_SYNCED',itemId:'catalog',count:products.length,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);});return send(200,{count:products.length,syncedAt:new Date().toISOString()});}
+        catch(error){recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_CATALOG_SYNC_FAILED',itemId:'catalog',errorCode:error instanceof ConnectorError?error.code:'UNKNOWN',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);throw error;}
         finally{syncing=false;}
       }
-      if(req.method==='GET' && url.pathname==='/api/ai/runs') return send(200,listAiRuns(store.db));
-      if(req.method==='GET' && url.pathname==='/api/content/dashboard') return send(200,buildContentWorkspace(store,{complianceByContent:latestComplianceByContent(store.db)}));
+      if(req.method==='GET' && url.pathname==='/api/ai/runs') return send(200,listAiRuns(store.db,50,session.tenantId));
+      if(req.method==='GET' && url.pathname==='/api/content/dashboard') return send(200,buildContentWorkspace(store,{complianceByContent:latestComplianceByContent(store.db,session.tenantId),tenantId:session.tenantId}));
       if(req.method==='POST' && url.pathname==='/api/ai/draft') {
         authorize(session,['owner','operator']);
         checkLlmRateLimit(session.user.id);
-        return send(200,await generate(await body(req),session.user));
+        return send(200,await generate(await body(req),session.user,session.tenantId));
       }
-      if(req.method==='GET' && url.pathname==='/api/state') return send(200,store.read());
+      if(req.method==='GET' && url.pathname==='/api/state') return send(200,{...store.read(),content:listContent(store.db,session?.tenantId),audit:listAuditLog(store.db,{tenantId:session?.tenantId})});
       if(url.pathname.startsWith('/api/crm')) {
         authorize(session,['owner','operator']);
-        if(req.method==='GET' && url.pathname==='/api/crm')return send(200,{leads:listLeads(store.db,session.tenantId),followups:listFollowups(store.db),sequences:Object.entries(sequences).map(([id,sequence])=>({id,name:sequence.name,stages:sequence.stages})),staff:store.db.prepare("SELECT id,name,role FROM users WHERE role IN ('owner','operator') ORDER BY name").all(),channelsConnected:false});
-        if(req.method==='GET' && url.pathname==='/api/crm/dashboard')return send(200,buildSalesDashboard(store,{agentRuns:listRuns(store.db,{limit:2000}),env}));
+        if(req.method==='GET' && url.pathname==='/api/crm')return send(200,{leads:listLeads(store.db,session.tenantId),followups:listFollowups(store.db,session.tenantId),sequences:Object.entries(sequences).map(([id,sequence])=>({id,name:sequence.name,stages:sequence.stages})),staff:store.db.prepare("SELECT id,name,role FROM users WHERE role IN ('owner','operator') ORDER BY name").all(),channelsConnected:false});
+        if(req.method==='GET' && url.pathname==='/api/crm/dashboard')return send(200,buildSalesDashboard(store,{agentRuns:listRuns(store.db,{limit:2000},session.tenantId),env,tenantId:session.tenantId}));
         if(req.method==='GET' && url.pathname==='/api/crm/search')return send(200,searchLeads(store.db,url.searchParams.get('q'),20,session.tenantId));
-        if(req.method==='POST' && url.pathname==='/api/crm/leads'){const lead=createLead(store,await body(req),session.user,session.tenantId);eventBus.emit('LEAD_CREATED',{leadId:lead.id,customerType:lead.customerType,sourceType:lead.sourceType});return send(201,lead);}
+        if(req.method==='POST' && url.pathname==='/api/crm/leads'){const lead=createLead(store,await body(req),session.user,session.tenantId);eventBus.emit('LEAD_CREATED',{leadId:lead.id,customerType:lead.customerType,sourceType:lead.sourceType,tenantId:session.tenantId});return send(201,lead);}
         if(req.method==='POST' && url.pathname==='/api/crm/followups/prepare'){authorize(session,['owner']);return send(200,prepareFollowups(store,session.user));}
         const approval=url.pathname.match(/^\/api\/crm\/followups\/([\w-]+)\/approve$/);
         if(req.method==='POST' && approval){authorize(session,['owner']);return send(200,approveFollowup(store,approval[1],session.user));}
@@ -718,14 +728,14 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
             if(leadRoute[2]==='update'){
               const before=getLead(store.db,id,session.tenantId);
               const updated=updateLead(store,id,input,user,session.tenantId);
-              maybeEscalateHotLead(store,eventBus,before,updated,{agentId:'human'});
+              maybeEscalateHotLead(store,eventBus,before,updated,{agentId:'human',tenantId:session.tenantId});
               return send(200,updated);
             }
             if(leadRoute[2]==='messages'){
               const message=recordMessage(store,id,input,user);
               if(!message.replayed && message.direction==='INBOUND'){
-                eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:id,channel:message.channel,text:message.text});
-                if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:id,channel:message.channel});
+                eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:id,channel:message.channel,text:message.text,tenantId:session.tenantId});
+                if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:id,channel:message.channel,tenantId:session.tenantId});
               }
               return send(201,message);
             }
@@ -738,20 +748,20 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(req.method==='GET' && url.pathname==='/api/planning') {
         const publishingIntegrations=integrationStatus(env,store.db);
-        return send(200,{slots:listSlots(store.db),jobs:listJobs(store.db),brief:buildBrief(store),savedBriefs:store.db.prepare('SELECT json FROM daily_briefs ORDER BY date DESC LIMIT 14').all().map(row=>JSON.parse(row.json)),today:riyadhDate(),automationConfigured:!!(env.AUTOMATION_TOKEN?.length>=32),publishingConnected:['meta','x','linkedin'].some(id=>publishingIntegrations[id]?.configured)});
+        return send(200,{slots:listSlots(store.db,session?.tenantId),jobs:listJobs(store.db,session?.tenantId),brief:buildBrief(store,undefined,session?.tenantId),savedBriefs:store.db.prepare('SELECT json FROM daily_briefs ORDER BY date DESC LIMIT 14').all().map(row=>JSON.parse(row.json)),today:riyadhDate(),automationConfigured:!!(env.AUTOMATION_TOKEN?.length>=32),publishingConnected:['meta','x','linkedin'].some(id=>publishingIntegrations[id]?.configured)});
       }
-      if(req.method==='POST' && url.pathname==='/api/calendar') {authorize(session,['owner','operator']);return send(201,createCalendar(store,(await body(req)).startDate,session.user));}
-      if(req.method==='POST' && url.pathname==='/api/schedule') {authorize(session,['owner']);return send(201,scheduleContent(store,await body(req),session.user));}
-      if(req.method==='POST' && url.pathname==='/api/schedule/prepare') {authorize(session,['owner']);return send(200,prepareDue(store,session.user,Date.now(),eventBus,env));}
-      if(req.method==='POST' && url.pathname==='/api/brief') {authorize(session,['owner']);return send(200,saveDailyBrief(store,riyadhDate(),session.user));}
-      if(req.method==='GET' && url.pathname==='/api/reports/weekly')return send(200,{current:buildExecutiveReport(store,currentWeekStart(),reportExtras()),saved:listWeeklyReports(store.db)});
-      if(req.method==='POST' && url.pathname==='/api/reports/weekly') {authorize(session,['owner']);const input=await body(req);return send(201,saveWeeklyReport(store,input.weekStart||currentWeekStart(),session.user,reportExtras()));}
-      if(req.method==='POST' && url.pathname==='/api/schedule/cancel') {authorize(session,['owner']);const input=await body(req);if(typeof input.contentId!=='string')fail(400,'معرف المحتوى مطلوب');return send(200,store.mutate(state=>cancelJobs(store,state,input.contentId,session.user)));}
-      const log=(next,action,item)=>next.audit.unshift({id:crypto.randomUUID(),action,itemId:item.id,actorId:session.user.id,actorName:session.user.name,actorRole:session.user.role,at:new Date().toISOString()});
+      if(req.method==='POST' && url.pathname==='/api/calendar') {authorize(session,['owner','operator']);return send(201,createCalendar(store,(await body(req)).startDate,session.user,session.tenantId));}
+      if(req.method==='POST' && url.pathname==='/api/schedule') {authorize(session,['owner']);return send(201,scheduleContent(store,await body(req),session.user,undefined,session.tenantId));}
+      if(req.method==='POST' && url.pathname==='/api/schedule/prepare') {authorize(session,['owner']);return send(200,prepareDue(store,session.user,Date.now(),eventBus,env,session.tenantId));}
+      if(req.method==='POST' && url.pathname==='/api/brief') {authorize(session,['owner']);return send(200,saveDailyBrief(store,riyadhDate(),session.user,session.tenantId));}
+      if(req.method==='GET' && url.pathname==='/api/reports/weekly')return send(200,{current:buildExecutiveReport(store,currentWeekStart(),{...reportExtras(session.tenantId),tenantId:session.tenantId}),saved:listWeeklyReports(store.db,session.tenantId)});
+      if(req.method==='POST' && url.pathname==='/api/reports/weekly') {authorize(session,['owner']);const input=await body(req);return send(201,saveWeeklyReport(store,input.weekStart||currentWeekStart(),session.user,reportExtras(session.tenantId),session.tenantId));}
+      if(req.method==='POST' && url.pathname==='/api/schedule/cancel') {authorize(session,['owner']);const input=await body(req);if(typeof input.contentId!=='string')fail(400,'معرف المحتوى مطلوب');return send(200,store.mutate(state=>cancelJobs(store,state,input.contentId,session.user,session.tenantId)));}
+      const log=(action,item)=>recordAudit(store.db,{id:crypto.randomUUID(),action,itemId:item.id,actorId:session.user.id,actorName:session.user.name,actorRole:session.user.role,at:new Date().toISOString()},session.tenantId);
       if(req.method==='POST' && url.pathname==='/api/content') {
         authorize(session,['owner','operator']);
         const input=await body(req);
-        return send(201,store.mutate(next=>{const item={...createContent(input),createdBy:session.user.id};next.content.unshift(item);log(next,'DRAFT_CREATED',item);return item;}));
+        return send(201,store.mutate(()=>{const item={...createContent(input),createdBy:session.user.id};insertContent(store.db,item,session.tenantId);log('DRAFT_CREATED',item);return item;}));
       }
       const change=url.pathname.match(/^\/api\/content\/([\w-]+)\/(revise|reject)$/);
       if(req.method==='POST' && change) {
@@ -759,40 +769,39 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const input=await body(req);
         if(typeof input.reason!=='string'||!input.reason.trim()||input.reason.length>1000)fail(400,'سبب التعديل أو الرفض مطلوب (حتى 1000 حرف)');
         return send(200,store.mutate(state=>{
-          const current=state.content.find(item=>item.id===change[1]);if(!current)fail(404,'المحتوى غير موجود');
+          const current=getContent(store.db,change[1],session.tenantId);
           if(current.status==='SUPERSEDED')fail(409,'توجد نسخة أحدث من هذا المحتوى');
           if(current.status==='APPROVED' && session.user.role!=='owner')fail(403,'تغيير المحتوى المعتمد متاح للمالك فقط');
           if(change[2]==='reject' && current.status==='REJECTED')fail(409,'المحتوى مرفوض بالفعل');
           const revised=change[2]==='revise'?{...createContent(input),createdBy:session.user.id,parentId:current.id,revision:(current.revision||1)+1}:null;
-          cancelJobs(store,state,current.id,session.user);
+          cancelJobs(store,state,current.id,session.user,session.tenantId);
           current.status=revised?'SUPERSEDED':'REJECTED';current.changeReason=input.reason.trim();current.changedBy=session.user.id;
-          if(revised)state.content.unshift(revised);
-          log(state,revised?'CONTENT_REVISED':'CONTENT_REJECTED',current);return revised||current;
+          writeContent(store.db,current);
+          if(revised)insertContent(store.db,revised,session.tenantId);
+          log(revised?'CONTENT_REVISED':'CONTENT_REJECTED',current);return revised||current;
         }));
       }
       const match=url.pathname.match(/^\/api\/content\/([\w-]+)\/(review|approve)$/);
       if(req.method==='POST' && match) {
         authorize(session,match[2]==='review'?['owner','reviewer']:['owner']);
         const input=await body(req);
-        return send(200,store.mutate(next=>{
-          const index=next.content.findIndex(item=>item.id===match[1]);
-          if(index<0) fail(404,'المحتوى غير موجود');
-          const current=next.content[index];
+        return send(200,store.mutate(()=>{
+          const current=getContent(store.db,match[1],session.tenantId);
           if(match[2]==='approve' && (!current.review?.userId || current.legacyUnauthenticated)) fail(409,'المراجعة القديمة غير موثقة بحساب؛ أنشئ مسودة جديدة للمراجعة');
           const item=match[2]==='review'?reviewContent(current,{...input,reviewer:session.user.name}):approveContent(current,{owner:session.user.name});
           if(match[2]==='review') {item.review.userId=session.user.id;item.legacyUnauthenticated=false;} else item.approval.userId=session.user.id;
-          next.content[index]=item;log(next,match[2]==='review'?'COMPLIANCE_REVIEWED':'OWNER_APPROVED',item);
-          if(match[2]==='approve')queueMicrotask(()=>eventBus.emit('CONTENT_APPROVED',{contentId:item.id,platform:item.platform}));
+          writeContent(store.db,item);log(match[2]==='review'?'COMPLIANCE_REVIEWED':'OWNER_APPROVED',item);
+          if(match[2]==='approve')queueMicrotask(()=>eventBus.emit('CONTENT_APPROVED',{contentId:item.id,platform:item.platform,tenantId:session.tenantId}));
           return item;
         }));
       }
       const compliance=url.pathname.match(/^\/api\/content\/([\w-]+)\/compliance$/);
       if(compliance) {
         authorize(session,['owner','reviewer']);
-        if(req.method==='GET')return send(200,listComplianceChecks(store.db,compliance[1]));
+        if(req.method==='GET')return send(200,listComplianceChecks(store.db,compliance[1],session.tenantId));
         if(req.method==='POST') {
           checkLlmRateLimit(session.user.id);
-          return send(200,await checkCompliance(compliance[1],await body(req),session.user));
+          return send(200,await checkCompliance(compliance[1],await body(req),session.user,session.tenantId));
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};

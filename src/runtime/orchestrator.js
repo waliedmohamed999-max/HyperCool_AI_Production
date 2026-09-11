@@ -25,7 +25,11 @@ export function installOrchestrator(eventBus,runtime,db) {
   eventBus.on(eventType,async payload=>{
    if(route.agentId==='frost')return; // Frost's own cycles are driven explicitly (see the scheduler), not re-entrantly by its own events.
    if(isPaused(db))return; // "pause all autonomous actions" must also stop event-triggered runs, not just the scheduler.
-   await runtime.run(route.agentId,{triggerType:'EVENT',triggerId:payload.__eventId,input:route.buildInput(payload)});
+   // Multi-Tenant Phase 3: every stored event row already carries a real tenant_id
+   // (src/runtime/events.js) — this is what actually threads it into the run it triggers,
+   // closing the gap where a correctly tenant-tagged event used to silently fall back to
+   // AgentRuntime.run()'s own default resolution instead of the event's real tenant.
+   await runtime.run(route.agentId,{triggerType:'EVENT',triggerId:payload.__eventId,input:route.buildInput(payload),tenantId:payload.tenantId});
   });
  }
  return {routes:Object.keys(ROUTES)};

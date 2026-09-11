@@ -1,6 +1,9 @@
 import {listProducts,currentMemory} from '../knowledge.js';
 import {listLeads,leadDetail,getLead,createLead,updateLead,createFollowups,recordMessage,recordChannelMessage,maybeEscalateHotLead,searchLeads} from '../crm.js';
 import {createContent} from '../domain.js';
+import {getContent,getContentOrNull,insertContent,writeContent} from '../content.js';
+import {resolveActiveTenantId} from '../tenancy.js';
+import {recordAudit} from '../audit.js';
 import {buildWeeklyReport,currentWeekStart} from '../reporting.js';
 import {createApproval} from './approvals.js';
 import {sendWhatsAppMessage,whatsappConfigured} from './whatsapp.js';
@@ -72,26 +75,27 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
  // side). A job is only ever touched if one is currently READY_FOR_CONNECTOR for this
  // content — a manual/ad-hoc publish with no active schedule job leaves scheduling alone.
  function finalizePublishResult(contentId,platform,result,ctx) {
-  const jobRow=db.prepare("SELECT id,json FROM schedule_jobs WHERE content_id=? AND status='READY_FOR_CONNECTOR'").get(contentId);
+  const jobRow=db.prepare("SELECT id,json FROM schedule_jobs WHERE tenant_id=? AND content_id=? AND status='READY_FOR_CONNECTOR'").get(ctx.tenantId||resolveActiveTenantId(db),contentId);
   const now=new Date().toISOString();
   if(result.status==='PUBLISHED') {
-   store.mutate(state=>{
-    const target=state.content.find(c=>c.id===contentId);
+   store.mutate(()=>{
+    const target=getContent(db,contentId,ctx.tenantId);
     target.status='PUBLISHED';target.externalPostId=result.externalPostId;target.liveUrl=result.liveUrl||null;target.publishedAt=now;
-    state.audit.unshift({id:crypto.randomUUID(),action:'CONTENT_PUBLISHED',itemId:contentId,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:now});
+    writeContent(db,target);
+    recordAudit(db,{id:crypto.randomUUID(),action:'CONTENT_PUBLISHED',itemId:contentId,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:now},ctx.tenantId);
    });
    if(jobRow){const job=JSON.parse(jobRow.json);job.status='PUBLISHED';job.publishedAt=now;job.externalPostId=result.externalPostId;job.liveUrl=result.liveUrl||null;db.prepare('UPDATE schedule_jobs SET status=?,json=? WHERE id=?').run('PUBLISHED',JSON.stringify(job),jobRow.id);}
-   if(eventBus)eventBus.emit('CONTENT_PUBLISHED',{contentId,platform,externalPostId:result.externalPostId});
+   if(eventBus)eventBus.emit('CONTENT_PUBLISHED',{contentId,platform,externalPostId:result.externalPostId,tenantId:ctx.tenantId});
   } else if(result.status==='STATUS_UNKNOWN') {
    // A timeout/network failure with no confirmed outcome — never assumed to be a failure
    // (which would invite a blind retry and a possible duplicate post) nor a success. Left
    // for human reconciliation via a real P2 escalation (spec Part Q/AP) instead of a
    // fabricated automatic retry loop.
-   store.mutate(state=>{state.audit.unshift({id:crypto.randomUUID(),action:platform.toUpperCase()+'_PUBLISH_STATUS_UNKNOWN',itemId:contentId,errorCode:result.errorCode||null,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:now});});
+   recordAudit(db,{id:crypto.randomUUID(),action:platform.toUpperCase()+'_PUBLISH_STATUS_UNKNOWN',itemId:contentId,errorCode:result.errorCode||null,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:now},ctx.tenantId);
    if(jobRow){const job=JSON.parse(jobRow.json);job.status='STATUS_UNKNOWN';job.blockReason=result.errorCode||'STATUS_UNKNOWN';db.prepare('UPDATE schedule_jobs SET status=?,json=? WHERE id=?').run('STATUS_UNKNOWN',JSON.stringify(job),jobRow.id);}
-   createEscalation(db,{runId:ctx.runId,agentId:ctx.agentId,priority:'P2',reason:`نتيجة نشر ${platform} غير معروفة بعد خطأ اتصال — يحتاج تحققًا يدويًا قبل أي إعادة محاولة`,context:{contentId,platform,errorCode:result.errorCode||null}});
+   createEscalation(db,{runId:ctx.runId,agentId:ctx.agentId,priority:'P2',reason:`نتيجة نشر ${platform} غير معروفة بعد خطأ اتصال — يحتاج تحققًا يدويًا قبل أي إعادة محاولة`,context:{contentId,platform,errorCode:result.errorCode||null},tenantId:ctx.tenantId});
   } else if(result.status==='FAILED') {
-   store.mutate(state=>{state.audit.unshift({id:crypto.randomUUID(),action:platform.toUpperCase()+'_PUBLISH_FAILED',itemId:contentId,errorCode:result.errorCode||null,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:now});});
+   recordAudit(db,{id:crypto.randomUUID(),action:platform.toUpperCase()+'_PUBLISH_FAILED',itemId:contentId,errorCode:result.errorCode||null,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:now},ctx.tenantId);
    if(jobRow){const job=JSON.parse(jobRow.json);job.status='FAILED';job.blockReason=result.errorCode||'FAILED';db.prepare('UPDATE schedule_jobs SET status=?,json=? WHERE id=?').run('FAILED',JSON.stringify(job),jobRow.id);}
   }
   return result;
@@ -102,35 +106,35 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
  function testModeEnabled() { return env.SOCIAL_PUBLISHING_TEST_MODE==='true'; }
  const tools=[
   {name:'get_products',description:'List all Salla-synced products with price/stock snapshot.',inputSchema:obj({}),minLevel:'L0',
-   handler:()=>listProducts(db)},
+   handler:(input,ctx)=>listProducts(db,ctx.tenantId)},
   {name:'get_product',description:'Get one product by id.',inputSchema:obj({productId:string}),minLevel:'L0',
-   handler:({productId})=>listProducts(db).find(p=>p.id===productId)||{status:'NO_DATA'}},
+   handler:({productId},ctx)=>listProducts(db,ctx.tenantId).find(p=>p.id===productId)||{status:'NO_DATA'}},
   {name:'get_current_price',description:'Get the last-synced price snapshot for a product, with source and sync time.',inputSchema:obj({productId:string}),minLevel:'L0',
-   handler:({productId})=>{const p=listProducts(db).find(x=>x.id===productId);return p?{price:p.price,syncedAt:p.syncedAt,source:p.price?.source||null}:{status:'NO_DATA'};}},
+   handler:({productId},ctx)=>{const p=listProducts(db,ctx.tenantId).find(x=>x.id===productId);return p?{price:p.price,syncedAt:p.syncedAt,source:p.price?.source||null}:{status:'NO_DATA'};}},
   {name:'get_stock',description:'Get the last-synced stock snapshot for a product.',inputSchema:obj({productId:string}),minLevel:'L0',
-   handler:({productId})=>{const p=listProducts(db).find(x=>x.id===productId);return p?{stock:p.stock,available:p.available,syncedAt:p.syncedAt}:{status:'NO_DATA'};}},
+   handler:({productId},ctx)=>{const p=listProducts(db,ctx.tenantId).find(x=>x.id===productId);return p?{stock:p.stock,available:p.available,syncedAt:p.syncedAt}:{status:'NO_DATA'};}},
   {name:'search_crm',description:'Search existing CRM leads by name, company, phone, email or product need.',inputSchema:obj({query:string}),minLevel:'L0',
-   handler:({query})=>searchLeads(db,query)},
+   handler:({query},ctx)=>searchLeads(db,query,20,ctx.tenantId)},
   {name:'get_lead',description:'Get full lead detail including messages and follow-ups.',inputSchema:obj({leadId:string}),minLevel:'L0',
-   handler:({leadId})=>{try{return leadDetail(db,leadId);}catch{return {status:'NO_DATA'};}}},
+   handler:({leadId},ctx)=>{try{return leadDetail(db,leadId,ctx.tenantId);}catch{return {status:'NO_DATA'};}}},
   {name:'get_conversation',description:'Get the recorded message history for a lead.',inputSchema:obj({leadId:string}),minLevel:'L0',
-   handler:({leadId})=>{try{return leadDetail(db,leadId).messages;}catch{return {status:'NO_DATA'};}}},
+   handler:({leadId},ctx)=>{try{return leadDetail(db,leadId,ctx.tenantId).messages;}catch{return {status:'NO_DATA'};}}},
   {name:'search_brand_memory',description:'Search approved brand memory (voice, product facts, claims, policies, competitor insights).',inputSchema:obj({kind:string},[]),minLevel:'L0',
-   handler:({kind}={})=>currentMemory(db).filter(entry=>!kind||entry.kind===kind)},
+   handler:({kind}={},ctx)=>currentMemory(db,ctx.tenantId).filter(entry=>!kind||entry.kind===kind)},
   {name:'get_competitor_data',description:'Read approved competitor/trend insights from brand memory.',inputSchema:obj({}),minLevel:'L0',
-   handler:()=>currentMemory(db).filter(entry=>entry.kind==='competitor_insight')},
+   handler:(input,ctx)=>currentMemory(db,ctx.tenantId).filter(entry=>entry.kind==='competitor_insight')},
   {name:'get_metrics',description:'Get the current live weekly operations report (internal metrics only).',inputSchema:obj({}),minLevel:'L0',
-   handler:()=>buildWeeklyReport(store,currentWeekStart())},
+   handler:(input,ctx)=>buildWeeklyReport(store,currentWeekStart(),ctx.tenantId)},
 
   // --- draft/propose tools: create pending, human-reviewable records. Allowed from L0 because
   // nothing here is an external action — it mirrors what an operator can already do by hand.
   {name:'create_lead',description:'Create a new CRM lead record.',inputSchema:obj({name:string,customerType:string,sourceType:string},['name','customerType','sourceType']),minLevel:'L0',
-   handler:(input,ctx)=>createLead(store,input,ctx.actor)},
+   handler:(input,ctx)=>createLead(store,input,ctx.actor,ctx.tenantId)},
   {name:'update_lead',description:'Update an existing lead qualification/stage.',inputSchema:obj({leadId:string,stage:string,expectedVersion:{type:'integer'}},['leadId']),minLevel:'L0',
    handler:({leadId,...input},ctx)=>{
-    const before=getLead(db,leadId);
-    const updated=updateLead(store,leadId,input,ctx.actor);
-    maybeEscalateHotLead(store,eventBus,before,updated,{agentId:ctx.agentId,runId:ctx.runId});
+    const before=getLead(db,leadId,ctx.tenantId);
+    const updated=updateLead(store,leadId,input,ctx.actor,ctx.tenantId);
+    maybeEscalateHotLead(store,eventBus,before,updated,{agentId:ctx.agentId,runId:ctx.runId,tenantId:ctx.tenantId});
     return updated;
    }},
   {name:'save_message',description:'Record an inbound conversation message against a lead.',inputSchema:obj({leadId:string,channel:string,text:string,intent:string,eventKey:string},['leadId','channel','text','intent','eventKey']),minLevel:'L0',
@@ -138,9 +142,9 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
   {name:'create_followup',description:'Draft a follow-up sequence for a lead (drafts only; still requires human approval to send).',inputSchema:obj({leadId:string,sequence:string,channel:string,startAt:string,evidence:string,requestKey:string},['leadId','sequence','channel','startAt','evidence','requestKey']),minLevel:'L0',
    handler:({leadId,...input},ctx)=>createFollowups(store,leadId,input,ctx.actor)},
   {name:'create_content',description:'Create a new content draft (still requires human compliance review and owner approval before it can be scheduled).',inputSchema:obj({title:string,body:string,platform:string,date:string,url:string},['title','body','platform','date','url']),minLevel:'L0',
-   handler:(input,ctx)=>store.mutate(state=>{const item={...createContent(input),createdBy:ctx.actor.id,origin:'AI'};state.content.unshift(item);state.audit.unshift({id:crypto.randomUUID(),action:'DRAFT_CREATED',itemId:item.id,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:new Date().toISOString()});return item;})},
+   handler:(input,ctx)=>{const item={...createContent(input),createdBy:ctx.actor.id,origin:'AI'};insertContent(db,item,ctx.tenantId);recordAudit(db,{id:crypto.randomUUID(),action:'DRAFT_CREATED',itemId:item.id,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:new Date().toISOString()},ctx.tenantId);return item;}},
   {name:'propose_memory_update',description:'Propose a brand memory change for human approval — never writes memory directly.',inputSchema:obj({type:string,key:string,newValue:string,evidence:string,confidence:{type:'number'}},['type','key','newValue']),minLevel:'L0',
-   handler:(input,ctx)=>createApproval(db,{runId:ctx.runId,agentId:ctx.agentId,actionType:'memory_policy_change',proposedOutput:input,riskLevel:'MEDIUM',reason:'Agent-proposed memory update requires human approval before it becomes fact.'})},
+   handler:(input,ctx)=>createApproval(db,{runId:ctx.runId,agentId:ctx.agentId,actionType:'memory_policy_change',proposedOutput:input,riskLevel:'MEDIUM',reason:'Agent-proposed memory update requires human approval before it becomes fact.',tenantId:ctx.tenantId})},
 
   // --- external actions: always integration-gated. Real credentials flip these on later
   // without any agent code changing — only connectionStatus() and these handlers.
@@ -149,7 +153,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
    handler:async({leadId,text,templateName,templateLanguage},ctx)=>{
     if(!isEnabled(env,'ENABLE_EXTERNAL_MESSAGING'))return featureDisabled('ENABLE_EXTERNAL_MESSAGING');
     if(!whatsappConfigured({store,env}))return blocked('whatsapp','send_message');
-    const lead=getLead(db,leadId);
+    const lead=getLead(db,leadId,ctx.tenantId);
     if(lead.optOut)return {status:'BLOCKED',reason:'OPT_OUT'};
     if(lead.humanHold)return {status:'BLOCKED',reason:'HUMAN_HOLD'};
     if(!lead.phone)return {status:'BLOCKED',reason:'NO_PHONE'};
@@ -169,8 +173,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
     if(!isEnabled(env,'ENABLE_EXTERNAL_PUBLISHING'))return featureDisabled('ENABLE_EXTERNAL_PUBLISHING');
     const resolved=resolveMetaAccessToken({store,env},'page');
     if(!resolved)return blocked('meta','publish_post');
-    const state=store.read();
-    const item=state.content.find(c=>c.id===contentId);
+    const item=getContentOrNull(db,contentId,ctx.tenantId);
     if(!item)return {status:'ERROR',error:'CONTENT_NOT_FOUND'};
     if(item.status!=='APPROVED')return {status:'BLOCKED',reason:'NOT_APPROVED'};
     if(alreadyPublished(item))return {status:'OK',reason:'ALREADY_PUBLISHED',externalPostId:item.externalPostId,liveUrl:item.liveUrl};
@@ -184,8 +187,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
   {name:'x_publish',description:'Publish an approved content item to X. Refuses anything not APPROVED, already published, or unsupported for this platform.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'x',allowedAgents:['publishing'],
    handler:async({contentId},ctx)=>{
     if(!isEnabled(env,'ENABLE_EXTERNAL_PUBLISHING'))return featureDisabled('ENABLE_EXTERNAL_PUBLISHING');
-    const state=store.read();
-    const item=state.content.find(c=>c.id===contentId);
+    const item=getContentOrNull(db,contentId,ctx.tenantId);
     if(!item)return {status:'ERROR',error:'CONTENT_NOT_FOUND'};
     if(item.status!=='APPROVED')return {status:'BLOCKED',reason:'NOT_APPROVED'};
     if(alreadyPublished(item))return {status:'OK',reason:'ALREADY_PUBLISHED',externalPostId:item.externalPostId,liveUrl:item.liveUrl};
@@ -199,8 +201,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
   {name:'linkedin_publish',description:'Publish an approved content item to the connected LinkedIn Company Page (never a personal profile). Refuses anything not APPROVED, already published, or without a resolved organization.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',integration:'linkedin',allowedAgents:['publishing'],
    handler:async({contentId},ctx)=>{
     if(!isEnabled(env,'ENABLE_EXTERNAL_PUBLISHING'))return featureDisabled('ENABLE_EXTERNAL_PUBLISHING');
-    const state=store.read();
-    const item=state.content.find(c=>c.id===contentId);
+    const item=getContentOrNull(db,contentId,ctx.tenantId);
     if(!item)return {status:'ERROR',error:'CONTENT_NOT_FOUND'};
     if(item.status!=='APPROVED')return {status:'BLOCKED',reason:'NOT_APPROVED'};
     if(alreadyPublished(item))return {status:'OK',reason:'ALREADY_PUBLISHED',externalPostId:item.externalPostId,liveUrl:item.liveUrl};
@@ -219,14 +220,14 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
   // performs the real send at decide-time using the stored proposed_output.
   {name:'microsoft_sendEmail',description:'Send an email via Microsoft 365. category in [quote,discount,large_b2b,legal,general] — the first four always require owner approval before sending.',inputSchema:obj({leadId:string,subject:string,bodyHtml:string,category:string,cc:{type:'array',items:string}},['leadId','subject','bodyHtml']),minLevel:'L1',integration:'microsoft365',
    handler:async({leadId,subject,bodyHtml,category='general',cc},ctx)=>{
-    const lead=getLead(db,leadId);
+    const lead=getLead(db,leadId,ctx.tenantId);
     if(lead.optOut)return {status:'BLOCKED',reason:'OPT_OUT'};
     if(lead.humanHold)return {status:'BLOCKED',reason:'HUMAN_HOLD'};
     if(!lead.email)return {status:'BLOCKED',reason:'NO_EMAIL'};
     if(['quote','discount','large_b2b','legal'].includes(category)) {
      const approval=createApproval(db,{runId:ctx.runId,agentId:ctx.agentId,actionType:'send_marketing_message',
       proposedOutput:{leadId,to:lead.email,cc:cc||[],subject,bodyHtml,category},
-      riskLevel:category==='legal'?'HIGH':'MEDIUM',reason:`Agent-drafted ${category} email to ${lead.email} requires owner approval before sending.`});
+      riskLevel:category==='legal'?'HIGH':'MEDIUM',reason:`Agent-drafted ${category} email to ${lead.email} requires owner approval before sending.`,tenantId:ctx.tenantId});
      return {status:'WAITING_APPROVAL',approvalId:approval.id};
     }
     // Drafting/requesting approval above is never gated by ENABLE_EXTERNAL_MESSAGING —
@@ -243,17 +244,17 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
     return result;
    }},
   {name:'search_email_conversation',description:'Search this lead\'s email history by keyword.',inputSchema:obj({leadId:string,query:string},['leadId']),minLevel:'L0',
-   handler:({leadId,query})=>{
-    const detail=leadDetail(db,leadId);
+   handler:({leadId,query},ctx)=>{
+    const detail=leadDetail(db,leadId,ctx.tenantId);
     const emails=detail.messages.filter(m=>m.channel==='Email');
     if(!query)return emails;
     const q=query.toLowerCase();
     return emails.filter(m=>(m.subject||'').toLowerCase().includes(q)||(m.text||'').toLowerCase().includes(q));
    }},
   {name:'get_email_thread',description:'Get all messages in one email thread (by externalThreadId) for a lead.',inputSchema:obj({leadId:string,externalThreadId:string},['leadId','externalThreadId']),minLevel:'L0',
-   handler:({leadId,externalThreadId})=>leadDetail(db,leadId).messages.filter(m=>m.channel==='Email'&&m.externalThreadId===externalThreadId)},
+   handler:({leadId,externalThreadId},ctx)=>leadDetail(db,leadId,ctx.tenantId).messages.filter(m=>m.channel==='Email'&&m.externalThreadId===externalThreadId)},
   {name:'get_recent_replies',description:'Get the most recent inbound messages (any channel) for a lead, to check whether they replied since a given point.',inputSchema:obj({leadId:string,sinceIso:string},['leadId']),minLevel:'L0',
-   handler:({leadId,sinceIso})=>leadDetail(db,leadId).messages.filter(m=>m.direction==='INBOUND'&&(!sinceIso||m.recordedAt>sinceIso))},
+   handler:({leadId,sinceIso},ctx)=>leadDetail(db,leadId,ctx.tenantId).messages.filter(m=>m.direction==='INBOUND'&&(!sinceIso||m.recordedAt>sinceIso))},
   // Calendar tools are restricted to the agents actually responsible for scheduling
   // (spec Part AC) — enforced below in list()/get(), not left to permission level alone,
   // since every other agent passing L1+ would otherwise also qualify.

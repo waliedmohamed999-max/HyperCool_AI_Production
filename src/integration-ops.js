@@ -2,10 +2,12 @@
 // Connection Center. Creates no new connection model: it only reshapes the two disjoint
 // status sources that already exist (connectionStatus in connectors.js for Anthropic/Salla,
 // integrationStatus in runtime/tools.js for the other six) plus real usage evidence already
-// recorded in ai_runs, compliance_runs and state.audit. Never invents a "connected" state —
+// recorded in ai_runs, compliance_runs and audit_logs. Never invents a "connected" state —
 // six of these eight services have zero real HTTP client code today, and this file says so.
 import {AGENT_INTEGRATIONS} from './runtime/tools.js';
 import {agents as AGENT_DEFS} from './domain.js';
+import {listContent} from './content.js';
+import {listAuditLog} from './audit.js';
 
 // Real, documented facts about each integration: which env vars it needs, whether this
 // codebase actually has a connector that calls it, and — for services with a real OAuth/API
@@ -160,9 +162,9 @@ function microsoftOAuthConnected(db) {
 }
 // X — real activity is CONTENT_PUBLISHED audit entries for X content plus this platform's
 // own failure/status-unknown audit actions (see runtime/tools.js finalizePublishResult).
-function xActivity(state) {
- const events=state.content.filter(c=>c.platform==='X'&&c.status==='PUBLISHED').map(c=>({at:c.publishedAt,status:'COMPLETED',errorCode:null,kind:'نشر منشور',durationMs:null}))
-  .concat(state.audit.filter(a=>a.action==='X_PUBLISH_FAILED'||a.action==='X_PUBLISH_STATUS_UNKNOWN').map(a=>({at:a.at,status:'FAILED',errorCode:a.errorCode||null,kind:'خطأ نشر',durationMs:null})))
+function xActivity(audit,content) {
+ const events=content.filter(c=>c.platform==='X'&&c.status==='PUBLISHED').map(c=>({at:c.publishedAt,status:'COMPLETED',errorCode:null,kind:'نشر منشور',durationMs:null}))
+  .concat(audit.filter(a=>a.action==='X_PUBLISH_FAILED'||a.action==='X_PUBLISH_STATUS_UNKNOWN').map(a=>({at:a.at,status:'FAILED',errorCode:a.errorCode||null,kind:'خطأ نشر',durationMs:null})))
   .filter(e=>e.at).sort((a,b)=>b.at.localeCompare(a.at));
  const lastSuccess=events.find(e=>e.status==='COMPLETED');
  const lastError=events.find(e=>e.status==='FAILED');
@@ -174,9 +176,9 @@ function xOAuthConnectedCheck(db) {
 }
 // LinkedIn — same shape as xActivity, kept separate (not a shared helper) since each
 // platform's audit action names and content platform tag are real, distinct strings.
-function linkedinActivity(state) {
- const events=state.content.filter(c=>c.platform==='LinkedIn'&&c.status==='PUBLISHED').map(c=>({at:c.publishedAt,status:'COMPLETED',errorCode:null,kind:'نشر منشور',durationMs:null}))
-  .concat(state.audit.filter(a=>a.action==='LINKEDIN_PUBLISH_FAILED'||a.action==='LINKEDIN_PUBLISH_STATUS_UNKNOWN').map(a=>({at:a.at,status:'FAILED',errorCode:a.errorCode||null,kind:'خطأ نشر',durationMs:null})))
+function linkedinActivity(audit,content) {
+ const events=content.filter(c=>c.platform==='LinkedIn'&&c.status==='PUBLISHED').map(c=>({at:c.publishedAt,status:'COMPLETED',errorCode:null,kind:'نشر منشور',durationMs:null}))
+  .concat(audit.filter(a=>a.action==='LINKEDIN_PUBLISH_FAILED'||a.action==='LINKEDIN_PUBLISH_STATUS_UNKNOWN').map(a=>({at:a.at,status:'FAILED',errorCode:a.errorCode||null,kind:'خطأ نشر',durationMs:null})))
   .filter(e=>e.at).sort((a,b)=>b.at.localeCompare(a.at));
  const lastSuccess=events.find(e=>e.status==='COMPLETED');
  const lastError=events.find(e=>e.status==='FAILED');
@@ -191,19 +193,20 @@ function envRows(integration,env) {
  if(integration.webhookVar)rows.push({name:integration.webhookVar,configured:!!env[integration.webhookVar]});
  return rows;
 }
-export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns,agentRuns=[]}) {
- const state=store.read();
+export function buildIntegrationsDashboard(store,{env,aiRuns,complianceRuns,agentRuns=[],tenantId=null}) {
+ const content=listContent(store.db,tenantId);
+ const audit=listAuditLog(store.db,{tenantId});
  const anthropic=anthropicActivity(aiRuns,complianceRuns);
  const openai=openaiActivity(agentRuns);
- const salla=sallaActivity(state.audit);
+ const salla=sallaActivity(audit);
  const whatsapp=whatsappActivity(store.db);
- const meta=metaActivity(store.db,state.audit);
+ const meta=metaActivity(store.db,audit);
  const metaConnected=metaOAuthConnected(store.db);
- const microsoft=microsoftActivity(store.db,state.audit);
+ const microsoft=microsoftActivity(store.db,audit);
  const microsoftConnected=microsoftOAuthConnected(store.db);
- const x=xActivity(state);
+ const x=xActivity(audit,content);
  const xConnected=xOAuthConnectedCheck(store.db);
- const linkedin=linkedinActivity(state);
+ const linkedin=linkedinActivity(audit,content);
  const linkedinConnected=linkedinOAuthConnectedCheck(store.db);
  const integrations=INTEGRATIONS.map(integration=>{
   const rows=envRows(integration,env);

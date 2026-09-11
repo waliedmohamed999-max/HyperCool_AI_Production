@@ -5,6 +5,7 @@ import {buildToolRegistry,agentActor} from './tools.js';
 import {levelOf,canUseTool,effectiveLevel} from './permissions.js';
 import {createEscalation} from './escalations.js';
 import {getAgent} from './registry.js';
+import {resolveActiveTenantId} from '../tenancy.js';
 
 export function installRuntimeTables(db) {
  db.exec(`
@@ -17,18 +18,26 @@ export function installRuntimeTables(db) {
  // `provider`/`model`/`prompt_version` record what actually executed this specific run
  // (which can differ from today's registry/env defaults if either changes later), and
  // `used_fallback` marks a run that only succeeded after the secondary AI provider took
- // over from a failing primary (see A12 in the AI provider spec).
+ // over from a failing primary (see A12 in the AI provider spec). `tenant_id` is Multi-
+ // Tenant Phase 2 (spec Part 9 — Agent isolation): every execution now carries the real
+ // tenant it ran for. `agent_tool_calls` deliberately gets none of its own — every access
+ // goes through `run_id`, whose owning run is already tenant-checked (same transitive
+ // pattern as crm_messages via crm_leads.tenant_id).
  const columns=db.prepare("PRAGMA table_info(agent_runs)").all().map(c=>c.name);
- for(const [name,type] of [['provider','TEXT'],['model','TEXT'],['prompt_version','TEXT'],['used_fallback','INTEGER']])
+ for(const [name,type] of [['provider','TEXT'],['model','TEXT'],['prompt_version','TEXT'],['used_fallback','INTEGER'],['tenant_id','TEXT']])
   if(!columns.includes(name))db.exec(`ALTER TABLE agent_runs ADD COLUMN ${name} ${type}`);
+ db.exec('CREATE INDEX IF NOT EXISTS idx_agent_runs_tenant ON agent_runs(tenant_id);');
+ const unresolved=db.prepare('SELECT COUNT(*) n FROM agent_runs WHERE tenant_id IS NULL').get().n;
+ if(unresolved>0)db.prepare('UPDATE agent_runs SET tenant_id=? WHERE tenant_id IS NULL').run(resolveActiveTenantId(db));
 }
-export function listRuns(db,{agentId,limit=50}={}) {
- const rows=agentId?db.prepare('SELECT * FROM agent_runs WHERE agent_id=? ORDER BY started_at DESC LIMIT ?').all(agentId,limit)
-  :db.prepare('SELECT * FROM agent_runs ORDER BY started_at DESC LIMIT ?').all(limit);
+export function listRuns(db,{agentId,limit=50}={},tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const rows=agentId?db.prepare('SELECT * FROM agent_runs WHERE agent_id=? AND tenant_id=? ORDER BY started_at DESC LIMIT ?').all(agentId,resolvedTenantId,limit)
+  :db.prepare('SELECT * FROM agent_runs WHERE tenant_id=? ORDER BY started_at DESC LIMIT ?').all(resolvedTenantId,limit);
  return rows.map(hydrateRun);
 }
-export function getRun(db,id) {
- const row=db.prepare('SELECT * FROM agent_runs WHERE id=?').get(id);
+export function getRun(db,id,tenantId=null) {
+ const row=db.prepare('SELECT * FROM agent_runs WHERE id=? AND tenant_id=?').get(id,tenantId||resolveActiveTenantId(db));
  return row?hydrateRun(row):null;
 }
 function hydrateRun(row) {
@@ -76,14 +85,22 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
  }
  return {
   toolRegistry,
-  async run(agentId,{triggerType='MANUAL',triggerId=null,parentRunId=null,input={},user}) {
+  // Multi-Tenant Phase 2 (spec Part 9/11 — Agent + Frost tenant context): every execution
+  // resolves its real tenant ONCE, up front, and threads it through the run row, every
+  // tool call's ctx (so a tool handler can scope its own reads/writes explicitly instead
+  // of relying on a library default), and every escalation this run creates. A caller that
+  // doesn't pass `tenantId` (most of today's callers — see docs/MULTI_TENANT_ARCHITECTURE.md
+  // for which event payloads don't carry one yet) gets the one real tenant that exists
+  // today, never a fabricated value.
+  async run(agentId,{triggerType='MANUAL',triggerId=null,parentRunId=null,input={},user,tenantId=null}) {
+   const resolvedTenantId=tenantId||resolveActiveTenantId(db);
    const registryRow=getAgent(db,agentId);
    if(!registryRow)throw Object.assign(new Error('Unknown agent: '+agentId),{status:404});
-   if(!registryRow.enabled)return finishDisabled(db,agentId,triggerType,triggerId,user);
+   if(!registryRow.enabled)return finishDisabled(db,agentId,triggerType,triggerId,user,resolvedTenantId);
    const level=effectiveLevel(levelOf(db,agentId),env);
    const tools=toolRegistry.list(level,agentId);
    const actor=agentActor(agentId,registryRow.name_ar);
-   const run={id:randomUUID(),agentId,triggerType,triggerId,parentRunId,status:'RUNNING',inputContext:input,startedAt:new Date().toISOString(),actorId:user?.id||null,actorName:user?.name||null};
+   const run={id:randomUUID(),tenantId:resolvedTenantId,agentId,triggerType,triggerId,parentRunId,status:'RUNNING',inputContext:input,startedAt:new Date().toISOString(),actorId:user?.id||null,actorName:user?.name||null};
    insertRun(db,run);
    const startedMs=Date.now();
    const toolCallLog=[];
@@ -94,7 +111,7 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
     else if(!canUseTool(level,tool,agentId)){status='FORBIDDEN';output={status:'FORBIDDEN',reason:tool.allowedAgents&&!tool.allowedAgents.includes(agentId)?'AGENT_NOT_ALLOWED':'PERMISSION_LEVEL',required:tool.minLevel,current:level};}
     else {
      try {
-      output=await tool.handler(toolInput,{store,env,actor,runId:run.id,agentId});
+      output=await tool.handler(toolInput,{store,env,actor,runId:run.id,agentId,tenantId:resolvedTenantId});
       status=output?.status==='INTEGRATION_REQUIRED'?'INTEGRATION_REQUIRED':'OK';
      } catch(error) {status='ERROR';output={status:'ERROR',error:error.message};}
     }
@@ -122,12 +139,12 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
     const latencyMs=Date.now()-startedMs;
     const status=decision.escalation_required?'ESCALATED':decision.status==='HUMAN_REVIEW'?'WAITING_APPROVAL':'COMPLETED';
     finishRun(db,run.id,{status,output:decision,tokensInput:usage.input_tokens,tokensOutput:usage.output_tokens,latencyMs,estimatedCost:estimateCost(finalStatus.provider,finalStatus.model,usage.input_tokens,usage.output_tokens),provider:finalStatus.provider,model:finalStatus.model,promptVersion:promptVersion(agentId),usedFallback});
-    if(decision.escalation_required)createEscalation(db,{runId:run.id,agentId,priority:priorityFor(decision),reason:decision.rationale,context:{action:decision.action,payload:decision.payload}});
-    return {...getRun(db,run.id),toolCalls:toolCallLog};
+    if(decision.escalation_required)createEscalation(db,{runId:run.id,agentId,priority:priorityFor(decision),reason:decision.rationale,context:{action:decision.action,payload:decision.payload},tenantId:resolvedTenantId});
+    return {...getRun(db,run.id,resolvedTenantId),toolCalls:toolCallLog};
    } catch(error) {
     finishRun(db,run.id,{status:'FAILED',error:error.message,latencyMs:Date.now()-startedMs,provider:registryRow.provider,model:registryRow.model,promptVersion:promptVersion(agentId)});
-    if(eventBus)eventBus.emit('AGENT_RUN_FAILED',{agentId,runId:run.id,message:error.message});
-    return {...getRun(db,run.id),toolCalls:toolCallLog};
+    if(eventBus)eventBus.emit('AGENT_RUN_FAILED',{agentId,runId:run.id,message:error.message,tenantId:resolvedTenantId});
+    return {...getRun(db,run.id,resolvedTenantId),toolCalls:toolCallLog};
    }
   }
  };
@@ -139,16 +156,16 @@ function priorityFor(decision) {
  return 'P4';
 }
 function insertRun(db,run) {
- db.prepare('INSERT INTO agent_runs (id,agent_id,trigger_type,trigger_id,parent_run_id,status,input_context,started_at,actor_id,actor_name) VALUES (?,?,?,?,?,?,?,?,?,?)')
-  .run(run.id,run.agentId,run.triggerType,run.triggerId,run.parentRunId,run.status,JSON.stringify(run.inputContext),run.startedAt,run.actorId,run.actorName);
+ db.prepare('INSERT INTO agent_runs (id,tenant_id,agent_id,trigger_type,trigger_id,parent_run_id,status,input_context,started_at,actor_id,actor_name) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+  .run(run.id,run.tenantId,run.agentId,run.triggerType,run.triggerId,run.parentRunId,run.status,JSON.stringify(run.inputContext),run.startedAt,run.actorId,run.actorName);
 }
 function finishRun(db,id,{status,output=null,error=null,tokensInput=null,tokensOutput=null,latencyMs=null,estimatedCost=null,provider=null,model=null,promptVersion=null,usedFallback=false}) {
  db.prepare('UPDATE agent_runs SET status=?,output=?,error=?,finished_at=?,tokens_input=?,tokens_output=?,latency_ms=?,estimated_cost=?,provider=?,model=?,prompt_version=?,used_fallback=? WHERE id=?')
   .run(status,output?JSON.stringify(output):null,error,new Date().toISOString(),tokensInput,tokensOutput,latencyMs,estimatedCost,provider,model,promptVersion,usedFallback?1:0,id);
 }
-function finishDisabled(db,agentId,triggerType,triggerId,user) {
- const run={id:randomUUID(),agentId,triggerType,triggerId,parentRunId:null,status:'CANCELLED',inputContext:{},startedAt:new Date().toISOString(),actorId:user?.id||null,actorName:user?.name||null};
+function finishDisabled(db,agentId,triggerType,triggerId,user,tenantId) {
+ const run={id:randomUUID(),tenantId,agentId,triggerType,triggerId,parentRunId:null,status:'CANCELLED',inputContext:{},startedAt:new Date().toISOString(),actorId:user?.id||null,actorName:user?.name||null};
  insertRun(db,run);
  finishRun(db,run.id,{status:'CANCELLED',error:'AGENT_DISABLED'});
- return getRun(db,run.id);
+ return getRun(db,run.id,tenantId);
 }

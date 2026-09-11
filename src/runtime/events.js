@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {EventEmitter} from 'node:events';
+import {resolveActiveTenantId} from '../tenancy.js';
 
 // The fixed vocabulary from the spec. Anything else is a programming error, not a runtime one.
 export const EVENT_TYPES=[
@@ -23,12 +24,28 @@ export const EVENT_TYPES=[
  'CUSTOMER_OPTED_OUT'
 ];
 
+// Multi-Tenant Phase 2 (spec Part 10 — Event Bus isolation). `tenant_id` is a real,
+// queryable column, not just a payload field, resolved the same optional way as
+// everywhere else: a caller that includes `tenantId` in its payload gets that value
+// stored; one that doesn't (most of today's 12 emit() call sites, several of which are
+// tied to still-globally-scoped content — see docs/MULTI_TENANT_ARCHITECTURE.md) gets the
+// one real tenant that exists today, never a fabricated or wrong value.
 export function installEvents(db) {
- db.exec('CREATE TABLE IF NOT EXISTS agent_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, payload TEXT NOT NULL, run_id TEXT, created_at TEXT NOT NULL);');
+ const legacy=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_events'").get();
+ if(legacy) {
+  const columns=db.prepare('PRAGMA table_info(agent_events)').all().map(c=>c.name);
+  if(!columns.includes('tenant_id'))db.exec('ALTER TABLE agent_events ADD COLUMN tenant_id TEXT');
+ } else {
+  db.exec('CREATE TABLE IF NOT EXISTS agent_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, payload TEXT NOT NULL, run_id TEXT, tenant_id TEXT, created_at TEXT NOT NULL);');
+ }
+ db.exec('CREATE INDEX IF NOT EXISTS idx_agent_events_tenant ON agent_events(tenant_id);');
+ const unresolved=db.prepare('SELECT COUNT(*) n FROM agent_events WHERE tenant_id IS NULL').get().n;
+ if(unresolved>0)db.prepare('UPDATE agent_events SET tenant_id=? WHERE tenant_id IS NULL').run(resolveActiveTenantId(db));
 }
-export function listEvents(db,{type,limit=50}={}) {
- if(type)return db.prepare('SELECT * FROM agent_events WHERE type=? ORDER BY rowid DESC LIMIT ?').all(type,limit);
- return db.prepare('SELECT * FROM agent_events ORDER BY rowid DESC LIMIT ?').all(limit);
+export function listEvents(db,{type,limit=50}={},tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ if(type)return db.prepare('SELECT * FROM agent_events WHERE type=? AND tenant_id=? ORDER BY rowid DESC LIMIT ?').all(type,resolvedTenantId,limit);
+ return db.prepare('SELECT * FROM agent_events WHERE tenant_id=? ORDER BY rowid DESC LIMIT ?').all(resolvedTenantId,limit);
 }
 
 /**
@@ -41,13 +58,14 @@ export function createEventBus(db) {
  emitter.setMaxListeners(50);
  function emit(type,payload={},runId=null) {
   if(!EVENT_TYPES.includes(type))throw new Error('Unknown event type: '+type);
-  const row={id:randomUUID(),type,payload:JSON.stringify(payload),run_id:runId,created_at:new Date().toISOString()};
-  db.prepare('INSERT INTO agent_events VALUES (?,?,?,?,?)').run(row.id,row.type,row.payload,row.run_id,row.created_at);
-  emitter.emit(type,{...payload,__eventId:row.id,__runId:runId});
+  const tenantId=payload.tenantId||resolveActiveTenantId(db);
+  const row={id:randomUUID(),type,payload:JSON.stringify(payload),run_id:runId,tenant_id:tenantId,created_at:new Date().toISOString()};
+  db.prepare('INSERT INTO agent_events (id,type,payload,run_id,tenant_id,created_at) VALUES (?,?,?,?,?,?)').run(row.id,row.type,row.payload,row.run_id,row.tenant_id,row.created_at);
+  emitter.emit(type,{...payload,tenantId,__eventId:row.id,__runId:runId});
   return row.id;
  }
  function on(type,handler) {
-  emitter.on(type,async payload=>{try{await handler(payload);}catch(error){emit('AGENT_RUN_FAILED',{source:'event_handler',type,message:error.message});}});
+  emitter.on(type,async payload=>{try{await handler(payload);}catch(error){emit('AGENT_RUN_FAILED',{source:'event_handler',type,message:error.message,tenantId:payload.tenantId});}});
  }
- return {emit,on,list:(opts)=>listEvents(db,opts)};
+ return {emit,on,list:(opts,tenantId)=>listEvents(db,opts,tenantId)};
 }

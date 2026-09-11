@@ -16,6 +16,9 @@ import {classifyLinkedInError,publishLinkedInPost,getLinkedInPostMetrics,testLin
 import {buildToolRegistry} from '../src/runtime/tools.js';
 import {canUseTool} from '../src/runtime/permissions.js';
 import {installOrchestrator} from '../src/runtime/orchestrator.js';
+import {installContent,insertContent,getContent} from '../src/content.js';
+import {resolveActiveTenantId} from '../src/tenancy.js';
+import {installAuditLog} from '../src/audit.js';
 
 const owner={id:'owner-1',name:'Owner',role:'owner'};
 const publishingActor={id:'agent:publishing',name:'وكيل النشر والجدولة',role:'agent'};
@@ -24,11 +27,11 @@ function jsonResponse(value,status=200,headers={}){return new Response(JSON.stri
 
 function fixture(){
  const store=openStore(':memory:');
- installCRM(store.db);installEvents(store.db);installEscalations(store.db);installApprovals(store.db);installCredentials(store.db);installPlanning(store.db);installGate(store.db);
+ installCRM(store.db);installEvents(store.db);installEscalations(store.db);installApprovals(store.db);installCredentials(store.db);installPlanning(store.db);installGate(store.db);installContent(store.db);installAuditLog(store.db);
  return store;
 }
 function approvedContent(overrides={}) {
- return {id:'content-1',title:'t',body:'Hyper cool tweet',englishCopy:'Hyper cool post',url:'https://hyper-cool.com/p',assetUrl:null,platform:'X',date:'2030-01-01',status:'APPROVED',review:{reviewer:'r',contentHash:'h'},approval:{owner:'o',contentHash:'h',id:'appr-1'},externalPostId:null,liveUrl:null,publishedAt:null,...overrides};
+ return {id:'content-1',title:'t',body:'Hyper cool tweet',englishCopy:'Hyper cool post',url:'https://hyper-cool.com/p',assetUrl:null,platform:'X',date:'2030-01-01',status:'APPROVED',review:{reviewer:'r',contentHash:'h'},approval:{owner:'o',contentHash:'h',id:'appr-1'},externalPostId:null,liveUrl:null,publishedAt:null,createdAt:new Date().toISOString(),...overrides};
 }
 
 // --- X OAuth (PKCE) --------------------------------------------------------------------
@@ -290,7 +293,7 @@ test('meta_publish/x_publish/linkedin_publish are usable only by the publishing 
 });
 test('x_publish refuses unapproved content, refuses a non-X content item, and never double-publishes an already-published item',async()=>{
  const store=fixture();try{
- store.mutate(state=>{state.content.push(approvedContent({id:'draft-1',status:'DRAFT'}));state.content.push(approvedContent({id:'wrong-platform',platform:'LinkedIn'}));state.content.push(approvedContent({id:'already',externalPostId:'existing-id',liveUrl:'https://x.com/i/web/status/existing-id'}));});
+ insertContent(store.db,approvedContent({id:'draft-1',status:'DRAFT'}));insertContent(store.db,approvedContent({id:'wrong-platform',platform:'LinkedIn'}));insertContent(store.db,approvedContent({id:'already',externalPostId:'existing-id',liveUrl:'https://x.com/i/web/status/existing-id'}));
  const registry=buildToolRegistry({store,env:{},eventBus:createEventBus(store.db),fetcher:()=>{throw new Error('must not call network');}});
  const tool=registry.get('x_publish');
  const ctx={store,env:{},actor:publishingActor,runId:null,agentId:'publishing'};
@@ -302,25 +305,25 @@ test('x_publish refuses unapproved content, refuses a non-X content item, and ne
 });
 test('x_publish in SOCIAL_PUBLISHING_TEST_MODE never touches the network and never marks content published',async()=>{
  const store=fixture();try{
- store.mutate(state=>{state.content.push(approvedContent());});
+ insertContent(store.db,approvedContent());
  const registry=buildToolRegistry({store,env:{SOCIAL_PUBLISHING_TEST_MODE:'true'},eventBus:createEventBus(store.db),fetcher:()=>{throw new Error('must not call network in test mode');}});
  const result=await registry.get('x_publish').handler({contentId:'content-1'},{store,env:{},actor:publishingActor,runId:null,agentId:'publishing'});
  assert.equal(result.status,'OK');assert.equal(result.testMode,true);assert.equal(result.would_publish,true);
- assert.equal(store.read().content.find(c=>c.id==='content-1').status,'APPROVED');
+ assert.equal(getContent(store.db,'content-1').status,'APPROVED');
  }finally{store.close();}
 });
 test('x_publish on real success updates content to PUBLISHED, the matching schedule_jobs row to PUBLISHED, and emits CONTENT_PUBLISHED',async()=>{
  const store=fixture();try{
  const env={INTEGRATION_ENCRYPTION_KEY:key32};
  saveCredentials(store.db,env,'x',{accessToken:'x-access',expiresAt:null},owner);
- store.mutate(state=>{state.content.push(approvedContent());});
- store.db.prepare('INSERT INTO schedule_jobs VALUES (?,?,?,?,?)').run('job-1','content-1','READY_FOR_CONNECTOR','2030-01-01T09:00:00.000Z',JSON.stringify({id:'job-1',contentId:'content-1',status:'READY_FOR_CONNECTOR'}));
+ insertContent(store.db,approvedContent());
+ store.db.prepare('INSERT INTO schedule_jobs (id,tenant_id,content_id,status,scheduled_at,json) VALUES (?,?,?,?,?,?)').run('job-1',resolveActiveTenantId(store.db),'content-1','READY_FOR_CONNECTOR','2030-01-01T09:00:00.000Z',JSON.stringify({id:'job-1',contentId:'content-1',status:'READY_FOR_CONNECTOR'}));
  const eventBus=createEventBus(store.db);
  let published=null;eventBus.on('CONTENT_PUBLISHED',payload=>{published=payload;});
  const registry=buildToolRegistry({store,env,eventBus,fetcher:async()=>jsonResponse({data:{id:'42'}})});
  const result=await registry.get('x_publish').handler({contentId:'content-1'},{store,env,actor:publishingActor,runId:null,agentId:'publishing'});
  assert.equal(result.status,'PUBLISHED');
- assert.equal(store.read().content.find(c=>c.id==='content-1').status,'PUBLISHED');
+ assert.equal(getContent(store.db,'content-1').status,'PUBLISHED');
  const job=JSON.parse(store.db.prepare('SELECT json FROM schedule_jobs WHERE id=?').get('job-1').json);
  assert.equal(job.status,'PUBLISHED');assert.equal(job.externalPostId,'42');
  await new Promise(resolve=>setTimeout(resolve,10));
@@ -331,12 +334,12 @@ test('x_publish on STATUS_UNKNOWN never marks content published, marks the job S
  const store=fixture();try{
  const env={INTEGRATION_ENCRYPTION_KEY:key32};
  saveCredentials(store.db,env,'x',{accessToken:'x-access',expiresAt:null},owner);
- store.mutate(state=>{state.content.push(approvedContent());});
- store.db.prepare('INSERT INTO schedule_jobs VALUES (?,?,?,?,?)').run('job-1','content-1','READY_FOR_CONNECTOR','2030-01-01T09:00:00.000Z',JSON.stringify({id:'job-1',contentId:'content-1',status:'READY_FOR_CONNECTOR'}));
+ insertContent(store.db,approvedContent());
+ store.db.prepare('INSERT INTO schedule_jobs (id,tenant_id,content_id,status,scheduled_at,json) VALUES (?,?,?,?,?,?)').run('job-1',resolveActiveTenantId(store.db),'content-1','READY_FOR_CONNECTOR','2030-01-01T09:00:00.000Z',JSON.stringify({id:'job-1',contentId:'content-1',status:'READY_FOR_CONNECTOR'}));
  const registry=buildToolRegistry({store,env,eventBus:createEventBus(store.db),fetcher:async()=>{throw new Error('ETIMEDOUT');}});
  const result=await registry.get('x_publish').handler({contentId:'content-1'},{store,env,actor:publishingActor,runId:null,agentId:'publishing'});
  assert.equal(result.status,'STATUS_UNKNOWN');
- assert.equal(store.read().content.find(c=>c.id==='content-1').status,'APPROVED');
+ assert.equal(getContent(store.db,'content-1').status,'APPROVED');
  const job=JSON.parse(store.db.prepare('SELECT json FROM schedule_jobs WHERE id=?').get('job-1').json);
  assert.equal(job.status,'STATUS_UNKNOWN');
  const open=listEscalations(store.db,{status:'OPEN'});

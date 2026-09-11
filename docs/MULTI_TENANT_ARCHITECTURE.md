@@ -1,4 +1,4 @@
-# Multi-Tenant Architecture — Phase 1 (Foundation)
+# Multi-Tenant Architecture — Phase 1 + 2 + 3 (Foundation, Data Isolation, Content Normalization)
 
 This document describes exactly what exists today after the first multi-tenant pass, and —
 just as importantly — what deliberately does **not** exist yet. Before this pass, HyperCool
@@ -86,42 +86,123 @@ fail exactly like the record never existed (a 404/`null`, never a distinguishabl
 but forbidden" response). One test runs the check through the real HTTP API with two real
 logged-in sessions — not just at the library-function level.
 
+## Phase 2 — Data isolation extended to 9 more tables + Agent/Event Bus tenant context
+
+Phase 2 audited all 24 remaining tables (see `docs/TENANT_SECURITY_MODEL.md` for the full
+classification) and migrated the ones that were both genuinely tenant-owned AND
+independently isolable without first solving the `state.content`/`state.audit` problem
+(see below). All nine follow the exact same optional-trailing-`tenantId` pattern as Phase 1
+— zero existing call sites broke, verified by running the full suite (281/281) after each
+table.
+
+- **`memory` (Brand Memory)** — `UNIQUE(key,version)` → `UNIQUE(tenant_id,key,version)`.
+- **`products` (Salla catalog) — critical bug fixed.** `replaceProducts()` used to run
+  `DELETE FROM products` with **no tenant filter at all**, then reinsert keyed only by
+  Salla's bare external product id. A second tenant syncing their own store would have
+  silently **wiped the first tenant's entire catalog**. Now scoped: `PRIMARY KEY
+  (tenant_id, id)`, delete scoped to `WHERE tenant_id=?`. Proven by a real HTTP test where
+  Tenant B syncs an empty catalog and Tenant A's products are confirmed still present.
+- **`agent_approvals`** — real `tenant_id`; a decision on another tenant's approval id now
+  404s exactly like it never existed.
+- **`agent_runs`** (+ `agent_tool_calls` transitively, via `run_id`) — every execution
+  resolves its tenant ONCE at the top of `AgentRuntime.run()` and threads it through the
+  run row, every tool call's `ctx.tenantId`, and every escalation the run creates.
+- **`agent_events`** — real `tenant_id` column (not just a payload field); `emit()` stamps
+  it from `payload.tenantId` when present, else the resolved default.
+- **`agent_escalations`** — same pattern; `maybeEscalateHotLead` and the STATUS_UNKNOWN
+  publish-reconciliation escalation both now carry the run's real tenant.
+- **`weekly_reports`**, **`daily_briefs`** — composite PK `(tenant_id, date/week_start)`
+  instead of a global PK. Their generated *contents* still partially aggregate from
+  `state.content`/`state.audit` (still global — see below), so the report **rows** no
+  longer collide across tenants, but a report's numbers are not yet a hard isolation
+  guarantee.
+- **`webhook_events`** — real `tenant_id` column, backfilled. Full routing (resolving which
+  tenant a delivery is *for* from the provider's own account/store/phone id, never the
+  payload's own claim) is not implemented — every delivery still resolves to the one real
+  tenant, which is correct today but not yet load-bearing for a genuine second tenant with
+  its own Salla/Meta connection.
+
+Cross-tenant HTTP E2E proof: `tests/tenancy-phase2.test.js` (4 tests) — two real tenants,
+two real logged-in sessions, verifying Tenant B cannot read Tenant A's brand memory, agent
+runs (list or direct-id fetch), approvals (list or decide), escalations (list or resolve),
+weekly reports, or product catalog (including the critical delete-bug proof above).
+
+## Phase 3 — Content and Audit both normalized to real SQL tables; Calendar/Scheduling isolated
+
+Phase 3 tackled both hard problems named above. `state.content` was migrated off the legacy
+JSON blob array onto a real `content_items` SQL table (`src/content.js`), following the
+exact same indexed-columns+json-blob pattern as `crm_leads`/`agent_approvals`. Every one of
+the ~24 call sites across `application.js`, `content-ops.js`, `generation.js`,
+`integration-ops.js`, `planning.js`, `reporting.js`, and `runtime/tools.js` was updated. See
+`docs/CONTENT_MIGRATION.md` for the full call-site table and verification record.
+
+`state.audit` (the Operations Log) was migrated the same way, onto a real `audit_logs` SQL
+table (`src/audit.js`). Every one of the ~30 call sites across `application.js`,
+`autonomy.js`, `compliance.js`, `content-ops.js`, `crm.js`'s own `audit()` helper,
+`generation.js`, `integration-ops.js`, `planning.js`'s own `audit()` helper,
+`reporting.js`, `runtime/tools.js`, and `sales-dashboard.js` was updated. See
+`docs/AUDIT_MIGRATION.md` for the full call-site table. While migrating it, two related
+fail-open gaps were discovered and fixed: `crm.js`'s `listFollowups`/`listAllMessages` and
+`reporting.js`/`sales-dashboard.js`'s unscoped `listLeads` calls had **no tenant filter at
+all** — a real second tenant would have seen every tenant's leads, follow-ups, and messages
+in the sales dashboard and weekly report. Both are now properly scoped.
+
+With content itself real and tenant-scoped, `calendar_slots` and `schedule_jobs` — which key
+off `content_id` — were also migrated in the same pass:
+`calendar_slots`'s `UNIQUE(date,platform)` table constraint was recreated as
+`UNIQUE(tenant_id,date,platform)` (a second tenant's calendar can no longer collide with the
+first's); `schedule_jobs` gained an additive `tenant_id` column (its partial unique index on
+`content_id` alone stays correct, since a `content_id` is already unique to one tenant).
+
+`src/runtime/orchestrator.js`'s event routing was also fixed to read back the real
+`tenantId` every stored event already carries and thread it into the agent run it triggers,
+closing the gap described in the old Phase 2 note about Frost-routed runs not being provably
+attributed to a specific tenant.
+
+Verified the same way as every prior migration: full suite (281/281) after each file, then
+against a real copy of the production database before being applied to the real file and the
+running server restarted and re-verified (`integrity_check: ok`, owner account intact) —
+done twice, once for the content+calendar/scheduling migration and once for the audit
+migration.
+
+With both hard problems solved, the single largest remaining gap before a second real
+tenant is safe is no longer a data-model problem — it's that tenant resolution is still
+fail-*open* everywhere (see "Fail-closed tenant resolution" below).
+
 ## What is deliberately NOT built yet
 
 This was an explicit, informed scoping decision (the owner chose "start with the safe
-foundation only" after seeing the true size of the full spec) — these are real, substantial
-next-phase items, not oversights:
+foundation only," then "data isolation + Control Center foundation" for Phase 2, then
+"fail-closed + Content/Audit normalization" for Phase 3, each time explicitly deferring the
+UI and the next-hardest piece) — these are real, substantial next-phase items, not
+oversights:
 
+- **Fail-closed tenant resolution** — every tenant-scoped function (Phase 1, 2, and 3 alike)
+  still defaults an omitted `tenantId` to `resolveActiveTenantId(db)` ("the one tenant that
+  exists"), not a hard `TENANT_CONTEXT_REQUIRED` failure. Safe today only because there is
+  genuinely no second tenant for a request to fall into by accident — see
+  `docs/TENANT_SECURITY_MODEL.md`'s "Fail-open vs. fail-closed" section.
+- **Conversations/Messages/Quotes/Follow-ups** — already effectively isolated: these live
+  inside `crm_leads`/`crm_messages`/`crm_followups`, reached only via a `lead_id` whose
+  owning lead is tenant-checked (Phase 1). "Quotes" specifically are fields on the lead
+  object itself (`quoteIntake`), not a separate entity.
+- **Notifications** — no dedicated notifications table exists in this codebase at all
+  (confirmed by the Phase 2 audit); real-time handoff/alerting is done via
+  `agent_escalations` (now tenant-scoped) and Operations Log (not yet, see above).
 - **Multiple named connections per integration** (spec Part 9: "2 Salla stores, 3 Meta
-  Pages"). Today a tenant can have exactly one connection per provider (a real improvement
-  over the old system-wide-one-connection limit, but not yet the full "Main Store / Riyadh
-  Store" multi-connection model).
-- **The Integration & Agent Control Center UI** (6 tabs: Integrations, Agent Connections,
-  AI Providers, Permissions & Policies, Testing & Health, Workspace Settings) — none of
-  this UI exists. Every capability above is real at the data/API layer; there is no
-  dashboard page yet for an owner to create a second tenant, connect its integrations, or
-  configure its agents without directly touching the database.
-- **Onboarding wizard, config export/import, company templates/cloning** (spec Parts
-  49-53) — not built. `createTenant()` exists and is tested but is not reachable from any
-  route yet.
-- **Per-tenant agent configuration** (`agent_registry`/`agent_autonomy` are still global —
-  one autonomy level and one provider/model override per agent, system-wide, not yet
-  per-tenant). A second tenant would currently share the first tenant's agent settings.
-- **Brand Memory, content, approvals, audit/events, schedule_jobs, webhook_events** are
-  still global (no `tenant_id` column). A second tenant's content/approvals/brand facts
-  would currently be visible to/mixed with the first tenant's.
-- **Webhook tenant routing** (spec Part 60-61): inbound Salla/Meta/Microsoft webhooks still
-  resolve to "the" single active tenant, not a specific tenant identified by the provider
-  account id in the payload — because only one tenant can hold a given provider connection
-  in practice until a real Control Center lets a second tenant connect its own.
-- **Scheduler/queue tenant loop** (spec Part 62-63): `tick()` still runs once globally
-  (there is still no queue in this codebase at all, tenant-aware or otherwise) rather than
-  once per tenant.
-- **Cache/storage isolation** (spec Part 65-66): not applicable yet — no cache layer or
-  file storage exists in this codebase.
-- **Platform Super Admin role** (spec Part 58-59): not built — there is no cross-tenant
-  view of any kind today, by omission rather than by an enforced boundary (since only one
-  tenant is reachable from any real route regardless).
+  Pages"). Today a tenant can have exactly one connection per provider.
+- **The Integration & Agent Control Center UI** — no dashboard page exists yet for an owner
+  to create a second tenant, connect its integrations, or configure its agents without
+  directly touching the database. Deliberately deferred again this pass, per the explicit
+  instruction to finish data isolation before building UI.
+- **Onboarding wizard, config export/import, company templates/cloning** — `createTenant()`
+  exists and is tested (creates an empty tenant + owner membership, copies zero business
+  data) but is not reachable from any route yet.
+- **Per-tenant agent configuration** (`agent_registry`/`agent_autonomy` remain global — one
+  autonomy level and one provider/model override per agent, system-wide). A second tenant
+  would currently share the first tenant's agent enable/model/autonomy settings. This is a
+  genuine design decision, not a mechanical fix (see `docs/TENANT_SECURITY_MODEL.md`).
+- **Webhook tenant routing**, **scheduler/queue tenant loop**, **cache/storage isolation**,
+  **Platform Super Admin role** — unchanged from Phase 1's assessment; still not built.
 
-None of the above were silently skipped — each is a real, scoped, buildable next phase once
-the Control Center UI itself is greenlit.
+None of the above were silently skipped — each is a real, scoped, buildable next phase.

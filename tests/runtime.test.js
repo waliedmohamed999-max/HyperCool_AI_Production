@@ -18,6 +18,8 @@ import {installCredentials} from '../src/runtime/credentials.js';
 import {createLLMProvider} from '../src/runtime/llmProvider.js';
 import {promotionEligibility} from '../src/runtime/permissions.js';
 import {normalizeSallaProduct} from '../src/connectors.js';
+import {installContent} from '../src/content.js';
+import {installAuditLog} from '../src/audit.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
 const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model'};
@@ -27,7 +29,7 @@ function fixture(){
  installKnowledge(store.db);installCRM(store.db);installPlanning(store.db);installCompliance(store.db);
  installAutonomy(store.db);installReporting(store.db);installRegistry(store.db);installRuntimeTables(store.db);
  installEvents(store.db);installApprovals(store.db);installEscalations(store.db);installGate(store.db);
- installCredentials(store.db);
+ installCredentials(store.db);installContent(store.db);installAuditLog(store.db);
  seedRegistry(store.db);
  return store;
 }

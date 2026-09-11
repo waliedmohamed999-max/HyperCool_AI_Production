@@ -7,11 +7,13 @@ import {installAutonomy,setAutonomy} from '../src/autonomy.js';
 import {installCRM,createLead} from '../src/crm.js';
 import {installReporting,buildWeeklyReport,saveWeeklyReport,listWeeklyReports,currentWeekStart} from '../src/reporting.js';
 import {createContent} from '../src/domain.js';
+import {installContent,insertContent} from '../src/content.js';
+import {installAuditLog,listAuditLog} from '../src/audit.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
 function fixture(){
  const store=openStore(':memory:');
- installPlanning(store.db);installCompliance(store.db);installAutonomy(store.db);installCRM(store.db);installReporting(store.db);
+ installPlanning(store.db);installCompliance(store.db);installAutonomy(store.db);installCRM(store.db);installReporting(store.db);installContent(store.db);installAuditLog(store.db);
  return store;
 }
 
@@ -26,11 +28,9 @@ test('a week must start on a Sunday and rejects non-Sunday dates',()=>{
 test('report only counts content whose planned date falls inside the week window',()=>{
  const store=fixture();
  try{
-  store.mutate(state=>{
-   state.content.unshift({...createContent({title:'In week',body:'x',platform:'X',date:'2026-09-08',url:'https://hyper-cool.com/offers'}),status:'DRAFT'});
-   state.content.unshift({...createContent({title:'Before week',body:'x',platform:'X',date:'2026-09-06',url:'https://hyper-cool.com/offers'}),status:'DRAFT'});
-   state.content.unshift({...createContent({title:'After week',body:'x',platform:'X',date:'2026-09-13',url:'https://hyper-cool.com/offers'}),status:'DRAFT'});
-  });
+  insertContent(store.db,{...createContent({title:'In week',body:'x',platform:'X',date:'2026-09-08',url:'https://hyper-cool.com/offers'}),status:'DRAFT'});
+  insertContent(store.db,{...createContent({title:'Before week',body:'x',platform:'X',date:'2026-09-06',url:'https://hyper-cool.com/offers'}),status:'DRAFT'});
+  insertContent(store.db,{...createContent({title:'After week',body:'x',platform:'X',date:'2026-09-13',url:'https://hyper-cool.com/offers'}),status:'DRAFT'});
   const report=buildWeeklyReport(store,'2026-09-06');
   assert.equal(report.weekStart,'2026-09-06');assert.equal(report.weekEnd,'2026-09-13');
   assert.equal(report.content.total,2);
@@ -63,7 +63,7 @@ test('saving a weekly report is idempotent per week and logs to audit',()=>{
   const second=saveWeeklyReport(store,weekStart,user);
   assert.equal(second.replayed,true);
   assert.equal(listWeeklyReports(store.db).length,1);
-  assert.equal(store.read().audit[0].action,'WEEKLY_REPORT_CREATED');
+  assert.equal(listAuditLog(store.db)[0].action,'WEEKLY_REPORT_CREATED');
  }finally{store.close();}
 });
 

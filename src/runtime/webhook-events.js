@@ -1,26 +1,46 @@
 import {randomUUID,createHmac} from 'node:crypto';
+import {resolveActiveTenantId} from '../tenancy.js';
 
 // Generic inbound-webhook ledger shared by every provider (Salla today, Meta/WhatsApp
 // now) — one table, one idempotency mechanism, never a second copy per provider. `source`
 // distinguishes providers; `external_event_id` is unique PER source, so the same id from
 // two different providers can never collide.
+//
+// Multi-Tenant Phase 2 (spec Part 18): a real `tenant_id` column exists and is backfilled,
+// but FULL webhook-to-tenant ROUTING (resolving which tenant a delivery belongs to from the
+// provider's own account/store/phone-number id — never trusting the payload's own claim of
+// who it's for) is NOT implemented this pass: today's `integration_credentials` model still
+// allows only one connection per provider per tenant with no lookup-by-external-account-id
+// helper yet, so every delivery resolves to the one real tenant that exists (correct today,
+// not yet load-bearing for a genuine second tenant with its own Salla/Meta connection — see
+// docs/MULTI_TENANT_ARCHITECTURE.md).
 export function installWebhookEvents(db) {
- db.exec(`CREATE TABLE IF NOT EXISTS webhook_events (
-  id TEXT PRIMARY KEY, source TEXT NOT NULL, external_event_id TEXT NOT NULL, type TEXT NOT NULL,
-  payload TEXT NOT NULL, status TEXT NOT NULL, received_at TEXT NOT NULL, processed_at TEXT, error TEXT,
-  UNIQUE(source,external_event_id)
- );`);
+ const legacy=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='webhook_events'").get();
+ if(legacy) {
+  const columns=db.prepare('PRAGMA table_info(webhook_events)').all().map(c=>c.name);
+  if(!columns.includes('tenant_id'))db.exec('ALTER TABLE webhook_events ADD COLUMN tenant_id TEXT');
+ } else {
+  db.exec(`CREATE TABLE IF NOT EXISTS webhook_events (
+   id TEXT PRIMARY KEY, tenant_id TEXT, source TEXT NOT NULL, external_event_id TEXT NOT NULL, type TEXT NOT NULL,
+   payload TEXT NOT NULL, status TEXT NOT NULL, received_at TEXT NOT NULL, processed_at TEXT, error TEXT,
+   UNIQUE(source,external_event_id)
+  );`);
+ }
+ db.exec('CREATE INDEX IF NOT EXISTS idx_webhook_events_tenant ON webhook_events(tenant_id);');
+ const unresolved=db.prepare('SELECT COUNT(*) n FROM webhook_events WHERE tenant_id IS NULL').get().n;
+ if(unresolved>0)db.prepare('UPDATE webhook_events SET tenant_id=? WHERE tenant_id IS NULL').run(resolveActiveTenantId(db));
 }
-export function listWebhookEvents(db,{source,limit=50}={}) {
- return source?db.prepare('SELECT * FROM webhook_events WHERE source=? ORDER BY received_at DESC LIMIT ?').all(source,limit)
-  :db.prepare('SELECT * FROM webhook_events ORDER BY received_at DESC LIMIT ?').all(limit);
+export function listWebhookEvents(db,{source,limit=50}={},tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ return source?db.prepare('SELECT * FROM webhook_events WHERE source=? AND tenant_id=? ORDER BY received_at DESC LIMIT ?').all(source,resolvedTenantId,limit)
+  :db.prepare('SELECT * FROM webhook_events WHERE tenant_id=? ORDER BY received_at DESC LIMIT ?').all(resolvedTenantId,limit);
 }
 // Stores one delivery, ignoring it (changes===0) if this exact (source, externalEventId)
 // was already recorded — the redelivery-safe core every webhook route builds on.
-export function storeWebhookEvent(db,{source,externalEventId,type,payload}) {
- const row={id:randomUUID(),source,externalEventId,type,payload:JSON.stringify(payload),status:'RECEIVED',receivedAt:new Date().toISOString()};
- const result=db.prepare('INSERT OR IGNORE INTO webhook_events (id,source,external_event_id,type,payload,status,received_at) VALUES (?,?,?,?,?,?,?)')
-  .run(row.id,row.source,row.externalEventId,row.type,row.payload,row.status,row.receivedAt);
+export function storeWebhookEvent(db,{source,externalEventId,type,payload,tenantId=null}) {
+ const row={id:randomUUID(),tenantId:tenantId||resolveActiveTenantId(db),source,externalEventId,type,payload:JSON.stringify(payload),status:'RECEIVED',receivedAt:new Date().toISOString()};
+ const result=db.prepare('INSERT OR IGNORE INTO webhook_events (id,tenant_id,source,external_event_id,type,payload,status,received_at) VALUES (?,?,?,?,?,?,?,?)')
+  .run(row.id,row.tenantId,row.source,row.externalEventId,row.type,row.payload,row.status,row.receivedAt);
  return {stored:result.changes>0,id:row.id};
 }
 export function markWebhookEventProcessed(db,id,status,error=null) {

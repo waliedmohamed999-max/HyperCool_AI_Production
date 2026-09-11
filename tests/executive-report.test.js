@@ -9,11 +9,13 @@ import {installAutonomy} from '../src/autonomy.js';
 import {installReporting,saveWeeklyReport,listWeeklyReports,
  computeComparison,computeSalesFunnel,computePipeline,computeAgentMetrics,
  computeApprovalsAndRisks,computeMarketSignals,computeQuickSummary,buildExecutiveReport} from '../src/reporting.js';
+import {installContent} from '../src/content.js';
+import {installAuditLog} from '../src/audit.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
 function fixture(){
  const store=openStore(':memory:');
- installKnowledge(store.db);installCRM(store.db);installPlanning(store.db);installCompliance(store.db);installAutonomy(store.db);installReporting(store.db);
+ installKnowledge(store.db);installCRM(store.db);installPlanning(store.db);installCompliance(store.db);installAutonomy(store.db);installReporting(store.db);installContent(store.db);installAuditLog(store.db);
  return store;
 }
 const sunday='2026-09-06';

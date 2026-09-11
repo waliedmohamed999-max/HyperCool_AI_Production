@@ -106,8 +106,9 @@ export function saveCredentials(db,env,provider,{accessToken,refreshToken,expire
 // the server-side code that actually needs to make an authenticated API call — never by
 // any route that returns JSON to the browser (see getCredentialsMeta for the safe, public shape).
 export function getCredentials(db,env,provider,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
  let row;
- try {row=db.prepare('SELECT * FROM integration_credentials WHERE provider=? AND tenant_id=?').get(provider,tenantId||resolveActiveTenantId(db));}
+ try {row=db.prepare('SELECT * FROM integration_credentials WHERE provider=? AND tenant_id=?').get(provider,resolvedTenantId);}
  catch {return null;}
  if(!row)return null;
  const key=encryptionKey(env);
@@ -130,8 +131,9 @@ export function getCredentialsMeta(db,provider,tenantId=null) {
  // a future call site that only needs the OTHER tables this module doesn't own) — "no
  // credentials table" and "no credentials for this provider" are the same answer to any
  // caller: not connected, never a crash.
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
  let row;
- try {row=db.prepare('SELECT provider,expires_at,scopes,external_account_id,metadata,connected_by_name,connected_at,updated_at FROM integration_credentials WHERE provider=? AND tenant_id=?').get(provider,tenantId||resolveActiveTenantId(db));}
+ try {row=db.prepare('SELECT provider,expires_at,scopes,external_account_id,metadata,connected_by_name,connected_at,updated_at FROM integration_credentials WHERE provider=? AND tenant_id=?').get(provider,resolvedTenantId);}
  catch {return null;}
  if(!row)return null;
  return {provider:row.provider,expiresAt:row.expires_at,scopes:row.scopes?JSON.parse(row.scopes):[],externalAccountId:row.external_account_id,metadata:row.metadata?JSON.parse(row.metadata):null,connectedByName:row.connected_by_name,connectedAt:row.connected_at,updatedAt:row.updated_at};

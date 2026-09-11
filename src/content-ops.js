@@ -4,6 +4,9 @@
 // machine), planning.js (schedule_jobs) and compliance.js (compliance_runs)
 // already persist and validate. Kept pure (arrays/maps in, plain objects out)
 // so it never needs to import server.js or the runtime layer.
+import {listContent} from './content.js';
+import {listJobs} from './planning.js';
+import {listAuditLog} from './audit.js';
 const DAY_MS=86400000;
 const ACTIVE_JOB_STATUSES=['SCHEDULED','READY_FOR_CONNECTOR'];
 
@@ -96,16 +99,17 @@ export function computeFrostContentInsights(content,jobs,issues,now=Date.now()) 
  if(missingCreative.length)bullets.push({text:`${missingCreative.length} عنصر معتمد أو بانتظار الاعتماد بدون أصل بصري`,severity:'LOW'});
  return {generatedAt:new Date(now).toISOString(),bullets,hasData:content.length>0};
 }
-export function buildContentWorkspace(store,{complianceByContent}) {
- const state=store.read();
- const jobs=store.db.prepare('SELECT json FROM schedule_jobs ORDER BY scheduled_at DESC').all().map(row=>JSON.parse(row.json));
+export function buildContentWorkspace(store,{complianceByContent,tenantId=null}) {
+ const content=listContent(store.db,tenantId);
+ const jobs=listJobs(store.db,tenantId);
+ const audit=listAuditLog(store.db,{tenantId});
  const flaggedIds=new Set([...complianceByContent].filter(([,run])=>run.status==='COMPLETED'&&['BLOCK','PASS_WITH_EDITS'].includes(run.decision.payload?.classification)).map(([id])=>id));
- const issues=computeComplianceIssues(complianceByContent,state.content);
+ const issues=computeComplianceIssues(complianceByContent,content);
  return {
-  kpis:computeContentKPIs(state.content,jobs,flaggedIds),
-  pipeline:computeContentPipeline(state.content,jobs,state.audit,complianceByContent),
+  kpis:computeContentKPIs(content,jobs,flaggedIds),
+  pipeline:computeContentPipeline(content,jobs,audit,complianceByContent),
   complianceIssues:issues,
-  library:computeContentLibrary(state.content,jobs,state.audit),
-  frostInsights:computeFrostContentInsights(state.content,jobs,issues)
+  library:computeContentLibrary(content,jobs,audit),
+  frostInsights:computeFrostContentInsights(content,jobs,issues)
  };
 }

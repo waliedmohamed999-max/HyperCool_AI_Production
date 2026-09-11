@@ -14,6 +14,8 @@ import {installApprovals} from '../src/runtime/approvals.js';
 import {installEscalations} from '../src/runtime/escalations.js';
 import {installGate,setPaused,isPaused} from '../src/runtime/gate.js';
 import {createScheduler,sweepFollowupGaps} from '../src/runtime/scheduler.js';
+import {installContent} from '../src/content.js';
+import {installAuditLog} from '../src/audit.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
 const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model'};
@@ -22,7 +24,7 @@ function fixture(){
  const store=openStore(':memory:');
  installKnowledge(store.db);installCRM(store.db);installPlanning(store.db);installCompliance(store.db);
  installAutonomy(store.db);installReporting(store.db);installRegistry(store.db);installRuntimeTables(store.db);
- installEvents(store.db);installApprovals(store.db);installEscalations(store.db);installGate(store.db);
+ installEvents(store.db);installApprovals(store.db);installEscalations(store.db);installGate(store.db);installContent(store.db);installAuditLog(store.db);
  seedRegistry(store.db);
  return store;
 }

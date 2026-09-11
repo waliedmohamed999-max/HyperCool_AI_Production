@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {openStore} from '../src/store.js';
 import {installAutonomy,currentAutonomy,setAutonomy,listAutonomyLog,levels} from '../src/autonomy.js';
+import {installAuditLog,listAuditLog} from '../src/audit.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
-function fixture(){const store=openStore(':memory:');installAutonomy(store.db);return store;}
+function fixture(){const store=openStore(':memory:');installAutonomy(store.db);installAuditLog(store.db);return store;}
 
 test('every agent defaults to L0 with no history',()=>{
  const store=fixture();
@@ -41,7 +42,7 @@ test('demotion can drop more than one level as an immediate safety valve and is 
   const demoted=setAutonomy(store,'publishing',{level:'L0',reason:'compliance breach detected',expectedVersion:2},user);
   assert.equal(demoted.direction,'DEMOTED');assert.equal(demoted.level,'L0');
   assert.equal(currentAutonomy(store.db).publishing.level,'L0');
-  const audit=store.read().audit;
+  const audit=listAuditLog(store.db);
   assert.equal(audit[0].action,'AGENT_DEMOTED');
   assert.equal(audit.filter(entry=>entry.action==='AGENT_PROMOTED').length,2);
  }finally{store.close();}

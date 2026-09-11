@@ -2,6 +2,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {fail} from './auth.js';
 import {createEscalation} from './runtime/escalations.js';
 import {resolveActiveTenantId} from './tenancy.js';
+import {recordAudit} from './audit.js';
 
 export const stages=['NEW','QUALIFIED','QUOTE_SENT','DEMO','POST_PURCHASE','PARKED','WON','LOST'];
 export const sequences={
@@ -64,15 +65,19 @@ const string=(value,max=200)=>typeof value==='string'?value.trim().slice(0,max):
 function required(value,label,max=200){if(typeof value!=='string'||!value.trim()||value.length>max)fail(400,`الحقل مطلوب أو طويل: ${label}`);return value.trim();}
 function iso(value,label){if(typeof value!=='string'||!/(Z|[+-]\d{2}:\d{2})$/.test(value)||!Number.isFinite(Date.parse(value)))fail(400,`تاريخ غير صالح: ${label}`);return new Date(value).toISOString();}
 function link(value,storeOnly=false){let url;try{url=new URL(value);}catch{fail(400,'رابط غير صالح');}if(url.protocol!=='https:'||url.username||url.password||(storeOnly&&url.hostname!=='hyper-cool.com'))fail(400,'استخدم رابط HTTPS صحيحًا'+(storeOnly?' من متجر HyperCool':''));return url.href;}
-function audit(state,action,id,user){state.audit.unshift({id:randomUUID(),action,itemId:id,actorId:user.id,actorName:user.name,actorRole:user.role,at:new Date().toISOString()});}
+function audit(db,action,id,user,tenantId=null){recordAudit(db,{id:randomUUID(),action,itemId:id,actorId:user.id,actorName:user.name,actorRole:user.role,at:new Date().toISOString()},tenantId);}
 function writeLead(db,lead){db.prepare('UPDATE crm_leads SET json=? WHERE id=?').run(JSON.stringify(lead),lead.id);}
 // `tenantId` defaults to the one real tenant that exists today (see installCRM's docblock
 // above) — a lead belonging to a DIFFERENT tenant 404s exactly like one that never existed,
 // never a distinguishable error that would let a caller detect "it exists but isn't mine".
 export function getLead(db,id,tenantId=null){if(typeof id!=='string')fail(400,'معرف العميل مطلوب');const row=db.prepare('SELECT json FROM crm_leads WHERE id=? AND tenant_id=?').get(id,tenantId||resolveActiveTenantId(db));if(!row)fail(404,'العميل غير موجود');return JSON.parse(row.json);}
 export function listLeads(db,tenantId=null){return db.prepare('SELECT json FROM crm_leads WHERE tenant_id=? ORDER BY rowid DESC').all(tenantId||resolveActiveTenantId(db)).map(row=>JSON.parse(row.json));}
-export function listFollowups(db){return db.prepare('SELECT json FROM crm_followups ORDER BY due_at').all().map(row=>JSON.parse(row.json));}
-export function listAllMessages(db,limit=500){return db.prepare('SELECT json FROM crm_messages ORDER BY rowid DESC LIMIT ?').all(limit).map(row=>JSON.parse(row.json));}
+// `crm_followups`/`crm_messages` deliberately have no `tenant_id` column of their own (see
+// the SHARED_SAFE-via-transitive-`lead_id` design note above) — these two list functions
+// still need to honor tenant scope for a genuine second tenant, so they join through the
+// owning lead rather than adding a redundant column.
+export function listFollowups(db,tenantId=null){return db.prepare('SELECT cf.json FROM crm_followups cf JOIN crm_leads cl ON cl.id=cf.lead_id WHERE cl.tenant_id=? ORDER BY cf.due_at').all(tenantId||resolveActiveTenantId(db)).map(row=>JSON.parse(row.json));}
+export function listAllMessages(db,limit=500,tenantId=null){return db.prepare('SELECT cm.json FROM crm_messages cm JOIN crm_leads cl ON cl.id=cm.lead_id WHERE cl.tenant_id=? ORDER BY cm.rowid DESC LIMIT ?').all(tenantId||resolveActiveTenantId(db),limit).map(row=>JSON.parse(row.json));}
 // Single source of truth for lead search — used by the REST endpoint and by the
 // search_crm agent tool alike, so the two never drift apart.
 export function searchLeads(db,query,limit=20,tenantId=null){
@@ -80,7 +85,7 @@ export function searchLeads(db,query,limit=20,tenantId=null){
  if(!q)return [];
  return listLeads(db,tenantId).filter(lead=>[lead.name,lead.company,lead.phone,lead.email,lead.productNeed,lead.id].some(value=>value&&String(value).toLowerCase().includes(q))).slice(0,limit);
 }
-export function leadDetail(db,id,tenantId=null){const lead=getLead(db,id,tenantId);return {lead,messages:db.prepare('SELECT json FROM crm_messages WHERE lead_id=? ORDER BY rowid').all(id).map(row=>JSON.parse(row.json)),followups:listFollowups(db).filter(f=>f.leadId===id),handoff:handoff(lead),quoteIntake:quoteIntake(lead)};}
+export function leadDetail(db,id,tenantId=null){const lead=getLead(db,id,tenantId);return {lead,messages:db.prepare('SELECT json FROM crm_messages WHERE lead_id=? ORDER BY rowid').all(id).map(row=>JSON.parse(row.json)),followups:listFollowups(db,tenantId).filter(f=>f.leadId===id),handoff:handoff(lead),quoteIntake:quoteIntake(lead)};}
 function quoteIntake(lead){const required=['name','city','productNeed','quantity','timeline',...(lead.customerType==='B2B'?['company']:[])];const missingFields=required.filter(field=>!lead[field]);if(!lead.email&&!lead.phone)missingFields.push('contact');return {status:missingFields.length?'NEEDS_DATA':'READY_FOR_HUMAN_QUOTE',missingFields,pricingVerified:false,quoteCreated:false};}
 function handoff(lead){return {leadId:lead.id,company:lead.company||null,need:lead.productNeed||null,city:lead.city||null,quantity:lead.quantity,timeline:lead.timeline||null,assignedTo:lead.assignedTo,temperature:lead.temperature,reason:lead.handoffReason||null,nextAction:lead.humanHold?'HUMAN_REVIEW':lead.temperature==='HOT'?'CONTACT_LEAD':'QUALIFY'};}
 function qualification(input){
@@ -115,7 +120,7 @@ export function createLead(store,input,user,tenantId=null){
   if(duplicate)fail(409,'وسيلة التواصل موجودة في سجل عميل سابق');
   const lead={id:randomUUID(),name,company,customerType:input.customerType,sourceType:input.sourceType,email,phone,research,...qualification(input),stage:'NEW',temperature:'COLD',consent:{Email:null,WhatsApp:null},optOut:false,humanHold:false,replyHold:false,handoffReason:null,assignedTo:null,version:1,createdAt:new Date().toISOString(),createdBy:user.id,nextCheckAt:null};
   if(lead.valueSAR>100000){lead.humanHold=true;lead.handoffReason='HIGH_VALUE_DEAL';}
-  store.db.prepare('INSERT INTO crm_leads (id,tenant_id,contact_key,json) VALUES (?,?,?,?)').run(lead.id,resolvedTenantId,email?'email:'+email:phone?'phone:'+phone:null,JSON.stringify(lead));audit(state,'CRM_LEAD_CREATED',lead.id,user);return lead;
+  store.db.prepare('INSERT INTO crm_leads (id,tenant_id,contact_key,json) VALUES (?,?,?,?)').run(lead.id,resolvedTenantId,email?'email:'+email:phone?'phone:'+phone:null,JSON.stringify(lead));audit(store.db,'CRM_LEAD_CREATED',lead.id,user,resolvedTenantId);return lead;
  });
 }
 function stopFollowups(db,leadId,reason){
@@ -134,7 +139,7 @@ export function updateLead(store,id,input,user,tenantId=null){return store.mutat
  if(input.assignedTo){const assigned=store.db.prepare("SELECT id FROM users WHERE id=? AND role IN ('owner','operator')").get(input.assignedTo);if(!assigned)fail(400,'مسؤول المبيعات غير موجود');lead.assignedTo=assigned.id;}else lead.assignedTo=null;
  if(lead.valueSAR>100000){lead.humanHold=true;lead.handoffReason='HIGH_VALUE_DEAL';}
  lead.version++;lead.updatedAt=new Date().toISOString();lead.lastChangeReason=reason;
- writeLead(store.db,lead);stopFollowups(store.db,id,'LEAD_CHANGED');audit(state,'CRM_LEAD_UPDATED',id,user);return lead;
+ writeLead(store.db,lead);stopFollowups(store.db,id,'LEAD_CHANGED');audit(store.db,'CRM_LEAD_UPDATED',id,user,tenantId);return lead;
 });}
 // Shared with recordChannelMessage below — a webhook-ingested "stop"/"unsubscribe" message
 // must be detected by the exact same rule as a manually-entered one, never a second,
@@ -156,7 +161,7 @@ export function recordMessage(store,id,input,user){
   if(optOut){lead.optOut=true;lead.optOutAt=message.recordedAt;lead.consent={Email:null,WhatsApp:null};}
   if(input.intent==='quote')lead.temperature='HOT';
   if(['medical','complaint','legal','discount_exception'].includes(input.intent)){lead.humanHold=true;lead.handoffReason=input.intent.toUpperCase();}
-  writeLead(store.db,lead);stopFollowups(store.db,id,optOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(state,'CRM_INBOUND_RECORDED',id,user);return {...message,optedOut:optOut};
+  writeLead(store.db,lead);stopFollowups(store.db,id,optOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(store.db,'CRM_INBOUND_RECORDED',id,user);return {...message,optedOut:optOut};
  });
 }
 // --- Channel/webhook-driven messaging (WhatsApp/Instagram/Facebook) ---------------------
@@ -193,7 +198,7 @@ export function findOrCreateLeadFromChannel(store,{phone,email,name,channel},act
   const contactKey=normalizedEmail?'email:'+normalizedEmail:phone?'phone:'+phone:null;
   const lead={id:randomUUID(),name:string(name,200)||normalizedEmail||phone||'عميل جديد',company:'',customerType:'B2C',sourceType:'INBOUND',email:normalizedEmail||'',phone:phone||'',research:null,city:'',productNeed:'',productUrl:'',quantity:null,valueSAR:null,timeline:'',budgetBand:'',stage:'NEW',temperature:'COLD',consent:{Email:null,WhatsApp:null},optOut:false,humanHold:false,replyHold:false,handoffReason:null,assignedTo:null,version:1,createdAt:new Date().toISOString(),createdBy:actor.id,channelOrigin:channel,nextCheckAt:null};
   store.db.prepare('INSERT INTO crm_leads (id,tenant_id,contact_key,json) VALUES (?,?,?,?)').run(lead.id,resolvedTenantId,contactKey,JSON.stringify(lead));
-  audit(state,'CRM_LEAD_CREATED',lead.id,actor);
+  audit(store.db,'CRM_LEAD_CREATED',lead.id,actor,resolvedTenantId);
   return {lead,created:true};
  });
 }
@@ -225,7 +230,7 @@ export function recordChannelMessage(store,{leadId,channel,direction,text,extern
   if(direction==='INBOUND'){
    lead.version++;lead.lastInboundAt=message.recordedAt;lead.replyHold=true;
    if(isOptOutText(text)){lead.optOut=true;lead.optOutAt=message.recordedAt;lead.consent={Email:null,WhatsApp:null};optedOut=true;}
-   writeLead(store.db,lead);stopFollowups(store.db,leadId,optedOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(state,'CRM_INBOUND_RECORDED',leadId,actor);
+   writeLead(store.db,lead);stopFollowups(store.db,leadId,optedOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(store.db,'CRM_INBOUND_RECORDED',leadId,actor);
   } else {
    lead.lastOutboundAt=message.recordedAt;writeLead(store.db,lead);
   }
@@ -256,11 +261,11 @@ export function updateMessageStatus(store,externalMessageId,status,{errorCode=nu
  * via the UI, or an agent via its own update_lead tool call) gets the exact same real
  * escalation/notification — this never second-guesses the temperature decision itself.
  */
-export function maybeEscalateHotLead(store,eventBus,before,after,{agentId='human',runId=null}={}){
+export function maybeEscalateHotLead(store,eventBus,before,after,{agentId='human',runId=null,tenantId=null}={}){
  if(after.temperature!=='HOT'||before.temperature==='HOT')return null;
- const eventId=eventBus?.emit('LEAD_HOT',{leadId:after.id,agentId});
+ const eventId=eventBus?.emit('LEAD_HOT',{leadId:after.id,agentId,tenantId});
  const reason=`فرصة ساخنة: ${after.name}${after.company?' — '+after.company:''} — ${after.productNeed||'بدون تفاصيل احتياج'}`;
- const escalation=createEscalation(store.db,{runId,agentId,priority:'P1',reason,
+ const escalation=createEscalation(store.db,{runId,agentId,priority:'P1',reason,tenantId,
   context:{leadId:after.id,company:after.company||null,productNeed:after.productNeed||null,city:after.city||null,quantity:after.quantity,timeline:after.timeline||null,customerType:after.customerType,recommendedAction:'CONTACT_LEAD'}});
  return {eventId,escalation};
 }
@@ -282,7 +287,7 @@ export function contactControl(store,id,input,user){return store.mutate(state=>{
   stopFollowups(store.db,id,'CONTACT_POLICY_CHANGED');
  }
  if(input.action==='OPT_OUT')lead.optOutAt=new Date().toISOString();
- lead.version++;writeLead(store.db,lead);audit(state,'CRM_CONTACT_POLICY_CHANGED',id,user);return lead;
+ lead.version++;writeLead(store.db,lead);audit(store.db,'CRM_CONTACT_POLICY_CHANGED',id,user);return lead;
 });}
 function eligibility(lead,channel,sequence){
  if(lead.optOut)return 'OPT_OUT';if(!lead.consent[channel])return 'NO_CONSENT';
@@ -305,7 +310,7 @@ export function createFollowups(store,id,input,user){
   if(store.db.prepare("SELECT id FROM crm_followups WHERE lead_id=? AND status IN ('DRAFT','APPROVED','READY_FOR_CHANNEL') LIMIT 1").get(id))fail(409,'توجد سلسلة متابعة نشطة لهذا العميل');
   const items=sequences[sequence].touches.map(([ar,en],i)=>({id:randomUUID(),leadId:id,sequence,channel,touch:i+1,maxTouches:3,dueAt:new Date(Date.parse(start)+[0,48,120][i]*3600000).toISOString(),messageAr:ar+'\n'+lead.productUrl,messageEn:en+'\n'+lead.productUrl,evidence,leadVersion:lead.version,status:'DRAFT',approval:null,holdReason:null,createdBy:user.id,createdAt:new Date().toISOString()}));
   for(const item of items)store.db.prepare('INSERT INTO crm_followups VALUES (?,?,?,?,?)').run(item.id,id,item.status,item.dueAt,JSON.stringify(item));
-  const result={items};store.db.prepare('INSERT INTO crm_requests VALUES (?,?,?)').run(key,fingerprint,JSON.stringify(result));audit(state,'CRM_FOLLOWUPS_DRAFTED',id,user);return result;
+  const result={items};store.db.prepare('INSERT INTO crm_requests VALUES (?,?,?)').run(key,fingerprint,JSON.stringify(result));audit(store.db,'CRM_FOLLOWUPS_DRAFTED',id,user);return result;
  });
 }
 function followupHash(item){return createHash('sha256').update(JSON.stringify([item.messageAr,item.messageEn,item.dueAt,item.channel,item.leadVersion,item.sequence,item.touch])).digest('hex');}
@@ -314,7 +319,7 @@ export function approveFollowup(store,id,user){return store.mutate(state=>{
  if(item.status!=='DRAFT')fail(409,'يمكن اعتماد مسودة متابعة فقط');
  const reason=eligibility(lead,item.channel,item.sequence);if(reason||lead.version!==item.leadVersion)fail(409,'السياق تغير أو المتابعة موقوفة: '+(reason||'LEAD_CHANGED'));
  item.status='APPROVED';item.approval={userId:user.id,at:new Date().toISOString(),hash:followupHash(item)};
- store.db.prepare('UPDATE crm_followups SET status=?,json=? WHERE id=?').run(item.status,JSON.stringify(item),id);audit(state,'CRM_FOLLOWUP_APPROVED',id,user);return item;
+ store.db.prepare('UPDATE crm_followups SET status=?,json=? WHERE id=?').run(item.status,JSON.stringify(item),id);audit(store.db,'CRM_FOLLOWUP_APPROVED',id,user);return item;
 });}
 export function prepareFollowups(store,user,now=Date.now()){return store.mutate(state=>{
  let ready=0,held=0;
@@ -322,8 +327,8 @@ export function prepareFollowups(store,user,now=Date.now()){return store.mutate(
   const item=JSON.parse(row.json),lead=getLead(store.db,item.leadId);
   const reason=eligibility(lead,item.channel,item.sequence)||(lead.version!==item.leadVersion?'LEAD_CHANGED':null)||(!item.approval?.userId||item.approval.hash!==followupHash(item)?'APPROVAL_CHANGED':null);
   const status=reason?'HOLD':'READY_FOR_CHANNEL';if(reason)held++;else ready++;
-  if(status!==item.status){item.status=status;item.holdReason=reason||'CHANNEL_NOT_CONNECTED';if(reason)item.approval=null;store.db.prepare('UPDATE crm_followups SET status=?,json=? WHERE id=?').run(status,JSON.stringify(item),item.id);audit(state,'CRM_FOLLOWUP_PREPARED',item.id,user);}
+  if(status!==item.status){item.status=status;item.holdReason=reason||'CHANNEL_NOT_CONNECTED';if(reason)item.approval=null;store.db.prepare('UPDATE crm_followups SET status=?,json=? WHERE id=?').run(status,JSON.stringify(item),item.id);audit(store.db,'CRM_FOLLOWUP_PREPARED',item.id,user);}
  }
  return {ready,held,sent:0};
 });}
-export function cancelFollowups(store,id,user){return store.mutate(state=>{getLead(store.db,id);stopFollowups(store.db,id,'HUMAN_CANCELLED');audit(state,'CRM_FOLLOWUPS_STOPPED',id,user);return {stopped:true};});}
+export function cancelFollowups(store,id,user){return store.mutate(()=>{getLead(store.db,id);stopFollowups(store.db,id,'HUMAN_CANCELLED');audit(store.db,'CRM_FOLLOWUPS_STOPPED',id,user);return {stopped:true};});}

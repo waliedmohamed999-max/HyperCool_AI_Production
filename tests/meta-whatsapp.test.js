@@ -12,6 +12,7 @@ import {handleVerificationChallenge,verifyMetaSignature,normalizeWhatsAppWebhook
 import {metaOAuthConfigured,createMetaAuthorizeUrl,consumeMetaState,exchangeCodeAndResolveAssets,saveMetaConnection,resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from '../src/runtime/meta-oauth.js';
 import {publishToInstagram,publishToFacebook,alreadyPublished} from '../src/runtime/meta-publishing.js';
 import {findOrCreateLeadFromChannel,recordChannelMessage,updateMessageStatus,maybeEscalateHotLead} from '../src/crm.js';
+import {installAuditLog} from '../src/audit.js';
 
 const owner={id:'owner-1',name:'Owner',role:'owner'};
 const connector={id:'connector:whatsapp',name:'موصل واتساب',role:'automation'};
@@ -19,7 +20,7 @@ const key32=randomBytes(32).toString('hex');
 
 function fixture(){
  const store=openStore(':memory:');
- installCRM(store.db);installEvents(store.db);installEscalations(store.db);installCredentials(store.db);installWebhookEvents(store.db);installWhatsAppTemplates(store.db);
+ installCRM(store.db);installEvents(store.db);installEscalations(store.db);installCredentials(store.db);installWebhookEvents(store.db);installWhatsAppTemplates(store.db);installAuditLog(store.db);
  return store;
 }
 function jsonResponse(value,status=200){return new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json'}});}

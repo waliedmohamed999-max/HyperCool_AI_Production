@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {fail} from './auth.js';
 import {agents} from './domain.js';
 import {isEnabled} from './runtime/feature-flags.js';
+import {recordAudit} from './audit.js';
 
 export const levels=['L0','L1','L2','L3'];
 const agentIds=agents.map(agent=>agent.id);
@@ -22,12 +23,12 @@ export function currentAutonomy(db) {
  const map=new Map(rows.map(row=>[row.agentId,row]));
  return Object.fromEntries(agentIds.map(id=>[id,map.get(id)||{agentId:id,level:'L0',version:0,reason:null,actorName:null,at:null}]));
 }
-export function setAutonomy(store,agentId,input,user,env={}) {
+export function setAutonomy(store,agentId,input,user,env={},tenantId=null) {
  if(!agentIds.includes(agentId))fail(404,'وكيل غير موجود');
  if(!levels.includes(input.level))fail(400,'مستوى صلاحية غير صالح');
  const reason=typeof input.reason==='string'?input.reason.trim():'';
  if(!reason||reason.length>1000)fail(400,'سبب تغيير الصلاحية مطلوب (حتى 1000 حرف)');
- return store.mutate(state=>{
+ return store.mutate(()=>{
   const last=store.db.prepare('SELECT level,version FROM agent_autonomy WHERE agent_id=? ORDER BY version DESC LIMIT 1').get(agentId);
   const current=last?.level||'L0',currentVersion=last?.version||0;
   if(input.expectedVersion!==currentVersion)fail(409,'تغيّر مستوى صلاحية الوكيل؛ حدّث الصفحة قبل الحفظ');
@@ -46,7 +47,7 @@ export function setAutonomy(store,agentId,input,user,env={}) {
   const direction=nextIndex>currentIndex?'PROMOTED':'DEMOTED';
   const entry={id:randomUUID(),agentId,level:input.level,version:currentVersion+1,direction,reason,actorId:user.id,actorName:user.name,at:new Date().toISOString(),previousLevel:current};
   store.db.prepare('INSERT INTO agent_autonomy VALUES (?,?,?,?,?,?,?,?,?)').run(entry.id,agentId,entry.level,entry.version,direction,reason,user.id,user.name,entry.at);
-  state.audit.unshift({id:randomUUID(),action:direction==='PROMOTED'?'AGENT_PROMOTED':'AGENT_DEMOTED',itemId:agentId,actorId:user.id,actorName:user.name,actorRole:user.role,at:entry.at,detail:`${current} → ${input.level}`});
+  recordAudit(store.db,{id:randomUUID(),action:direction==='PROMOTED'?'AGENT_PROMOTED':'AGENT_DEMOTED',itemId:agentId,actorId:user.id,actorName:user.name,actorRole:user.role,at:entry.at,detail:`${current} → ${input.level}`},tenantId);
   return entry;
  });
 }

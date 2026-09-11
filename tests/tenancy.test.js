@@ -10,12 +10,13 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createApp} from '../src/application.js';
+import {installAuditLog} from '../src/audit.js';
 
 const key32=randomBytes(32).toString('hex');
 const connector={id:'connector:whatsapp',name:'موصل واتساب',role:'automation'};
 function fixture(){
  const store=openStore(':memory:');
- installCRM(store.db);installCredentials(store.db);
+ installCRM(store.db);installCredentials(store.db);installAuditLog(store.db);
  return store;
 }
 
@@ -83,16 +84,21 @@ test('IDOR: Tenant A cannot read, list-into, or clear Tenant B\'s integration cr
  assert.equal(getCredentials(store.db,env,'meta',tenantB).accessToken,'tenant-b-secret'); // B's row survives A's delete attempt
  }finally{store.close();}
 });
-test('Two tenants CAN each independently connect the same static-env-var integration — resolveActiveTenantId default never leaks across an explicit tenantId call',()=>{
+test('Two tenants CAN each independently connect the same static-env-var integration, each via an explicit tenantId — the moment a second tenant exists, an implicit (no-tenantId) call fails closed instead of silently guessing tenant A',()=>{
  const store=fixture();try{
  const env={INTEGRATION_ENCRYPTION_KEY:key32};
- const tenantA=ensureDefaultTenant(store.db); // this is also "the default" resolveActiveTenantId returns
+ const tenantA=ensureDefaultTenant(store.db);
  const tenantB=createTenant(store.db,{name:'Second Co',slug:'second-co'});
- saveCredentials(store.db,env,'salla',{accessToken:'default-tenant-token',expiresAt:null},{id:'u1',name:'Owner A'}); // no tenantId passed — uses the default
+ saveCredentials(store.db,env,'salla',{accessToken:'tenant-a-token',expiresAt:null},{id:'u1',name:'Owner A'},tenantA);
  saveCredentials(store.db,env,'salla',{accessToken:'explicit-tenant-b-token',expiresAt:null},{id:'u2',name:'Owner B'},tenantB);
- assert.equal(getCredentials(store.db,env,'salla').accessToken,'default-tenant-token'); // implicit call still resolves A
+ assert.equal(getCredentials(store.db,env,'salla',tenantA).accessToken,'tenant-a-token');
  assert.equal(getCredentials(store.db,env,'salla',tenantB).accessToken,'explicit-tenant-b-token');
- assert.equal(getCredentials(store.db,env,'salla',tenantA).accessToken,'default-tenant-token');
+ // Multi-Tenant Phase 3 fail-closed conversion: resolveActiveTenantId() only ever guesses
+ // "the one tenant" while exactly one exists. With two real tenants now present, any call
+ // site that forgot to pass an explicit tenantId must fail loudly (TENANT_CONTEXT_REQUIRED),
+ // never silently resolve to whichever tenant happens to be oldest.
+ assert.throws(()=>saveCredentials(store.db,env,'salla',{accessToken:'no-tenant-context',expiresAt:null},{id:'u3',name:'Nobody'}),/TENANT_CONTEXT_REQUIRED/);
+ assert.throws(()=>getCredentials(store.db,env,'salla'),/TENANT_CONTEXT_REQUIRED/);
  }finally{store.close();}
 });
 

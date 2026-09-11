@@ -10,11 +10,12 @@ import {installReporting} from '../src/reporting.js';
 import {computeKPIs,computePipelineBoard,computeHotLeads,computeFollowupCenter,
  computeConversationsSummary,computeB2BOpportunities,computeQuotes,computeRevenueForecast,
  computeAIInsights,computeFrostSalesRecommendation,computeRecentActivity,buildSalesDashboard,STAGE_PROBABILITY} from '../src/sales-dashboard.js';
+import {installAuditLog} from '../src/audit.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
 function fixture(){
  const store=openStore(':memory:');
- installKnowledge(store.db);installCRM(store.db);installPlanning(store.db);installCompliance(store.db);installAutonomy(store.db);installReporting(store.db);
+ installKnowledge(store.db);installCRM(store.db);installPlanning(store.db);installCompliance(store.db);installAutonomy(store.db);installReporting(store.db);installAuditLog(store.db);
  return store;
 }
 

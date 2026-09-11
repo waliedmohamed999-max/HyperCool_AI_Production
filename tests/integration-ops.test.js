@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildIntegrationsDashboard,INTEGRATIONS,ERROR_ACTIONS} from '../src/integration-ops.js';
 import {openStore} from '../src/store.js';
+import {installContent} from '../src/content.js';
+import {installAuditLog,recordAudit} from '../src/audit.js';
 
-function fixture(){return openStore(':memory:');}
+function fixture(){const store=openStore(':memory:');installContent(store.db);installAuditLog(store.db);return store;}
 const noEnv={};
 
 test('buildIntegrationsDashboard marks a fully unconfigured system as NEEDS_SETUP for the two real connectors',()=>{
@@ -55,7 +57,7 @@ test('Anthropic recovers to CONNECTED once a newer success follows an older erro
 });
 test('Salla lastActivity reflects the real audit trail, including who ran it',()=>{
  const store=fixture();
- store.mutate(state=>{state.audit.unshift({id:'a1',action:'SALLA_CATALOG_SYNCED',itemId:'catalog',count:42,actorId:'u1',actorName:'Owner',at:'2026-01-01T00:00:00.000Z'});});
+ recordAudit(store.db,{id:'a1',action:'SALLA_CATALOG_SYNCED',itemId:'catalog',count:42,actorId:'u1',actorName:'Owner',at:'2026-01-01T00:00:00.000Z'});
  const dash=buildIntegrationsDashboard(store,{env:{SALLA_ACCESS_TOKEN:'t'},aiRuns:[],complianceRuns:[]});
  const salla=dash.integrations.find(i=>i.id==='salla');
  assert.equal(salla.status,'CONNECTED');
@@ -64,7 +66,7 @@ test('Salla lastActivity reflects the real audit trail, including who ran it',()
 });
 test('a failed Salla sync with no later success is surfaced as ERROR with a real error code',()=>{
  const store=fixture();
- store.mutate(state=>{state.audit.unshift({id:'a1',action:'SALLA_CATALOG_SYNC_FAILED',itemId:'catalog',errorCode:'CREDENTIALS_REJECTED',actorId:'u1',actorName:'Owner',at:'2026-01-01T00:00:00.000Z'});});
+ recordAudit(store.db,{id:'a1',action:'SALLA_CATALOG_SYNC_FAILED',itemId:'catalog',errorCode:'CREDENTIALS_REJECTED',actorId:'u1',actorName:'Owner',at:'2026-01-01T00:00:00.000Z'});
  const dash=buildIntegrationsDashboard(store,{env:{SALLA_ACCESS_TOKEN:'t'},aiRuns:[],complianceRuns:[]});
  const salla=dash.integrations.find(i=>i.id==='salla');
  assert.equal(salla.status,'ERROR');

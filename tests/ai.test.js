@@ -4,13 +4,15 @@ import {openStore} from '../src/store.js';
 import {installKnowledge,saveMemory,currentMemory,replaceProducts,generationContext} from '../src/knowledge.js';
 import {normalizeSallaProduct,importSalla,generateCopy,connectionStatus} from '../src/connectors.js';
 import {createGenerator} from '../src/generation.js';
+import {installContent,listContent} from '../src/content.js';
+import {installAuditLog} from '../src/audit.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
 const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',SALLA_ACCESS_TOKEN:'salla-test-secret'};
 const input=()=>({requestKey:crypto.randomUUID(),productId:'123',title:'فكرة محتوى',platform:'Instagram',date:'2026-09-10'});
 const product=(id=123)=>({id,name:'منتج اختبار',urls:{customer:'https://hyper-cool.com/product/p'+id},taxed_price:{amount:100,currency:'SAR'},quantity:'4',is_available:true,status:'sale'});
 const memory=(key,kind,value,more={})=>({key,kind,value,source:'Approved reference',changeReason:'Initial approval',status:'APPROVED',expectedVersion:0,...more});
-function fixture(){const store=openStore(':memory:');installKnowledge(store.db);replaceProducts(store.db,[normalizeSallaProduct(product(),new Date().toISOString())]);saveMemory(store.db,memory('voice','brand_voice','لغة واضحة'),user);saveMemory(store.db,memory('product.123','product_fact','مادة المنتج معتمدة',{productId:'123'}),user);return store;}
+function fixture(){const store=openStore(':memory:');installKnowledge(store.db);installContent(store.db);installAuditLog(store.db);replaceProducts(store.db,[normalizeSallaProduct(product(),new Date().toISOString())]);saveMemory(store.db,memory('voice','brand_voice','لغة واضحة'),user);saveMemory(store.db,memory('product.123','product_fact','مادة المنتج معتمدة',{productId:'123'}),user);return store;}
 const decision=()=>({status:'OK',action:'DRAFT',rationale:'Use approved facts',verification:[],risk_level:'LOW',escalation_required:false,missing_data:[],payload:{arabic_copy:'مسودة عربية للمراجعة',english_copy:'English draft',hook:'Hook',body:'Body',CTA:'Explore',URL:'https://hyper-cool.com/product/p123',hashtags:[],factual_dependencies:[],compliance_notes:[],tone_notes:[]}});
 const response=value=>new Response(JSON.stringify(value),{status:200,headers:{'content-type':'application/json'}});
 const modelResponse=value=>response({stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(value)}],usage:{input_tokens:10,output_tokens:20}});
@@ -56,8 +58,8 @@ test('generation saves only drafts, keeps provenance, deduplicates and excludes 
  });
  const request=input();const first=await generate(request,user),second=await generate(request,user);
  assert.equal(first.status,'COMPLETED');assert.equal(second.replayed,true);assert.equal(calls,1);
- assert.equal(store.read().content.length,1);assert.equal(store.read().content[0].status,'DRAFT');
- assert.equal(store.read().content[0].sourceContext.product_facts[0].version,1);
+ assert.equal(listContent(store.db).length,1);assert.equal(listContent(store.db)[0].status,'DRAFT');
+ assert.equal(listContent(store.db)[0].sourceContext.product_facts[0].version,1);
  await assert.rejects(()=>generate({...request,title:'changed'},user),/مستخدم/);
  await assert.rejects(()=>generate(request,{...user,id:'another-user'}),/مستخدم/);
  }finally{store.close();}
@@ -72,7 +74,7 @@ test('invalid model output and changed context never create drafts',async()=>{
    if(mode==='truncated')return response({stop_reason:'max_tokens',content:[]});
    const value=decision();if(mode==='url')value.payload.URL='https://evil.test/';return modelResponse(value);
   });
-  const result=await generate(input(),user);assert.equal(result.status,'ERROR');assert.equal(store.read().content.length,0);
+  const result=await generate(input(),user);assert.equal(result.status,'ERROR');assert.equal(listContent(store.db).length,0);
  }finally{store.close();}}
 });
 

@@ -6,6 +6,8 @@ import {openStore} from '../src/store.js';
 import {installKnowledge} from '../src/knowledge.js';
 import {installPlanning,contentHash} from '../src/planning.js';
 import {installCompliance,latestComplianceByContent} from '../src/compliance.js';
+import {installContent,insertContent} from '../src/content.js';
+import {installAuditLog} from '../src/audit.js';
 
 const draft=(overrides={})=>createContent({title:'t',body:'body text',platform:'Instagram',date:'2026-01-01',url:'https://hyper-cool.com/p',...overrides});
 
@@ -75,9 +77,9 @@ test('computeFrostContentInsights flags real unresolved high-severity compliance
 
 test('buildContentWorkspace assembles the full workspace end to end from real DB state',()=>{
  const store=openStore(':memory:');
- installKnowledge(store.db);installPlanning(store.db);installCompliance(store.db);
+ installKnowledge(store.db);installPlanning(store.db);installCompliance(store.db);installContent(store.db);installAuditLog(store.db);
  const owner={id:'owner-1',name:'Owner',role:'owner'};
- const item=store.mutate(state=>{const c=draft();state.content.unshift(c);return c;});
+ const item=draft();insertContent(store.db,item);
  const workspace=buildContentWorkspace(store,{complianceByContent:latestComplianceByContent(store.db)});
  assert.equal(workspace.kpis.drafts.value,1);
  assert.equal(workspace.library.length,1);

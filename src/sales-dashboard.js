@@ -1,6 +1,7 @@
 import {listLeads,listFollowups,listAllMessages,stages} from './crm.js';
 import {computeSalesFunnel,computePipeline} from './reporting.js';
 import {providerStatus} from './runtime/llmProvider.js';
+import {listAuditLog} from './audit.js';
 
 // SalesDashboardService. Every function is pure (arrays in, plain objects out) so it
 // stays testable without a database and never duplicates crm.js's own validation or
@@ -125,11 +126,11 @@ export function computeRecentActivity(auditEntries,agentRuns,limit=30) {
  const agentActivity=agentRuns.filter(run=>agentNames[run.agent_id]&&run.status==='COMPLETED').map(run=>({at:run.finished_at||run.started_at,actor:agentNames[run.agent_id],action:'AGENT_RUN_COMPLETED',itemId:run.id,source:'AGENT'}));
  return [...humanActivity,...agentActivity].filter(entry=>entry.at).sort((a,b)=>b.at.localeCompare(a.at)).slice(0,limit);
 }
-export function buildSalesDashboard(store,{agentRuns=[],env={}}={}) {
- const leads=listLeads(store.db);
- const followups=listFollowups(store.db);
- const messages=listAllMessages(store.db);
- const state=store.read();
+export function buildSalesDashboard(store,{agentRuns=[],env={},tenantId=null}={}) {
+ const leads=listLeads(store.db,tenantId);
+ const followups=listFollowups(store.db,tenantId);
+ const messages=listAllMessages(store.db,500,tenantId);
+ const auditEntries=listAuditLog(store.db,{tenantId});
  const llm=providerStatus(env);
  return {
   dataStatus:{crm:'LOCAL',whatsapp:env.WHATSAPP_ACCESS_TOKEN?'CONNECTED':'NOT_CONNECTED',salla:env.SALLA_ACCESS_TOKEN?'CONNECTED':'NOT_CONNECTED',aiSalesAgent:llm.configured?'ONLINE':'OFFLINE'},
@@ -145,7 +146,7 @@ export function buildSalesDashboard(store,{agentRuns=[],env={}}={}) {
   forecast:computeRevenueForecast(leads),
   aiInsights:computeAIInsights(leads,messages),
   frostRecommendation:computeFrostSalesRecommendation(leads),
-  recentActivity:computeRecentActivity(state.audit,agentRuns),
+  recentActivity:computeRecentActivity(auditEntries,agentRuns),
   hasAnyLeads:leads.length>0
  };
 }

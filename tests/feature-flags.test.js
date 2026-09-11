@@ -15,6 +15,8 @@ import {buildToolRegistry} from '../src/runtime/tools.js';
 import {processSallaWebhook} from '../src/runtime/salla-webhooks.js';
 import {installWebhookEvents} from '../src/runtime/webhook-events.js';
 import {sweepFollowupGaps} from '../src/runtime/scheduler.js';
+import {installContent,insertContent} from '../src/content.js';
+import {installAuditLog} from '../src/audit.js';
 
 const owner={id:'owner-1',name:'Owner',role:'owner'};
 const connector={id:'connector:x',name:'موصل X',role:'automation'};
@@ -23,7 +25,7 @@ const key32=randomBytes(32).toString('hex');
 
 function fixture(){
  const store=openStore(':memory:');
- installCRM(store.db);installEvents(store.db);installEscalations(store.db);installApprovals(store.db);installCredentials(store.db);installPlanning(store.db);installGate(store.db);installWebhookEvents(store.db);
+ installCRM(store.db);installEvents(store.db);installEscalations(store.db);installApprovals(store.db);installCredentials(store.db);installPlanning(store.db);installGate(store.db);installWebhookEvents(store.db);installContent(store.db);installAuditLog(store.db);
  return store;
 }
 
@@ -62,7 +64,7 @@ test('microsoft_sendEmail: drafting/requesting approval for a quote email is NEV
 
 test('meta_publish/x_publish/linkedin_publish are all blocked by ENABLE_EXTERNAL_PUBLISHING=false regardless of approval/credentials state',async()=>{
  const store=fixture();try{
- store.mutate(state=>{state.content.push({id:'c1',title:'t',body:'b',englishCopy:'b',url:'https://hyper-cool.com/p',assetUrl:null,platform:'X',date:'2030-01-01',status:'APPROVED',externalPostId:null,liveUrl:null});});
+ insertContent(store.db,{id:'c1',title:'t',body:'b',englishCopy:'b',url:'https://hyper-cool.com/p',assetUrl:null,platform:'X',date:'2030-01-01',status:'APPROVED',externalPostId:null,liveUrl:null,createdAt:new Date().toISOString()});
  const registry=buildToolRegistry({store,env:{ENABLE_EXTERNAL_PUBLISHING:'false'},eventBus:createEventBus(store.db),fetcher:()=>{throw new Error('must not call network when the flag is off');}});
  const ctx={store,env:{},actor:publishingActor,runId:null,agentId:'publishing'};
  for(const name of ['meta_publish','x_publish','linkedin_publish'])
@@ -86,15 +88,13 @@ test('sweepFollowupGaps reports FEATURE_DISABLED and touches nothing when ENABLE
 function approvedContentAndSchedule(store,{scheduledAt}) {
  const today=riyadhDate(Date.parse(scheduledAt));
  createCalendar(store,today,owner);
- return store.mutate(state=>{
-  let item=createContent({title:'t',body:'Hyper cool tweet',platform:'X',date:today,url:'https://hyper-cool.com/p'});
-  item=reviewContent(item,{reviewer:'QA',evidence:'checked',facts:true,claims:true,link:true});
-  item.review.userId='u1';
-  item=approveContent(item,{owner:'Owner'});
-  item.approval.userId='u1';
-  state.content.push(item);
-  return item.id;
- });
+ let item=createContent({title:'t',body:'Hyper cool tweet',platform:'X',date:today,url:'https://hyper-cool.com/p'});
+ item=reviewContent(item,{reviewer:'QA',evidence:'checked',facts:true,claims:true,link:true});
+ item.review.userId='u1';
+ item=approveContent(item,{owner:'Owner'});
+ item.approval.userId='u1';
+ insertContent(store.db,item);
+ return item.id;
 }
 test('prepareDue transitions a due job to READY_FOR_CONNECTOR either way, but only emits CONTENT_PUBLISH_REQUESTED when ENABLE_SCHEDULED_PUBLISHING is not explicitly false',()=>{
  const store=fixture();try{

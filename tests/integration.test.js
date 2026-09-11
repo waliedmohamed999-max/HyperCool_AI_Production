@@ -7,6 +7,7 @@ import {createApp} from '../src/application.js';
 import {initialState} from '../src/domain.js';
 import {openStore} from '../src/store.js';
 import {agentDefinitions,validateDecision,validateAgentDecision,buildAgentPrompt} from '../src/agents.js';
+import {listContent} from '../src/content.js';
 
 test('authenticated workflow enforces roles, CSRF, provenance and persistence',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'hypercool-test-'));
@@ -56,7 +57,7 @@ test('authenticated workflow enforces roles, CSRF, provenance and persistence',a
   assert.equal((await request('/api/state',null,owner)).status,401);
  } finally {await new Promise(resolve=>app.server.close(resolve));app.store.close();}
  const reopened=openStore(join(dir,'hypercool.sqlite'));
- try{assert.equal(reopened.read().content[0].status,'APPROVED');assert.equal(reopened.db.prepare('SELECT COUNT(*) AS n FROM users').get().n,3);}finally{reopened.close();await rm(dir,{recursive:true,force:true});}
+ try{assert.equal(listContent(reopened.db)[0].status,'APPROVED');assert.equal(reopened.db.prepare('SELECT COUNT(*) AS n FROM users').get().n,3);}finally{reopened.close();await rm(dir,{recursive:true,force:true});}
 });
 
 test('legacy migration runs once and transaction failure rolls back',async()=>{

@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {openStore} from '../src/store.js';
 import {installCRM,createLead,listLeads,getLead,updateLead,recordMessage,contactControl,createFollowups,approveFollowup,prepareFollowups,listFollowups,cancelFollowups,leadDetail} from '../src/crm.js';
+import {installAuditLog} from '../src/audit.js';
 const owner={id:'owner',name:'Owner',role:'owner'},operator={id:'operator',name:'Operator',role:'operator'};
 const data=()=>({name:'Customer',customerType:'B2B',company:'Test Facility',sourceType:'INBOUND',phone:'+966500000001',email:'customer@example.test',city:'Khobar',productNeed:'Equipment',productUrl:'https://hyper-cool.com/offers'});
-function fixture(){const store=openStore(':memory:');installCRM(store.db);const lead=createLead(store,data(),operator);return {store,lead};}
+function fixture(){const store=openStore(':memory:');installCRM(store.db);installAuditLog(store.db);const lead=createLead(store,data(),operator);return {store,lead};}
 function update(store,id,overrides={}){const lead=getLead(store.db,id);return updateLead(store,id,{...lead,stage:'QUOTE_SENT',reason:'Quotation recorded manually',expectedVersion:lead.version,...overrides},owner);}
 function consent(store,id,channel='Email'){const lead=getLead(store.db,id);return contactControl(store,id,{expectedVersion:lead.version,action:'CONSENT',channel,confirmed:true,evidence:'Customer explicitly requested follow-up',obtainedAt:new Date().toISOString()},owner);}
 const followupInput=()=>({requestKey:crypto.randomUUID(),sequence:'QUOTE',channel:'Email',startAt:new Date(Date.now()+3*86400000).toISOString(),evidence:'Quote reference Q-1'});
