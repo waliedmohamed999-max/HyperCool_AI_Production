@@ -26,6 +26,13 @@ async function harness(env={}){
 async function twoTenants(env={}) {
  const {app,call,cleanup}=await harness(env);
  const ownerA=await call('/api/setup',{username:'ownera',name:'Owner A',password:'a-long-test-password'});
+ // Phase 4C-1: resolve Owner A's own tenant membership (lazily attached to the sole
+ // pre-existing default tenant) WHILE it is still the only tenant in the system — exactly
+ // what a real signup flow does on the very next authenticated request. Creating Tenant B
+ // first would otherwise leave Owner A with zero memberships once >1 tenant exists, which
+ // now correctly throws NO_WORKSPACE_ACCESS instead of silently guessing — see
+ // docs/WORKSPACE_SELECTION.md.
+ await call('/api/auth',null,ownerA,{method:'GET'});
  const auth=createAuth(app.store.db);
  const userB=auth.createUser({username:'ownerb',name:'Owner B',password:'a-long-test-password'},'owner');
  const tenantB=createTenant(app.store.db,{name:'Second Co',slug:'second-co'},userB.id);

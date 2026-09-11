@@ -78,30 +78,96 @@ export function resolveActiveTenantId(db) {
  if(n>1)throw Object.assign(new Error('TENANT_CONTEXT_REQUIRED'),{code:'TENANT_CONTEXT_REQUIRED',status:400});
  return tenantId;
 }
+// Phase 4C-1 — every membership/tenant-eligibility query below shares this one predicate:
+// the MEMBERSHIP itself must be 'active' (the column has existed since Phase 1 but nothing
+// ever set it to anything else, and nothing ever filtered on it — a revoked membership would
+// have counted as valid) and the TENANT must be usable (`ACTIVE`/`TRIAL`, same convention as
+// `listTenants`'s own default — a `SUSPENDED`/`ARCHIVED` tenant is never selectable, exactly
+// like it is never eligible for scheduled background work).
+const VALID_MEMBERSHIP_JOIN=`
+ SELECT tm.tenant_id AS tenantId, tm.role AS role, t.name AS name, t.slug AS slug, t.status AS tenantStatus
+ FROM tenant_memberships tm JOIN tenants t ON t.id=tm.tenant_id
+ WHERE tm.user_id=? AND tm.status='active' AND t.status IN ('ACTIVE','TRIAL')
+ ORDER BY t.created_at`;
+function validMembershipsForUser(db,userId) {
+ return db.prepare(VALID_MEMBERSHIP_JOIN).all(userId);
+}
 /**
- * Resolves the tenant a specific logged-in user belongs to — this is what a real
- * TenantContext.resolveTenant() will call once a session is available (spec Part 4). A user
- * with no membership row yet (created before this module existed, or any edge case) is
- * attached to the default tenant on first resolution rather than left tenant-less.
+ * Resolves the tenant a specific logged-in user is CURRENTLY acting in — the one function
+ * every authenticated request resolves through (application.js, once per request, right
+ * after the session is loaded). `activeTenantIdFromSession` is the value persisted on the
+ * server-side `sessions` row via `PUT /api/workspaces/active` (see auth.js's
+ * `setActiveTenant`/`current`) — NEVER a value read from a request body/query/header directly
+ * (Phase 4C-1 Part C/D). It is re-validated against this user's CURRENT real memberships on
+ * EVERY call, never cached or trusted at face value: a membership revoked since the value was
+ * stored simply stops matching here, on the very next request, with no separate invalidation
+ * step needed (Part B Case 7).
  *
- * Multi-Tenant Phase 3.5 (Part E): a user with exactly one membership resolves it safely, as
- * always. A user with MORE than one membership (not reachable from any route today —
- * createTenant() has no invite/onboarding flow yet — but the schema has always allowed it)
- * now throws `TENANT_SELECTION_REQUIRED` instead of silently picking one via `LIMIT 1`,
- * which used to return whichever row SQLite happened to return first — a real, if currently
- * unreachable, fail-open gap. There is deliberately no "active tenant" selection endpoint or
- * UI built yet (the spec explicitly scopes that out until a real multi-membership path
- * exists to test it against) — this only closes the unsafe-guess side of the gap.
+ * Resolution order (never a `LIMIT 1`/`[0]`/`findFirst()` guess across multiple real
+ * memberships — Part D):
+ *  0 valid memberships AND exactly one tenant exists system-wide → the pre-existing,
+ *    single-tenant auto-attach behavior (Phase 1/3.5), UNCHANGED for zero regression risk to
+ *    the one real deployment and every fixture/test that predates real multi-tenancy.
+ *  0 valid memberships AND more than one tenant exists           → `NO_WORKSPACE_ACCESS`
+ *    (never silently attached to "the first tenant" — that would be exactly the unsafe
+ *    fallback this phase exists to remove).
+ *  exactly 1 valid membership                                     → that tenant, always
+ *    (deterministic — not a "guess among many", so no friction is added here — Part B Case 3).
+ *  >1 valid memberships, activeTenantIdFromSession matches one     → that one (Part B Case 5).
+ *  >1 valid memberships, no match                                  → `TENANT_SELECTION_REQUIRED`
+ *    (Part B Case 4 — unchanged from Phase 3.5, still the only safe outcome).
  */
-export function resolveTenantForUser(db,userId) {
+export function resolveTenantForUser(db,userId,activeTenantIdFromSession=null) {
  const tenantId=ensureDefaultTenant(db);
- const memberships=db.prepare('SELECT tenant_id AS tenantId FROM tenant_memberships WHERE user_id=?').all(userId);
- if(memberships.length>1)throw Object.assign(new Error('TENANT_SELECTION_REQUIRED'),{code:'TENANT_SELECTION_REQUIRED',status:409});
+ const memberships=validMembershipsForUser(db,userId);
+ if(memberships.length===0) {
+  const {n}=db.prepare('SELECT COUNT(*) n FROM tenants').get();
+  if(n>1)throw Object.assign(new Error('NO_WORKSPACE_ACCESS'),{code:'NO_WORKSPACE_ACCESS',status:403});
+  const user=db.prepare('SELECT role FROM users WHERE id=?').get(userId);
+  if(user)db.prepare('INSERT OR IGNORE INTO tenant_memberships (id,tenant_id,user_id,role,status,is_owner,created_at) VALUES (?,?,?,?,?,?,?)')
+   .run(randomUUID(),tenantId,userId,user.role,'active',user.role==='owner'?1:0,new Date().toISOString());
+  return tenantId;
+ }
  if(memberships.length===1)return memberships[0].tenantId;
- const user=db.prepare('SELECT role FROM users WHERE id=?').get(userId);
- if(user)db.prepare('INSERT OR IGNORE INTO tenant_memberships (id,tenant_id,user_id,role,status,is_owner,created_at) VALUES (?,?,?,?,?,?,?)')
-  .run(randomUUID(),tenantId,userId,user.role,'active',user.role==='owner'?1:0,new Date().toISOString());
- return tenantId;
+ if(activeTenantIdFromSession) {
+  const active=memberships.find(m=>m.tenantId===activeTenantIdFromSession);
+  if(active)return active.tenantId;
+ }
+ throw Object.assign(new Error('TENANT_SELECTION_REQUIRED'),{code:'TENANT_SELECTION_REQUIRED',status:409});
+}
+/**
+ * `GET /api/workspaces` — every workspace this user can actually act in, safe to return to
+ * the browser verbatim (id/name/slug/role/isActive only — never a credential, never another
+ * tenant's data). `currentActiveTenantId` (nullable — the caller passes whatever
+ * `resolveTenantForUser` resolved, or null if it threw) marks `isActive`; never recomputed
+ * here a second, possibly-inconsistent way.
+ */
+export function listWorkspacesForUser(db,userId,currentActiveTenantId=null) {
+ return validMembershipsForUser(db,userId).map(m=>({id:m.tenantId,name:m.name,slug:m.slug,role:m.role,isActive:m.tenantId===currentActiveTenantId}));
+}
+/**
+ * `PUT /api/workspaces/active` — the ONLY place a client-supplied tenant id is ever accepted
+ * at all, and even here it is never trusted by itself (Part C/D/V): validated against this
+ * user's real, current, active memberships in a valid tenant before anything is persisted.
+ * A foreign/nonexistent/suspended workspace id gets the exact same `TENANT_ACCESS_DENIED`
+ * either way — never a distinguishable response that would let a client fingerprint whether
+ * some other tenant id happens to exist (same "404 for wrong-tenant-or-nonexistent" principle
+ * every other tenant-scoped getter in this codebase already follows).
+ */
+export function activateWorkspaceForUser(db,userId,tenantId) {
+ const membership=validMembershipsForUser(db,userId).find(m=>m.tenantId===tenantId);
+ if(!membership)throw Object.assign(new Error('TENANT_ACCESS_DENIED'),{code:'TENANT_ACCESS_DENIED',status:403});
+ return {id:membership.tenantId,name:membership.name,slug:membership.slug,role:membership.role,isActive:true};
+}
+/**
+ * Soft-revokes a membership (never a hard DELETE — matches this codebase's established
+ * "archive, don't erase" convention for anything that might already be referenced
+ * elsewhere). No route exposes this yet (Phase 4C-1 is backend-first and explicitly does not
+ * add member-management UI/API) — it exists so the stale-selection behavior (Part B Case 7)
+ * is provable with a real membership removal, not a hypothetical.
+ */
+export function removeMembership(db,tenantId,userId) {
+ db.prepare("UPDATE tenant_memberships SET status='removed' WHERE tenant_id=? AND user_id=?").run(tenantId,userId);
 }
 export function getTenant(db,tenantId) {
  const row=db.prepare('SELECT * FROM tenants WHERE id=?').get(tenantId);

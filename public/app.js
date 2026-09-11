@@ -13,6 +13,7 @@ import {renderContent,enrichContentCards,installContentInteractions,beginGenerat
 import {renderMemory,installMemoryInteractions} from './memory.js';
 import {renderIntegrations,installIntegrationInteractions,checkAllIntegrations} from './integrations.js';
 import {renderTeam,installTeamInteractions,clickTeam} from './team.js';
+import {resolveActiveWorkspace,renderWorkspaceGate,hideWorkspaceGate,renderWorkspaceSwitcher} from './components/workspace-switcher.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
 // access so a language switch relabels the whole audit trail with no other code touched.
@@ -73,6 +74,18 @@ async function render(){
   shellData(auth,viewData,api);
   if(!auth.user)return;
   if(!accountLocaleApplied){accountLocaleApplied=true;if(auth.user.preferredLocale&&auth.user.preferredLocale!==getLocale()){await setLocale(auth.user.preferredLocale);return;}}
+  // Phase 4C-1 — Workspace Selection. Resolved BEFORE anything tenant-scoped renders: a
+  // multi-membership user with no active selection sees only the workspace-choice gate, never
+  // a half-loaded dashboard (Part L). Single-membership users (the one real deployment today)
+  // resolve here with zero visible change — `ready` is true on the very first check.
+  const workspace=await resolveActiveWorkspace(auth.csrf);
+  $('#protected').hidden=!workspace.ready;
+  if(!workspace.ready){
+    renderWorkspaceGate(workspace,auth.csrf,()=>render().catch(error=>message(error.message,'error')));
+    return;
+  }
+  hideWorkspaceGate();
+  await renderWorkspaceSwitcher(workspace.workspace,auth.csrf,()=>render().catch(error=>message(error.message,'error')));
   $('#session-name').textContent=`${auth.user.name} · ${roles[auth.user.role]}`;
   $('#draft').hidden=auth.user.role==='reviewer';
   $('#nav-users').hidden=auth.user.role!=='owner';

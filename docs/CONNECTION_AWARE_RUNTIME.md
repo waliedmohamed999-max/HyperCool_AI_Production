@@ -4,6 +4,12 @@ How a tool call actually flows through the runtime once assignments and connecti
 and — the part most likely to bite a future change — exactly which legacy provider lookups
 had to learn to accept a real `tenantId` for this to be safe with a second tenant.
 
+> **Phase 4C-1 note:** how `session.tenantId` itself gets resolved changed (see
+> `docs/WORKSPACE_SELECTION.md`) — a multi-membership user's active workspace selection is now
+> considered. Everything below this point is unaffected: the runtime still only ever consumes
+> the single, already-resolved, trusted `session.tenantId`/`ctx.tenantId` value, exactly as
+> before.
+
 ## Execution flow (`runtime.js`, `executeTool`)
 
 ```

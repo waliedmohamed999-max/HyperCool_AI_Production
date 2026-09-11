@@ -5,7 +5,7 @@
 const STORAGE_KEY = 'hc_locale';
 const SUPPORTED = ['ar', 'en'];
 const DEFAULT_LOCALE = 'ar';
-export const DOMAINS = ['common', 'navigation', 'overview', 'sales', 'calendar', 'weeklyReport', 'content', 'agents', 'memory', 'integrations', 'operationsLog', 'team', 'forms', 'validation', 'statuses', 'errors'];
+export const DOMAINS = ['common', 'navigation', 'overview', 'sales', 'calendar', 'weeklyReport', 'content', 'agents', 'memory', 'integrations', 'operationsLog', 'team', 'forms', 'validation', 'statuses', 'errors', 'workspace'];
 
 let locale = DEFAULT_LOCALE;
 let dict = {};

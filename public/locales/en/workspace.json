@@ -1,0 +1,13 @@
+{
+  "selectTitle": "Choose a workspace",
+  "selectHint": "Your account belongs to more than one workspace — choose which one to work in now.",
+  "noAccess": "You don't have active membership in any workspace right now. Contact your system owner.",
+  "loading": "Loading workspaces…",
+  "loadFailed": "Could not load the workspace list",
+  "activateFailed": "Could not activate this workspace",
+  "roleOwner": "Owner",
+  "roleReviewer": "Reviewer",
+  "roleOperator": "Operator",
+  "switchAriaLabel": "Switch active workspace",
+  "currentBadge": "Active"
+}

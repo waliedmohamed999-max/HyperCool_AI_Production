@@ -29,6 +29,9 @@ async function harness(env={}){
 async function twoTenants(env={}) {
  const {app,call,cleanup}=await harness(env);
  const ownerA=await call('/api/setup',{username:'ownera',name:'Owner A',password:'a-long-test-password'});
+ // Phase 4C-1: resolve Owner A's own membership while still the sole tenant — see the same
+ // note in tests/tenancy-phase2.test.js.
+ await call('/api/auth',null,ownerA,{method:'GET'});
  const auth=createAuth(app.store.db);
  const userB=auth.createUser({username:'ownerb',name:'Owner B',password:'a-long-test-password'},'owner');
  const tenantB=createTenant(app.store.db,{name:'Second Co',slug:'second-co'},userB.id);

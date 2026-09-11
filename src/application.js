@@ -33,7 +33,7 @@ import {promotionEligibility} from './runtime/permissions.js';
 import {installGate,getGateStatus,setPaused,isPaused} from './runtime/gate.js';
 import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
-import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants} from './tenancy.js';
+import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants,listWorkspacesForUser,activateWorkspaceForUser} from './tenancy.js';
 import {installContent,listContent,getContent,getContentOrNull,insertContent,writeContent} from './content.js';
 import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
@@ -323,12 +323,19 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       const session=auth.current(req);
       userId=session?.user?.id||null;
-      // TenantContext resolution (Multi-Tenant Control Center, Phase 1 — see
-      // docs/MULTI_TENANT_ARCHITECTURE.md). Resolved once per request from the real
-      // TenantMembership table, never trusted from a query string or request body — a
-      // route that wants to scope a query explicitly (rather than relying on a library
-      // function's own default-tenant fallback) uses `session.tenantId` here.
-      if(session)session.tenantId=resolveTenantForUser(store.db,session.user.id);
+      // TenantContext resolution (Multi-Tenant Control Center, Phase 1; Workspace Selection,
+      // Phase 4C-1 — see docs/WORKSPACE_SELECTION.md). Resolved once per request from the
+      // real TenantMembership table plus this session's persisted (and, on every single
+      // request, freshly re-validated) active-workspace selection — never trusted from a
+      // query string, request body, or header. A multi-membership user with no valid
+      // selection makes `resolveTenantForUser` throw; that is deliberately NOT re-thrown
+      // immediately here (see `tenantResolutionError` below) so the workspace-selection
+      // routes themselves stay reachable even while every OTHER route is correctly blocked.
+      let tenantResolutionError=null;
+      if(session) {
+       try{session.tenantId=resolveTenantForUser(store.db,session.user.id,session.activeTenantId);}
+       catch(error){tenantResolutionError=error;}
+      }
       if(req.method==='GET' && url.pathname==='/api/auth') return send(200,{needsSetup:auth.needsSetup(),user:session?.user||null,csrf:session?.csrf||null});
       if(req.method==='POST' && ['/api/setup','/api/login'].includes(url.pathname)) {
         const input=await body(req);
@@ -344,6 +351,31 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner','reviewer','operator']);
         if(req.method!=='GET' && req.headers['x-csrf-token']!==session.csrf) fail(403,'رمز حماية الجلسة غير صالح');
       }
+      // Workspace selection (Phase 4C-1) — deliberately handled here, BEFORE the generic
+      // `tenantResolutionError` re-throw below, and using ONLY `session.user.id` (never
+      // `session.tenantId`, which may not exist at all right now): a multi-membership user
+      // with no active selection must still be able to see and choose a workspace, even
+      // though every other tenant-scoped route stays correctly blocked until they do.
+      if(req.method==='GET' && url.pathname==='/api/workspaces') {
+        return send(200,listWorkspacesForUser(store.db,session.user.id,tenantResolutionError?null:session.tenantId));
+      }
+      if(req.method==='GET' && url.pathname==='/api/workspaces/active') {
+        if(tenantResolutionError)return send(tenantResolutionError.status||409,{error:tenantResolutionError.message,workspaces:listWorkspacesForUser(store.db,session.user.id,null)});
+        const active=listWorkspacesForUser(store.db,session.user.id,session.tenantId).find(w=>w.isActive);
+        return send(200,active);
+      }
+      if(req.method==='PUT' && url.pathname==='/api/workspaces/active') {
+        const input=await body(req);
+        if(typeof input.workspaceId!=='string' || !input.workspaceId) fail(400,'workspaceId مطلوب');
+        const workspace=activateWorkspaceForUser(store.db,session.user.id,input.workspaceId);
+        auth.setActiveTenant(session.tokenHash,workspace.id);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_ACTIVATED',itemId:workspace.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},workspace.id);
+        return send(200,workspace);
+      }
+      // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
+      // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only
+      // safe outcome for an unresolved multi-membership session on any non-workspace route).
+      if(url.pathname.startsWith('/api/') && tenantResolutionError) throw tenantResolutionError;
       if(req.method==='POST' && url.pathname==='/api/logout') {auth.logout(session);res.setHeader('Set-Cookie',`hc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`);return send(200,{ok:true});}
       if(req.method==='POST' && url.pathname==='/api/preferences/locale') {
         const input=await body(req);
@@ -1071,7 +1103,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(req.method==='GET' && url.pathname==='/api/planning') {
         const publishingIntegrations=integrationStatus(env,store.db);
-        return send(200,{slots:listSlots(store.db,session?.tenantId),jobs:listJobs(store.db,session?.tenantId),brief:buildBrief(store,undefined,session?.tenantId),savedBriefs:store.db.prepare('SELECT json FROM daily_briefs ORDER BY date DESC LIMIT 14').all().map(row=>JSON.parse(row.json)),today:riyadhDate(),automationConfigured:!!(env.AUTOMATION_TOKEN?.length>=32),publishingConnected:['meta','x','linkedin'].some(id=>publishingIntegrations[id]?.configured)});
+        // Phase 4C-1 dangerous-pattern audit (Part Q) found this query with NO tenant_id
+        // filter at all, despite `daily_briefs` being a real per-tenant table (Phase 3) —
+        // a genuine cross-tenant leak, unreachable before a second tenant existed, exactly
+        // the class of pre-existing gap this phase's own audit exists to surface and close.
+        return send(200,{slots:listSlots(store.db,session?.tenantId),jobs:listJobs(store.db,session?.tenantId),brief:buildBrief(store,undefined,session?.tenantId),savedBriefs:store.db.prepare('SELECT json FROM daily_briefs WHERE tenant_id=? ORDER BY date DESC LIMIT 14').all(session.tenantId).map(row=>JSON.parse(row.json)),today:riyadhDate(),automationConfigured:!!(env.AUTOMATION_TOKEN?.length>=32),publishingConnected:['meta','x','linkedin'].some(id=>publishingIntegrations[id]?.configured)});
       }
       if(req.method==='POST' && url.pathname==='/api/calendar') {authorize(session,['owner','operator']);return send(201,createCalendar(store,(await body(req)).startDate,session.user,session.tenantId));}
       if(req.method==='POST' && url.pathname==='/api/schedule') {authorize(session,['owner']);return send(201,scheduleContent(store,await body(req),session.user,undefined,session.tenantId));}

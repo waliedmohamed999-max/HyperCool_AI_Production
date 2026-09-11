@@ -42,16 +42,25 @@ export function createAuth(db) {
     session(user) {
       const token=randomBytes(32).toString('hex'), csrf=randomBytes(32).toString('hex');
       db.prepare('DELETE FROM sessions WHERE expires<=?').run(Date.now());
-      db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(hash(token),user.id,csrf,Date.now()+8*3600000);
+      db.prepare('INSERT INTO sessions (token,user_id,csrf,expires) VALUES (?,?,?,?)').run(hash(token),user.id,csrf,Date.now()+8*3600000);
       return {token,csrf,user:publicUser(user)};
     },
     current(req) {
       const token=req.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith('hc_session='))?.slice(11);
       if(!token) return null;
-      const result=db.prepare("SELECT users.*, sessions.csrf FROM sessions JOIN users ON users.id=sessions.user_id WHERE token=? AND expires>? AND users.status='active'").get(hash(token),Date.now());
-      return result?{user:publicUser(result),csrf:result.csrf,tokenHash:hash(token)}:null;
+      const result=db.prepare("SELECT users.*, sessions.csrf, sessions.active_tenant_id AS activeTenantId FROM sessions JOIN users ON users.id=sessions.user_id WHERE token=? AND expires>? AND users.status='active'").get(hash(token),Date.now());
+      return result?{user:publicUser(result),csrf:result.csrf,tokenHash:hash(token),activeTenantId:result.activeTenantId||null}:null;
     },
     logout(session) {db.prepare('DELETE FROM sessions WHERE token=?').run(session.tokenHash);},
+    // Phase 4C-1 — the only writer of the server-side "which workspace is this session
+    // currently acting in" hint (see store.js's migration comment). `tokenHash` is what
+    // `current()` already returns — never the raw cookie token re-hashed a second time by a
+    // caller, and never a value this function trusts as already-validated: the caller
+    // (tenancy.js's activateWorkspaceForUser, via the /api/workspaces/active route) must have
+    // already confirmed real membership before this is ever called.
+    setActiveTenant(tokenHash,tenantId) {
+      db.prepare('UPDATE sessions SET active_tenant_id=? WHERE token=?').run(tenantId,tokenHash);
+    },
     list:()=>db.prepare('SELECT id,username,name,role,status,created_at,last_login_at FROM users ORDER BY name').all(),
     get:id=>db.prepare('SELECT id,username,name,role,status,created_at,last_login_at FROM users WHERE id=?').get(id),
     // Minimal additive primitives for Team Management — each does exactly one column

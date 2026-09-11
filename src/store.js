@@ -22,6 +22,14 @@ export function openStore(path, legacyPath) {
   // preference recorded yet" — the client falls back to its own saved preference, then to
   // the product default (Arabic), never to the browser's Accept-Language.
   if(!userColumns.includes('preferred_locale'))db.exec("ALTER TABLE users ADD COLUMN preferred_locale TEXT CHECK(preferred_locale IN ('ar','en'))");
+  // Phase 4C-1 (Workspace Selection) — the ONE place a multi-membership user's chosen
+  // workspace is persisted: a column on their own SERVER-SIDE session row, never a
+  // client-supplied/signed value trusted at face value. Re-validated against real current
+  // memberships on every request (tenancy.js's resolveTenantForUser) — this column is only
+  // ever a hint of what to re-check, never itself the authority. NULL means "no selection
+  // made yet" (or the user has ≤1 membership and never needed one).
+  const sessionColumns=db.prepare("SELECT name FROM pragma_table_info('sessions')").all().map(r=>r.name);
+  if(!sessionColumns.includes('active_tenant_id'))db.exec('ALTER TABLE sessions ADD COLUMN active_tenant_id TEXT');
   if (!db.prepare('SELECT id FROM state WHERE id=1').get()) {
     const state = legacyPath && existsSync(legacyPath) ? JSON.parse(readFileSync(legacyPath,'utf8')) : initialState();
     if (!Array.isArray(state.content) || !Array.isArray(state.audit)) throw new Error('Invalid legacy state');
