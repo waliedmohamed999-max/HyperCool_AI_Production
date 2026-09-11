@@ -221,7 +221,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         for(const item of normalized.messages) {
           if(item.replayed||item.error||!item.phone)continue;
           const {lead}=findOrCreateLeadFromChannel(store,{phone:item.phone,name:item.name,channel:'WhatsApp'},connectorActor,webhookTenantId);
-          const message=recordChannelMessage(store,{leadId:lead.id,channel:'WhatsApp',direction:'INBOUND',text:item.text,externalMessageId:item.externalMessageId,messageType:item.messageType,media:item.media||null},connectorActor);
+          const message=recordChannelMessage(store,{leadId:lead.id,channel:'WhatsApp',direction:'INBOUND',text:item.text,externalMessageId:item.externalMessageId,messageType:item.messageType,media:item.media||null},connectorActor,webhookTenantId);
           if(message.replayed)continue;
           if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'WhatsApp',tenantId:webhookTenantId});
           // The pause gate stops autonomous AGENT action, never the recording of the message
@@ -257,7 +257,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
            const fromAddress=graphMessage.from?.emailAddress?.address||null;
            if(!fromAddress)continue;
            const {lead}=findOrCreateLeadFromChannel(store,{email:fromAddress,name:graphMessage.from?.emailAddress?.name,channel:'Email'},connectorActor,webhookTenantId);
-           const message=recordChannelMessage(store,{leadId:lead.id,channel:'Email',direction:'INBOUND',text:graphMessage.bodyPreview||'',subject:graphMessage.subject||null,externalMessageId:graphMessage.id,internetMessageId:graphMessage.internetMessageId,externalThreadId:graphMessage.conversationId,messageType:'email'},connectorActor);
+           const message=recordChannelMessage(store,{leadId:lead.id,channel:'Email',direction:'INBOUND',text:graphMessage.bodyPreview||'',subject:graphMessage.subject||null,externalMessageId:graphMessage.id,internetMessageId:graphMessage.internetMessageId,externalThreadId:graphMessage.conversationId,messageType:'email'},connectorActor,webhookTenantId);
            if(message.replayed)continue;
            if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'Email',tenantId:webhookTenantId});
            if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'Email',text:message.text,tenantId:webhookTenantId});
@@ -429,7 +429,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           if(proposed?.to && proposed?.subject && proposed?.bodyHtml) {
             try {
              const sendResult=await sendMail({store,env,fetcher},{to:proposed.to,cc:proposed.cc,subject:proposed.subject,bodyHtml:proposed.bodyHtml});
-             if(sendResult.status==='SENT' && proposed.leadId)recordChannelMessage(store,{leadId:proposed.leadId,channel:'Email',direction:'OUTBOUND',text:proposed.bodyHtml,subject:proposed.subject,cc:proposed.cc||null,messageType:'email'},session.user);
+             if(sendResult.status==='SENT' && proposed.leadId)recordChannelMessage(store,{leadId:proposed.leadId,channel:'Email',direction:'OUTBOUND',text:proposed.bodyHtml,subject:proposed.subject,cc:proposed.cc||null,messageType:'email'},session.user,session.tenantId);
              return send(200,{...decided,emailSendResult:sendResult});
             } catch(error) {
              return send(200,{...decided,emailSendResult:{status:'FAILED',errorDetail:error.message}});
@@ -532,11 +532,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // WhatsApp templates — real approval status pulled from Meta, never invented locally.
       if(req.method==='GET' && url.pathname==='/api/whatsapp/templates') {
         authorize(session,['owner','operator']);
-        return send(200,listWhatsAppTemplates(store.db,{status:url.searchParams.get('status')||undefined}));
+        return send(200,listWhatsAppTemplates(store.db,{status:url.searchParams.get('status')||undefined},session.tenantId));
       }
       if(req.method==='POST' && url.pathname==='/api/whatsapp/templates/sync') {
         authorize(session,['owner']);
-        const result=await syncWhatsAppTemplates({store,env,fetcher});
+        const result=await syncWhatsAppTemplates({store,env,fetcher},session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'WHATSAPP_TEMPLATES_SYNCED',itemId:'whatsapp',count:result.synced,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,result);
       }
@@ -553,7 +553,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(!lead.phone)fail(409,'لا يوجد رقم هاتف لهذا العميل');
         if(!input.templateName && !(lead.lastInboundAt && Date.now()-Date.parse(lead.lastInboundAt)<=86400000))fail(409,'خارج نافذة خدمة العملاء (24 ساعة) — استخدم قالبًا معتمدًا');
         const result=await sendWhatsAppMessage({store,env,fetcher},{to:lead.phone,text:input.text,templateName:input.templateName,templateLanguage:input.templateLanguage});
-        if(result.status==='SENT')recordChannelMessage(store,{leadId:id,channel:'WhatsApp',direction:'OUTBOUND',text:input.text||`[template:${input.templateName}]`,externalMessageId:result.externalMessageId,messageType:input.templateName?'template':'text'},session.user);
+        if(result.status==='SENT')recordChannelMessage(store,{leadId:id,channel:'WhatsApp',direction:'OUTBOUND',text:input.text||`[template:${input.templateName}]`,externalMessageId:result.externalMessageId,messageType:input.templateName?'template':'text'},session.user,session.tenantId);
         return send(200,result);
       }
       // Microsoft 365 OAuth (owner only, same bar as Salla/Meta above).
@@ -679,7 +679,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
          return send(200,{status:'WAITING_APPROVAL',approvalId:approval.id});
         }
         const result=await sendMail({store,env,fetcher},{to:lead.email,cc:input.cc,subject:input.subject,bodyHtml:input.bodyHtml});
-        if(result.status==='SENT')recordChannelMessage(store,{leadId:id,channel:'Email',direction:'OUTBOUND',text:input.bodyHtml,subject:input.subject,cc:input.cc||null,messageType:'email'},session.user);
+        if(result.status==='SENT')recordChannelMessage(store,{leadId:id,channel:'Email',direction:'OUTBOUND',text:input.bodyHtml,subject:input.subject,cc:input.cc||null,messageType:'email'},session.user,session.tenantId);
         return send(200,result);
       }
       if(req.method==='GET' && url.pathname==='/api/memory') return send(200,listMemory(store.db,session.tenantId));
@@ -717,9 +717,9 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(req.method==='GET' && url.pathname==='/api/crm/dashboard')return send(200,buildSalesDashboard(store,{agentRuns:listRuns(store.db,{limit:2000},session.tenantId),env,tenantId:session.tenantId}));
         if(req.method==='GET' && url.pathname==='/api/crm/search')return send(200,searchLeads(store.db,url.searchParams.get('q'),20,session.tenantId));
         if(req.method==='POST' && url.pathname==='/api/crm/leads'){const lead=createLead(store,await body(req),session.user,session.tenantId);eventBus.emit('LEAD_CREATED',{leadId:lead.id,customerType:lead.customerType,sourceType:lead.sourceType,tenantId:session.tenantId});return send(201,lead);}
-        if(req.method==='POST' && url.pathname==='/api/crm/followups/prepare'){authorize(session,['owner']);return send(200,prepareFollowups(store,session.user));}
+        if(req.method==='POST' && url.pathname==='/api/crm/followups/prepare'){authorize(session,['owner']);return send(200,prepareFollowups(store,session.user,Date.now(),session.tenantId));}
         const approval=url.pathname.match(/^\/api\/crm\/followups\/([\w-]+)\/approve$/);
-        if(req.method==='POST' && approval){authorize(session,['owner']);return send(200,approveFollowup(store,approval[1],session.user));}
+        if(req.method==='POST' && approval){authorize(session,['owner']);return send(200,approveFollowup(store,approval[1],session.user,session.tenantId));}
         const leadRoute=url.pathname.match(/^\/api\/crm\/leads\/([\w-]+)(?:\/(update|messages|contact|followups|stop-followups))?$/);
         if(leadRoute){
           if(req.method==='GET' && !leadRoute[2])return send(200,leadDetail(store.db,leadRoute[1],session.tenantId));
@@ -732,16 +732,16 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
               return send(200,updated);
             }
             if(leadRoute[2]==='messages'){
-              const message=recordMessage(store,id,input,user);
+              const message=recordMessage(store,id,input,user,session.tenantId);
               if(!message.replayed && message.direction==='INBOUND'){
                 eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:id,channel:message.channel,text:message.text,tenantId:session.tenantId});
                 if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:id,channel:message.channel,tenantId:session.tenantId});
               }
               return send(201,message);
             }
-            if(leadRoute[2]==='contact')return send(200,contactControl(store,id,input,user));
-            if(leadRoute[2]==='followups')return send(201,createFollowups(store,id,input,user));
-            if(leadRoute[2]==='stop-followups')return send(200,cancelFollowups(store,id,user));
+            if(leadRoute[2]==='contact')return send(200,contactControl(store,id,input,user,session.tenantId));
+            if(leadRoute[2]==='followups')return send(201,createFollowups(store,id,input,user,session.tenantId));
+            if(leadRoute[2]==='stop-followups')return send(200,cancelFollowups(store,id,user,session.tenantId));
           }
         }
         fail(404,'مسار CRM غير موجود');

@@ -64,9 +64,10 @@ Log.
   resolves to "the one active tenant" (fail-*open*), consistent with every other table in
   this codebase. Converting this to a hard `TENANT_CONTEXT_REQUIRED` is a separate,
   not-yet-done piece of Phase 3.
-- `ai_runs`, `compliance_runs`, `whatsapp_templates`, `crm_requests` are still not
-  tenant-scoped (unrelated to the audit/content problem — see
-  `docs/TENANT_SECURITY_MODEL.md`'s table classification).
+- `ai_runs`, `compliance_runs`, `whatsapp_templates`, `crm_requests` were unrelated to the
+  audit/content problem and not addressed by this specific migration — all four have since
+  been tenant-scoped in a later pass of the same Phase 3 work (see
+  `docs/TENANT_SECURITY_MODEL.md`'s table classification, which is current).
 - A hypothetical `correlation_id` field (mentioned in the original spec's own description of
   an `AuditService`) was **not** added — nothing in this codebase currently threads a
   correlation id through the ~30 call sites that create audit entries, and inventing one now

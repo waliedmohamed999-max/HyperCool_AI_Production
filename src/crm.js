@@ -45,12 +45,30 @@ export function installCRM(db){
  db.exec(`
  CREATE TABLE IF NOT EXISTS crm_messages (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL REFERENCES crm_leads(id), event_key TEXT NOT NULL UNIQUE, json TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS crm_followups (id TEXT PRIMARY KEY, lead_id TEXT NOT NULL REFERENCES crm_leads(id), status TEXT NOT NULL, due_at TEXT NOT NULL, json TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS crm_requests (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, json TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS idx_crm_messages_lead_id ON crm_messages(lead_id);
  CREATE INDEX IF NOT EXISTS idx_crm_followups_lead_id ON crm_followups(lead_id);
  CREATE INDEX IF NOT EXISTS idx_crm_followups_status ON crm_followups(status);
  CREATE INDEX IF NOT EXISTS idx_crm_leads_tenant_id ON crm_leads(tenant_id);
 `);
+ // Multi-Tenant Phase 3 (deferred table, now closed): `crm_requests` is a bare idempotency-
+ // key cache for createFollowups' client-supplied requestKey — unlike crm_messages/
+ // crm_followups it isn't reached via a lead_id, so it needs its own tenant_id. The old
+ // `key TEXT PRIMARY KEY` would have let a second tenant's request key collide with (and
+ // replay!) the first tenant's cached result, so this needs table recreation, same reasoning
+ // as crm_leads above.
+ const requestsLegacy=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='crm_requests'").get();
+ if(requestsLegacy) {
+  const requestColumns=db.prepare('PRAGMA table_info(crm_requests)').all().map(c=>c.name);
+  if(!requestColumns.includes('tenant_id')) {
+   const tenantId=resolveActiveTenantId(db);
+   db.exec('ALTER TABLE crm_requests RENAME TO crm_requests_pre_tenant;');
+   db.exec('CREATE TABLE crm_requests (tenant_id TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(tenant_id,key));');
+   db.prepare('INSERT INTO crm_requests (tenant_id,key,fingerprint,json) SELECT ?,key,fingerprint,json FROM crm_requests_pre_tenant').run(tenantId);
+   db.exec('DROP TABLE crm_requests_pre_tenant;');
+  }
+ } else {
+  db.exec('CREATE TABLE crm_requests (tenant_id TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(tenant_id,key));');
+ }
  // Additive, guarded column — see runtime/registry.js for the same pattern. Needed so an
  // inbound webhook message (WhatsApp wamid) or an outbound message's provider-assigned id
  // can be looked up directly when a later delivery-status webhook arrives, without scanning
@@ -146,14 +164,14 @@ export function updateLead(store,id,input,user,tenantId=null){return store.mutat
 // possibly-drifting copy of this pattern.
 const OPT_OUT_PATTERN=/^(stop|unsubscribe|إلغاء الاشتراك|الغاء الاشتراك|لا تتواصل معي|لا تراسلني)[.!؟?\s]*$/i;
 export function isOptOutText(text){return OPT_OUT_PATTERN.test(text||'');}
-export function recordMessage(store,id,input,user){
+export function recordMessage(store,id,input,user,tenantId=null){
  const text=required(input.text,'نص المحادثة',4000),eventKey=required(input.eventKey,'معرف الحدث',120);
  if(!['WhatsApp','Email','Instagram','Facebook','X','LinkedIn','Phone'].includes(input.channel))fail(400,'قناة غير مدعومة');
  if(!['general','quote','medical','complaint','legal','discount_exception','opt_out'].includes(input.intent))fail(400,'تصنيف المحادثة غير صالح');
  return store.mutate(state=>{
   const prior=store.db.prepare('SELECT json FROM crm_messages WHERE event_key=?').get(eventKey);
   if(prior){const message=JSON.parse(prior.json);if(message.leadId!==id||message.text!==text||message.channel!==input.channel||message.intent!==input.intent)fail(409,'معرف الحدث مستخدم لمحادثة أخرى');return {...message,replayed:true};}
-  const lead=getLead(store.db,id);
+  const lead=getLead(store.db,id,tenantId);
   const message={id:randomUUID(),leadId:id,eventKey,channel:input.channel,text,intent:input.intent,direction:'INBOUND',source:'MANUAL_ENTRY',recordedBy:user.id,recordedAt:new Date().toISOString()};
   store.db.prepare('INSERT INTO crm_messages (id,lead_id,event_key,json,external_message_id) VALUES (?,?,?,?,?)').run(message.id,id,eventKey,JSON.stringify(message),null);
   lead.version++;lead.lastInboundAt=message.recordedAt;lead.replyHold=true;
@@ -161,7 +179,7 @@ export function recordMessage(store,id,input,user){
   if(optOut){lead.optOut=true;lead.optOutAt=message.recordedAt;lead.consent={Email:null,WhatsApp:null};}
   if(input.intent==='quote')lead.temperature='HOT';
   if(['medical','complaint','legal','discount_exception'].includes(input.intent)){lead.humanHold=true;lead.handoffReason=input.intent.toUpperCase();}
-  writeLead(store.db,lead);stopFollowups(store.db,id,optOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(store.db,'CRM_INBOUND_RECORDED',id,user);return {...message,optedOut:optOut};
+  writeLead(store.db,lead);stopFollowups(store.db,id,optOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(store.db,'CRM_INBOUND_RECORDED',id,user,tenantId);return {...message,optedOut:optOut};
  });
 }
 // --- Channel/webhook-driven messaging (WhatsApp/Instagram/Facebook) ---------------------
@@ -210,7 +228,7 @@ export function findOrCreateLeadFromChannel(store,{phone,email,name,channel},act
  * messages, as the lookup key a later delivery-status webhook updates in place rather than
  * inserting a second row for the same message.
  */
-export function recordChannelMessage(store,{leadId,channel,direction,text,externalMessageId,messageType='text',media=null,intent='general',subject=null,cc=null,bcc=null,externalThreadId=null,internetMessageId=null,attachments=null},actor){
+export function recordChannelMessage(store,{leadId,channel,direction,text,externalMessageId,messageType='text',media=null,intent='general',subject=null,cc=null,bcc=null,externalThreadId=null,internetMessageId=null,attachments=null},actor,tenantId=null){
  if(!['INBOUND','OUTBOUND'].includes(direction))fail(400,'اتجاه رسالة غير صالح');
  if(!['WhatsApp','Email','Instagram','Facebook','X','LinkedIn','Phone'].includes(channel))fail(400,'قناة غير مدعومة');
  const eventKey=externalMessageId?`${channel}:${externalMessageId}`:`${channel}:${direction}:${randomUUID()}`;
@@ -219,7 +237,7 @@ export function recordChannelMessage(store,{leadId,channel,direction,text,extern
    const prior=store.db.prepare('SELECT json FROM crm_messages WHERE external_message_id=?').get(externalMessageId);
    if(prior)return {...JSON.parse(prior.json),replayed:true};
   }
-  const lead=getLead(store.db,leadId);
+  const lead=getLead(store.db,leadId,tenantId);
   const message={id:randomUUID(),leadId,eventKey,channel,text:string(text,4000),intent,direction,messageType,media,externalMessageId:externalMessageId||null,
    // Email-specific fields — always present (null when not applicable) so every message
    // row has a stable, predictable shape regardless of channel.
@@ -230,7 +248,7 @@ export function recordChannelMessage(store,{leadId,channel,direction,text,extern
   if(direction==='INBOUND'){
    lead.version++;lead.lastInboundAt=message.recordedAt;lead.replyHold=true;
    if(isOptOutText(text)){lead.optOut=true;lead.optOutAt=message.recordedAt;lead.consent={Email:null,WhatsApp:null};optedOut=true;}
-   writeLead(store.db,lead);stopFollowups(store.db,leadId,optedOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(store.db,'CRM_INBOUND_RECORDED',leadId,actor);
+   writeLead(store.db,lead);stopFollowups(store.db,leadId,optedOut?'OPT_OUT':'CUSTOMER_REPLIED');audit(store.db,'CRM_INBOUND_RECORDED',leadId,actor,tenantId);
   } else {
    lead.lastOutboundAt=message.recordedAt;writeLead(store.db,lead);
   }
@@ -269,8 +287,8 @@ export function maybeEscalateHotLead(store,eventBus,before,after,{agentId='human
   context:{leadId:after.id,company:after.company||null,productNeed:after.productNeed||null,city:after.city||null,quantity:after.quantity,timeline:after.timeline||null,customerType:after.customerType,recommendedAction:'CONTACT_LEAD'}});
  return {eventId,escalation};
 }
-export function contactControl(store,id,input,user){return store.mutate(state=>{
- const lead=getLead(store.db,id);expectedVersion(lead,input);const evidence=required(input.evidence,'دليل القرار',1000);
+export function contactControl(store,id,input,user,tenantId=null){return store.mutate(state=>{
+ const lead=getLead(store.db,id,tenantId);expectedVersion(lead,input);const evidence=required(input.evidence,'دليل القرار',1000);
  if(input.action==='OPT_OUT'){lead.optOut=true;lead.consent={Email:null,WhatsApp:null};stopFollowups(store.db,id,'OPT_OUT');}
  else {
   if(user.role!=='owner')fail(403,'اعتماد التواصل ورفع الإيقاف للمالك فقط');
@@ -287,7 +305,7 @@ export function contactControl(store,id,input,user){return store.mutate(state=>{
   stopFollowups(store.db,id,'CONTACT_POLICY_CHANGED');
  }
  if(input.action==='OPT_OUT')lead.optOutAt=new Date().toISOString();
- lead.version++;writeLead(store.db,lead);audit(store.db,'CRM_CONTACT_POLICY_CHANGED',id,user);return lead;
+ lead.version++;writeLead(store.db,lead);audit(store.db,'CRM_CONTACT_POLICY_CHANGED',id,user,tenantId);return lead;
 });}
 function eligibility(lead,channel,sequence){
  if(lead.optOut)return 'OPT_OUT';if(!lead.consent[channel])return 'NO_CONSENT';
@@ -297,38 +315,42 @@ function eligibility(lead,channel,sequence){
  if(channel==='Email'&&!lead.email||channel==='WhatsApp'&&!lead.phone)return 'NO_CONTACT';
  if(!lead.productUrl)return 'NO_PRODUCT_LINK';return null;
 }
-export function createFollowups(store,id,input,user){
+export function createFollowups(store,id,input,user,tenantId=null){
+ const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
  const key=required(input.requestKey,'مفتاح الطلب',120),sequence=input.sequence,channel=input.channel;
  if(!sequences[sequence]||!['Email','WhatsApp'].includes(channel))fail(400,'نوع المتابعة أو القناة غير صالح');
  const start=iso(input.startAt,'بداية المتابعة'),evidence=required(input.evidence,'سياق المتابعة ودليل الحدث',1000);
  const fingerprint=createHash('sha256').update(JSON.stringify({id,sequence,channel,start,evidence,user:user.id})).digest('hex');
  return store.mutate(state=>{
-  const prior=store.db.prepare('SELECT * FROM crm_requests WHERE key=?').get(key);if(prior){if(prior.fingerprint!==fingerprint)fail(409,'مفتاح الطلب مستخدم');return {...JSON.parse(prior.json),replayed:true};}
+  const prior=store.db.prepare('SELECT * FROM crm_requests WHERE tenant_id=? AND key=?').get(resolvedTenantId,key);if(prior){if(prior.fingerprint!==fingerprint)fail(409,'مفتاح الطلب مستخدم');return {...JSON.parse(prior.json),replayed:true};}
   if(Date.parse(start)<Date.now()+48*3600000)fail(400,'ابدأ بعد 48 ساعة على الأقل');
-  const lead=getLead(store.db,id),blocked=eligibility(lead,channel,sequence);if(blocked)fail(409,'المتابعة موقوفة: '+blocked);
+  const lead=getLead(store.db,id,resolvedTenantId),blocked=eligibility(lead,channel,sequence);if(blocked)fail(409,'المتابعة موقوفة: '+blocked);
   if(lead.stage==='PARKED'&&lead.nextCheckAt&&Date.parse(start)<Date.parse(lead.nextCheckAt))fail(409,'الموعد قبل تاريخ مراجعة الفرصة المؤجلة');
   if(store.db.prepare("SELECT id FROM crm_followups WHERE lead_id=? AND status IN ('DRAFT','APPROVED','READY_FOR_CHANNEL') LIMIT 1").get(id))fail(409,'توجد سلسلة متابعة نشطة لهذا العميل');
   const items=sequences[sequence].touches.map(([ar,en],i)=>({id:randomUUID(),leadId:id,sequence,channel,touch:i+1,maxTouches:3,dueAt:new Date(Date.parse(start)+[0,48,120][i]*3600000).toISOString(),messageAr:ar+'\n'+lead.productUrl,messageEn:en+'\n'+lead.productUrl,evidence,leadVersion:lead.version,status:'DRAFT',approval:null,holdReason:null,createdBy:user.id,createdAt:new Date().toISOString()}));
   for(const item of items)store.db.prepare('INSERT INTO crm_followups VALUES (?,?,?,?,?)').run(item.id,id,item.status,item.dueAt,JSON.stringify(item));
-  const result={items};store.db.prepare('INSERT INTO crm_requests VALUES (?,?,?)').run(key,fingerprint,JSON.stringify(result));audit(store.db,'CRM_FOLLOWUPS_DRAFTED',id,user);return result;
+  const result={items};store.db.prepare('INSERT INTO crm_requests (tenant_id,key,fingerprint,json) VALUES (?,?,?,?)').run(resolvedTenantId,key,fingerprint,JSON.stringify(result));audit(store.db,'CRM_FOLLOWUPS_DRAFTED',id,user,resolvedTenantId);return result;
  });
 }
 function followupHash(item){return createHash('sha256').update(JSON.stringify([item.messageAr,item.messageEn,item.dueAt,item.channel,item.leadVersion,item.sequence,item.touch])).digest('hex');}
-export function approveFollowup(store,id,user){return store.mutate(state=>{
- const row=store.db.prepare('SELECT json FROM crm_followups WHERE id=?').get(id);if(!row)fail(404,'المتابعة غير موجودة');const item=JSON.parse(row.json),lead=getLead(store.db,item.leadId);
+export function approveFollowup(store,id,user,tenantId=null){return store.mutate(state=>{
+ const row=store.db.prepare('SELECT json FROM crm_followups WHERE id=?').get(id);if(!row)fail(404,'المتابعة غير موجودة');const item=JSON.parse(row.json),lead=getLead(store.db,item.leadId,tenantId);
  if(item.status!=='DRAFT')fail(409,'يمكن اعتماد مسودة متابعة فقط');
  const reason=eligibility(lead,item.channel,item.sequence);if(reason||lead.version!==item.leadVersion)fail(409,'السياق تغير أو المتابعة موقوفة: '+(reason||'LEAD_CHANGED'));
  item.status='APPROVED';item.approval={userId:user.id,at:new Date().toISOString(),hash:followupHash(item)};
- store.db.prepare('UPDATE crm_followups SET status=?,json=? WHERE id=?').run(item.status,JSON.stringify(item),id);audit(store.db,'CRM_FOLLOWUP_APPROVED',id,user);return item;
+ store.db.prepare('UPDATE crm_followups SET status=?,json=? WHERE id=?').run(item.status,JSON.stringify(item),id);audit(store.db,'CRM_FOLLOWUP_APPROVED',id,user,tenantId);return item;
 });}
-export function prepareFollowups(store,user,now=Date.now()){return store.mutate(state=>{
+export function prepareFollowups(store,user,now=Date.now(),tenantId=null){
+ const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
+ return store.mutate(state=>{
  let ready=0,held=0;
- for(const row of store.db.prepare("SELECT json FROM crm_followups WHERE status IN ('APPROVED','READY_FOR_CHANNEL') AND due_at<=?").all(new Date(now).toISOString())){
-  const item=JSON.parse(row.json),lead=getLead(store.db,item.leadId);
+ const rows=store.db.prepare("SELECT cf.json FROM crm_followups cf JOIN crm_leads cl ON cl.id=cf.lead_id WHERE cl.tenant_id=? AND cf.status IN ('APPROVED','READY_FOR_CHANNEL') AND cf.due_at<=?").all(resolvedTenantId,new Date(now).toISOString());
+ for(const row of rows) {
+  const item=JSON.parse(row.json),lead=getLead(store.db,item.leadId,resolvedTenantId);
   const reason=eligibility(lead,item.channel,item.sequence)||(lead.version!==item.leadVersion?'LEAD_CHANGED':null)||(!item.approval?.userId||item.approval.hash!==followupHash(item)?'APPROVAL_CHANGED':null);
   const status=reason?'HOLD':'READY_FOR_CHANNEL';if(reason)held++;else ready++;
-  if(status!==item.status){item.status=status;item.holdReason=reason||'CHANNEL_NOT_CONNECTED';if(reason)item.approval=null;store.db.prepare('UPDATE crm_followups SET status=?,json=? WHERE id=?').run(status,JSON.stringify(item),item.id);audit(store.db,'CRM_FOLLOWUP_PREPARED',item.id,user);}
+  if(status!==item.status){item.status=status;item.holdReason=reason||'CHANNEL_NOT_CONNECTED';if(reason)item.approval=null;store.db.prepare('UPDATE crm_followups SET status=?,json=? WHERE id=?').run(status,JSON.stringify(item),item.id);audit(store.db,'CRM_FOLLOWUP_PREPARED',item.id,user,resolvedTenantId);}
  }
  return {ready,held,sent:0};
 });}
-export function cancelFollowups(store,id,user){return store.mutate(()=>{getLead(store.db,id);stopFollowups(store.db,id,'HUMAN_CANCELLED');audit(store.db,'CRM_FOLLOWUPS_STOPPED',id,user);return {stopped:true};});}
+export function cancelFollowups(store,id,user,tenantId=null){return store.mutate(()=>{getLead(store.db,id,tenantId);stopFollowups(store.db,id,'HUMAN_CANCELLED');audit(store.db,'CRM_FOLLOWUPS_STOPPED',id,user,tenantId);return {stopped:true};});}

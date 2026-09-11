@@ -138,9 +138,9 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
     return updated;
    }},
   {name:'save_message',description:'Record an inbound conversation message against a lead.',inputSchema:obj({leadId:string,channel:string,text:string,intent:string,eventKey:string},['leadId','channel','text','intent','eventKey']),minLevel:'L0',
-   handler:({leadId,...input},ctx)=>recordMessage(store,leadId,input,ctx.actor)},
+   handler:({leadId,...input},ctx)=>recordMessage(store,leadId,input,ctx.actor,ctx.tenantId)},
   {name:'create_followup',description:'Draft a follow-up sequence for a lead (drafts only; still requires human approval to send).',inputSchema:obj({leadId:string,sequence:string,channel:string,startAt:string,evidence:string,requestKey:string},['leadId','sequence','channel','startAt','evidence','requestKey']),minLevel:'L0',
-   handler:({leadId,...input},ctx)=>createFollowups(store,leadId,input,ctx.actor)},
+   handler:({leadId,...input},ctx)=>createFollowups(store,leadId,input,ctx.actor,ctx.tenantId)},
   {name:'create_content',description:'Create a new content draft (still requires human compliance review and owner approval before it can be scheduled).',inputSchema:obj({title:string,body:string,platform:string,date:string,url:string},['title','body','platform','date','url']),minLevel:'L0',
    handler:(input,ctx)=>{const item={...createContent(input),createdBy:ctx.actor.id,origin:'AI'};insertContent(db,item,ctx.tenantId);recordAudit(db,{id:crypto.randomUUID(),action:'DRAFT_CREATED',itemId:item.id,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:new Date().toISOString()},ctx.tenantId);return item;}},
   {name:'propose_memory_update',description:'Propose a brand memory change for human approval — never writes memory directly.',inputSchema:obj({type:string,key:string,newValue:string,evidence:string,confidence:{type:'number'}},['type','key','newValue']),minLevel:'L0',
@@ -160,7 +160,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
     if(!templateName && !withinCustomerServiceWindow(lead))return {status:'BLOCKED',reason:'TEMPLATE_REQUIRED_OUTSIDE_WINDOW'};
     const result=await sendWhatsAppMessage({store,env,fetcher},{to:lead.phone,text,templateName,templateLanguage});
     if(result.status==='SENT'){
-     recordChannelMessage(store,{leadId,channel:'WhatsApp',direction:'OUTBOUND',text:text||`[template:${templateName}]`,externalMessageId:result.externalMessageId,messageType:templateName?'template':'text'},ctx.actor);
+     recordChannelMessage(store,{leadId,channel:'WhatsApp',direction:'OUTBOUND',text:text||`[template:${templateName}]`,externalMessageId:result.externalMessageId,messageType:templateName?'template':'text'},ctx.actor,ctx.tenantId);
     }
     return result;
    }},
@@ -239,7 +239,7 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
     const result=await sendMail({store,env,fetcher},{to:lead.email,cc,subject,bodyHtml});
     if(result.status==='SENT') {
      const recovered=await findRecentSentMessage({store,env,fetcher},{subject,to:lead.email}).catch(()=>null);
-     recordChannelMessage(store,{leadId,channel:'Email',direction:'OUTBOUND',text:bodyHtml,subject,cc:cc||null,externalMessageId:recovered?.externalMessageId,externalThreadId:recovered?.externalThreadId,internetMessageId:recovered?.internetMessageId,messageType:'email'},ctx.actor);
+     recordChannelMessage(store,{leadId,channel:'Email',direction:'OUTBOUND',text:bodyHtml,subject,cc:cc||null,externalMessageId:recovered?.externalMessageId,externalThreadId:recovered?.externalThreadId,internetMessageId:recovered?.internetMessageId,messageType:'email'},ctx.actor,ctx.tenantId);
     }
     return result;
    }},

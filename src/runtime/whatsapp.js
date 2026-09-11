@@ -1,20 +1,43 @@
 import {randomUUID} from 'node:crypto';
 import {ConnectorError} from '../connectors.js';
 import {resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from './meta-oauth.js';
+import {resolveActiveTenantId} from '../tenancy.js';
 
 const GRAPH_VERSION='v21.0';
 const GRAPH_BASE='https://graph.facebook.com/'+GRAPH_VERSION;
 
+// Multi-Tenant Phase 3 (deferred table, now closed): the old UNIQUE(name,language) table
+// constraint would have let a second tenant's own approved WhatsApp template collide with
+// (and silently overwrite, via the ON CONFLICT upsert below) the first tenant's template of
+// the same name/language — table recreation needed since SQLite can't ALTER a table-level
+// UNIQUE constraint in place, same as calendar_slots in planning.js.
 export function installWhatsAppTemplates(db) {
- db.exec(`CREATE TABLE IF NOT EXISTS whatsapp_templates (
-  id TEXT PRIMARY KEY, template_external_id TEXT, name TEXT NOT NULL, language TEXT NOT NULL,
+ const legacy=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='whatsapp_templates'").get();
+ if(legacy) {
+  const columns=db.prepare('PRAGMA table_info(whatsapp_templates)').all().map(c=>c.name);
+  if(!columns.includes('tenant_id')) {
+   const tenantId=resolveActiveTenantId(db);
+   db.exec('ALTER TABLE whatsapp_templates RENAME TO whatsapp_templates_pre_tenant;');
+   db.exec(`CREATE TABLE whatsapp_templates (
+    id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, template_external_id TEXT, name TEXT NOT NULL, language TEXT NOT NULL,
+    category TEXT, status TEXT NOT NULL, components TEXT NOT NULL, last_synced_at TEXT NOT NULL,
+    UNIQUE(tenant_id,name,language)
+   );`);
+   db.prepare('INSERT INTO whatsapp_templates (id,tenant_id,template_external_id,name,language,category,status,components,last_synced_at) SELECT id,?,template_external_id,name,language,category,status,components,last_synced_at FROM whatsapp_templates_pre_tenant').run(tenantId);
+   db.exec('DROP TABLE whatsapp_templates_pre_tenant;');
+  }
+  return;
+ }
+ db.exec(`CREATE TABLE whatsapp_templates (
+  id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, template_external_id TEXT, name TEXT NOT NULL, language TEXT NOT NULL,
   category TEXT, status TEXT NOT NULL, components TEXT NOT NULL, last_synced_at TEXT NOT NULL,
-  UNIQUE(name,language)
+  UNIQUE(tenant_id,name,language)
  );`);
 }
-export function listWhatsAppTemplates(db,{status}={}) {
- const rows=status?db.prepare('SELECT * FROM whatsapp_templates WHERE status=? ORDER BY name').all(status)
-  :db.prepare('SELECT * FROM whatsapp_templates ORDER BY name').all();
+export function listWhatsAppTemplates(db,{status}={},tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const rows=status?db.prepare('SELECT * FROM whatsapp_templates WHERE tenant_id=? AND status=? ORDER BY name').all(resolvedTenantId,status)
+  :db.prepare('SELECT * FROM whatsapp_templates WHERE tenant_id=? ORDER BY name').all(resolvedTenantId);
  return rows.map(row=>({...row,components:JSON.parse(row.components)}));
 }
 async function requestJson(fetcher,url,options={}) {
@@ -77,7 +100,8 @@ export async function testWhatsAppConnection({store,env,fetcher=fetch}) {
  * Meta (never invents an "Approved" status locally). Local statuses are Meta's own,
  * lowercased-mapped 1:1: APPROVED/PENDING/REJECTED/PAUSED/DISABLED.
  */
-export async function syncWhatsAppTemplates({store,env,fetcher=fetch}) {
+export async function syncWhatsAppTemplates({store,env,fetcher=fetch},tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
  const resolved=resolveMetaAccessToken({store,env},'whatsapp');
  const meta=store.db.prepare('SELECT metadata FROM integration_credentials WHERE provider=?').get('meta');
  const businessAccountId=env.WHATSAPP_BUSINESS_ACCOUNT_ID||(meta?.metadata?JSON.parse(meta.metadata)?.whatsapp?.businessAccountId:null);
@@ -87,9 +111,9 @@ export async function syncWhatsAppTemplates({store,env,fetcher=fetch}) {
  const now=new Date().toISOString();
  let synced=0;
  for(const tpl of data.data||[]) {
-  store.db.prepare(`INSERT INTO whatsapp_templates (id,template_external_id,name,language,category,status,components,last_synced_at) VALUES (?,?,?,?,?,?,?,?)
-   ON CONFLICT(name,language) DO UPDATE SET template_external_id=excluded.template_external_id,category=excluded.category,status=excluded.status,components=excluded.components,last_synced_at=excluded.last_synced_at`)
-   .run(randomUUID(),tpl.id||null,tpl.name,tpl.language,tpl.category||null,String(tpl.status||'UNKNOWN').toUpperCase(),JSON.stringify(tpl.components||[]),now);
+  store.db.prepare(`INSERT INTO whatsapp_templates (id,tenant_id,template_external_id,name,language,category,status,components,last_synced_at) VALUES (?,?,?,?,?,?,?,?,?)
+   ON CONFLICT(tenant_id,name,language) DO UPDATE SET template_external_id=excluded.template_external_id,category=excluded.category,status=excluded.status,components=excluded.components,last_synced_at=excluded.last_synced_at`)
+   .run(randomUUID(),resolvedTenantId,tpl.id||null,tpl.name,tpl.language,tpl.category||null,String(tpl.status||'UNKNOWN').toUpperCase(),JSON.stringify(tpl.components||[]),now);
   synced++;
  }
  return {synced,syncedAt:now};

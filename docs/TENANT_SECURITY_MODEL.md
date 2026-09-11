@@ -27,19 +27,52 @@ separate, per the spec's own "User = identity, TenantMembership = role" principl
 schema already supports one user holding memberships (and different roles) in more than one
 tenant, even though no UI exists yet to exercise that.
 
-## Fail-open vs. fail-closed — an honest limitation, not a hidden one
+## Fail-open vs. fail-closed — what Phase 3 actually changed, and what it didn't
 
-The spec's Phase 38-39 asks for a hard fail-closed behavior: a tenant-owned route with no
-resolvable tenant context must return `TENANT_CONTEXT_REQUIRED`, never silently fall back to
-"the first tenant." **This codebase does not yet implement that fail-closed check** — every
-tenant-scoped function's default (`resolveActiveTenantId`) is a fail-*open* default to the
-one active tenant, chosen deliberately in Phase 1 so that ~25 existing files and their tests
-never needed to change. In today's actual deployment (one tenant reachable from any real
-session) this is behaviorally identical to fail-closed — there is no *other* tenant for a
-request to accidentally fall into. It stops being safe the moment a second tenant is
-reachable through the UI without every route being audited to pass `session.tenantId`
-explicitly. **This is the single most important thing to fix before onboarding a real second
-paying customer** — see "Remaining risks" in the final report.
+The spec asks for a hard fail-closed behavior: a tenant-owned operation with no resolvable
+tenant context must refuse with `TENANT_CONTEXT_REQUIRED`, never silently fall back to "the
+first tenant." Phase 1/2 left every tenant-scoped function's default
+(`tenantId||resolveActiveTenantId(db)`) fail-*open* — safe only because there was genuinely
+one tenant to fall into.
+
+**Phase 3 closed this at the root.** `resolveActiveTenantId(db)` itself now checks how many
+tenants actually exist: if there are two or more, it throws
+`Object.assign(new Error('TENANT_CONTEXT_REQUIRED'),{code:'TENANT_CONTEXT_REQUIRED',status:400})`
+instead of guessing. Since this is the one function every tenant-scoped default ultimately
+calls, this single change converts **every** omitted-`tenantId` call site across the entire
+codebase (~40+ of them, spanning every table listed below) from fail-open to fail-closed
+simultaneously, with zero per-call-site changes. Proven directly in `tests/tenancy.test.js`:
+`saveCredentials`/`getCredentials` called with no `tenantId` throw `TENANT_CONTEXT_REQUIRED`
+the moment a second tenant is created.
+
+**What this mechanism does NOT give you** — three real, distinct gaps, not one:
+
+1. **HTTP routes bypass it entirely, safely.** A real request never reaches
+   `resolveActiveTenantId`'s guess-or-throw logic at all — `session.tenantId` is set from
+   `resolveTenantForUser(db, userId)` (a real membership-table lookup) right after login,
+   at `application.js`'s auth block. This is correct by construction regardless of how many
+   tenants exist; it simply means the new guard is a safety net for code paths *other* than
+   HTTP requests, not proof that HTTP routes were individually audited.
+2. **Background work breaks instead of leaking.** The scheduler's `tick()`, the follow-up-gap
+   sweep, and webhook handlers (`/api/webhooks/whatsapp`, `/api/webhooks/microsoft/mail`)
+   have no session and still call functions with no explicit `tenantId`. The moment a second
+   tenant exists, every one of these calls throws `TENANT_CONTEXT_REQUIRED` — which means
+   scheduled jobs and webhook ingestion stop working *for every tenant, including the first*,
+   rather than silently mixing data. This is the correct failure mode for safety, but it is a
+   hard functional blocker: no `listTenants()`-style function exists yet to let these loops
+   run once per tenant instead of once globally.
+3. **Two tables genuinely have no tenant concept to fail closed on**: `crm_messages`/
+   `crm_followups` remain SHARED_SAFE-by-design (isolated transitively via `lead_id`, see
+   below) — this is intentional, not a gap. Every other table in this codebase now has a real
+   `tenant_id` column (see the classification table below) — there is no longer a table that
+   would silently leak.
+
+**Net effect**: creating a real second tenant today would be *safe* (no cross-tenant data
+leak has been found or is expected — either a route resolves the correct tenant via session
+membership, or a non-HTTP call site fails loud) but *not yet functional* (the scheduler and
+webhooks would need the per-tenant loop described above before a second tenant's automation
+actually runs). This is the honest basis for this phase's GO/NO-GO decision — see the final
+report.
 
 ## IDOR protection — how it actually works
 
@@ -76,7 +109,7 @@ delete-bug fix.
 | Agent definitions/config (`agent_registry`, `agent_autonomy`) | **Global by design this pass** | See "Design decisions" below. |
 | Sessions, runtime pause switch | **Global by design** | Correctly so — a session belongs to a user, not a tenant; the pause switch is a platform-wide kill switch (spec's own example of a legitimately shared control). |
 
-## Full table classification (Phase 2 audit)
+## Full table classification (Phase 2 + 3 audit)
 
 | Table | Classification | tenant_id? |
 |---|---|---|
@@ -87,10 +120,11 @@ delete-bug fix.
 | `integration_credentials` | TENANT_OWNED | **Yes** (Phase 1) |
 | `crm_leads` | TENANT_OWNED | **Yes** (Phase 1) |
 | `crm_messages`, `crm_followups` | SHARED_SAFE (transitive via `lead_id`) | No (by design) |
-| `crm_requests` | TENANT_OWNED | No — deferred, low severity (idempotency-key cache only) |
+| `crm_requests` | TENANT_OWNED | **Yes** (Phase 3 — composite PK `(tenant_id,key)`, table recreated) |
 | `memory` | TENANT_OWNED | **Yes** (Phase 2) |
 | `products` | TENANT_OWNED | **Yes** (Phase 2 — critical bug fixed) |
-| `ai_runs`, `compliance_runs` | TENANT_OWNED | No — deferred (no longer blocked by `state.content`, which is now real; simply not yet migrated) |
+| `ai_runs` | TENANT_OWNED | **Yes** (Phase 3 — composite unique `(tenant_id,request_key)`, table recreated) |
+| `compliance_runs` | TENANT_OWNED | **Yes** (Phase 3 — composite unique `(tenant_id,request_key)`, table recreated) |
 | `weekly_reports`, `daily_briefs` | TENANT_OWNED | **Yes** (Phase 2, row-level only) |
 | `calendar_slots` | TENANT_OWNED | **Yes** (Phase 3 — composite unique `(tenant_id,date,platform)`, table recreated) |
 | `schedule_jobs` | TENANT_OWNED | **Yes** (Phase 3 — additive column + index) |
@@ -101,7 +135,7 @@ delete-bug fix.
 | `webhook_events` | TENANT_OWNED | **Yes** (Phase 2, column only — routing deferred) |
 | `agent_runs` | TENANT_OWNED | **Yes** (Phase 2) |
 | `agent_tool_calls` | SHARED_SAFE (transitive via `run_id`) | No (by design) |
-| `whatsapp_templates` | TENANT_OWNED | No — deferred, low severity (a tenant's approved WhatsApp templates) |
+| `whatsapp_templates` | TENANT_OWNED | **Yes** (Phase 3 — composite unique `(tenant_id,name,language)`, table recreated) |
 | `agent_registry` | GLOBAL_DEFINITION (design decision) | No |
 | `agent_autonomy` | GLOBAL_DEFINITION (design decision) | No |
 | `audit_logs` (replaces `state.audit`) | TENANT_OWNED | **Yes** (Phase 3 — real SQL table, see `docs/AUDIT_MIGRATION.md`) |

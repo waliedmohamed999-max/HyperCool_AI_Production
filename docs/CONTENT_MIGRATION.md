@@ -60,9 +60,10 @@ second tenant.
 
 - `state.audit` (the Operations Log) is a separate, still-global JSON array — a similarly
   shaped but separately scoped problem, not touched by this migration.
-- `ai_runs` and `compliance_runs` are not yet tenant-scoped. They were blocked on this
-  migration before (their content-hash comparisons needed a real per-tenant content lookup);
-  that blocker is gone, but the tables themselves have not been migrated yet.
+- `ai_runs` and `compliance_runs` were blocked on this migration before (their content-hash
+  comparisons needed a real per-tenant content lookup); that blocker is gone, and both tables
+  have since been tenant-scoped in a later pass of the same Phase 3 work (see
+  `docs/TENANT_SECURITY_MODEL.md`, which is current).
 - Fail-closed conversion: `getContentOrNull`/`getContent`/`listContent`/`insertContent`'s
   `tenantId=null` default still resolves to "the one active tenant" (fail-*open*), consistent
   with every other Phase 1/2 table. Converting this to a hard `TENANT_CONTEXT_REQUIRED` is a

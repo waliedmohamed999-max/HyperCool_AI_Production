@@ -165,9 +165,37 @@ running server restarted and re-verified (`integrity_check: ok`, owner account i
 done twice, once for the content+calendar/scheduling migration and once for the audit
 migration.
 
-With both hard problems solved, the single largest remaining gap before a second real
-tenant is safe is no longer a data-model problem — it's that tenant resolution is still
-fail-*open* everywhere (see "Fail-closed tenant resolution" below).
+With both hard problems solved, the four previously-deferred tables (`ai_runs`,
+`compliance_runs`, `whatsapp_templates`, `crm_requests`) were also closed in the same pass —
+each following the identical table-recreation pattern (composite unique key including
+`tenant_id`) already proven for `crm_leads`/`content_items`. `docs/TENANT_SECURITY_MODEL.md`
+now lists every table in this codebase as either tenant-scoped, transitively safe by design,
+or a documented, deliberate global default — none are silently unscoped anymore.
+
+**A real cross-tenant test matrix caught six genuine bugs while writing it.** Building
+`tests/tenancy-phase3.test.js` (6 new real HTTP IDOR tests covering every surface this phase
+touched: content direct-id access, calendar/scheduling, WhatsApp templates, the CRM
+idempotency cache, `ai_runs`, and `compliance_runs`) surfaced that `src/crm.js`'s
+`contactControl`, `recordMessage`, `recordChannelMessage`, `cancelFollowups`,
+`approveFollowup`, and `prepareFollowups` — plus one missed lookup inside `createFollowups`
+itself — all called `getLead()`/`audit()` with no `tenantId` at all. None of these leaked
+data (the fail-closed guard above would have caught that), but every one of them would have
+thrown `TENANT_CONTEXT_REQUIRED` and hard-failed for *every* tenant, including the first, the
+moment a second tenant existed. All seven are now fixed and threaded with a real `tenantId`
+end to end (HTTP route → function → `getLead`/`audit`), and `prepareFollowups`'s underlying
+query — which used to scan `crm_followups` globally with no tenant filter at all — now joins
+through `crm_leads` to scope correctly, the same fix already applied to
+`listFollowups`/`listAllMessages` earlier in this phase. This is exactly the value of writing
+the real cross-tenant test matrix the spec asked for, rather than treating the central
+fail-closed guard as sufficient on its own.
+
+A central fail-closed mechanism was also added: `resolveActiveTenantId(db)`
+(`src/tenancy.js`) — the default every tenant-scoped function's optional `tenantId`
+parameter falls back to — now throws `TENANT_CONTEXT_REQUIRED` the instant a second tenant
+exists, instead of silently guessing "the one tenant." This flips **every** call site across
+the whole codebase that omits an explicit `tenantId` from fail-open to fail-closed for free,
+with no per-call-site change needed, tested directly in `tests/tenancy.test.js`. See
+"Fail-closed tenant resolution" below for what this does and does not cover.
 
 ## What is deliberately NOT built yet
 
@@ -177,11 +205,19 @@ foundation only," then "data isolation + Control Center foundation" for Phase 2,
 UI and the next-hardest piece) — these are real, substantial next-phase items, not
 oversights:
 
-- **Fail-closed tenant resolution** — every tenant-scoped function (Phase 1, 2, and 3 alike)
-  still defaults an omitted `tenantId` to `resolveActiveTenantId(db)` ("the one tenant that
-  exists"), not a hard `TENANT_CONTEXT_REQUIRED` failure. Safe today only because there is
-  genuinely no second tenant for a request to fall into by accident — see
-  `docs/TENANT_SECURITY_MODEL.md`'s "Fail-open vs. fail-closed" section.
+- **Fail-closed tenant resolution — real, but a blanket safety net, not a per-route
+  guarantee.** `resolveActiveTenantId(db)` now throws `TENANT_CONTEXT_REQUIRED` once a
+  second tenant exists (see above), so every call site across the codebase that omits an
+  explicit `tenantId` fails LOUD instead of leaking data cross-tenant. What this does NOT
+  give you: (1) HTTP routes never call `resolveActiveTenantId` in the first place — they get
+  `session.tenantId` from `resolveTenantForUser` (a real per-user membership lookup), so they
+  are correct by construction today but are not exercising this guard at all; (2) background
+  work with no session (the scheduler's `tick()`, follow-up-gap sweep, webhook handlers) DOES
+  hit the default and would start throwing `TENANT_CONTEXT_REQUIRED` on every run the moment
+  a second tenant is created — safe (no leak) but means those jobs stop working entirely for
+  every tenant until they are rewritten to loop per-tenant (no `listTenants()`-style function
+  exists yet to make that loop possible). See `docs/TENANT_SECURITY_MODEL.md`'s "Fail-open
+  vs. fail-closed" section for the full picture.
 - **Conversations/Messages/Quotes/Follow-ups** — already effectively isolated: these live
   inside `crm_leads`/`crm_messages`/`crm_followups`, reached only via a `lead_id` whose
   owning lead is tenant-checked (Phase 1). "Quotes" specifically are fields on the lead
