@@ -328,3 +328,14 @@ and `docs/WORKSPACE_ONBOARDING.md`. All four configure an **existing** tenant on
 them adds tenant creation, an email field, a real platform email service, or customer
 self-service signup — those remain explicitly out of scope, unchanged from this document's
 original list.
+
+## Phase 4C-5 update: Platform Identity + Verified Email now exists — tenant creation still does not
+
+`docs/PLATFORM_IDENTITY.md` adds the email field and real platform mail service the note above
+said were still missing — but strictly as a **foundation**: this closes what those future
+features (self-service signup, new-company creation) will eventually depend on, without
+building any of those features themselves. `createTenant()` remains unexposed by any route;
+there is still no public registration and no billing identity. See
+`docs/PLATFORM_IDENTITY.md`, `docs/EMAIL_VERIFICATION.md`, `docs/PASSWORD_RECOVERY.md`, and
+`docs/PLATFORM_EMAIL.md` for the full detail, and `docs/TENANT_SECURITY_MODEL.md`'s Phase 4C-5
+update for why the new `users.email` is deliberately global rather than tenant-scoped.

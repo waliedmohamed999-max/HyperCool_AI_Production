@@ -53,3 +53,11 @@ Control Center never sees these controls, since the backend would 403 them anywa
 **Members** tab (role dropdown per member, suspend/reactivate, remove, each a real API call)
 and an **Invitations** tab (create/resend/revoke, copy-link — see
 `docs/WORKSPACE_INVITATIONS.md`).
+
+## Phase 4C-5 note: `role` stays here, `email` lives elsewhere
+
+Multi-Tenant Phase 4C-5 added a real, verified `email` to `users` — deliberately **not**
+surfaced on this page or its API. Per `docs/PLATFORM_IDENTITY.md`'s User-vs-TenantMembership
+split: `role` is a **workspace** concern (this document, unchanged), while `email` is a
+**global user identity** concern (Account Settings, `#account`) that has nothing to do with any
+one workspace's membership list.

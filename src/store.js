@@ -30,6 +30,26 @@ export function openStore(path, legacyPath) {
   // made yet" (or the user has ≤1 membership and never needed one).
   const sessionColumns=db.prepare("SELECT name FROM pragma_table_info('sessions')").all().map(r=>r.name);
   if(!sessionColumns.includes('active_tenant_id'))db.exec('ALTER TABLE sessions ADD COLUMN active_tenant_id TEXT');
+  // Multi-Tenant Phase 4C-5 (Platform Identity + Verified Email) — additive only, and
+  // deliberately NEVER backfilled with an invented address for an existing user (see
+  // docs/PLATFORM_IDENTITY.md): `email` is populated ONLY once real ownership of that address
+  // has been proven (either through the verification-token flow below, or — for a brand-new
+  // account created directly from an emailed, EMAIL_BOUND invitation link — by the invitation
+  // delivery itself, which is the same "received it in your inbox" proof). Always stored
+  // already-normalized (trimmed + lowercased; see `normalizeEmail` in platform-identity.js) —
+  // exactly one column, matching `username`'s own existing precedent of storing only the
+  // normalized form with no separate "as-typed" column. `pending_email` holds a NOT-yet-
+  // verified candidate while a change is in flight (Part 10: never overwrite a verified email
+  // before the new one is proven) and is cleared the moment it is either promoted to `email`
+  // or superseded by a newer pending request.
+  if(!userColumns.includes('email'))db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+  if(!userColumns.includes('email_verified_at'))db.exec('ALTER TABLE users ADD COLUMN email_verified_at TEXT');
+  if(!userColumns.includes('pending_email'))db.exec('ALTER TABLE users ADD COLUMN pending_email TEXT');
+  // SQLite UNIQUE indexes treat every NULL as distinct from every other NULL (standard SQL
+  // semantics), so this enforces "no two accounts share the same VERIFIED email" (Part 5)
+  // without needing a partial/WHERE-guarded index — any number of NULL (no email yet) rows
+  // coexist freely.
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)');
   if (!db.prepare('SELECT id FROM state WHERE id=1').get()) {
     const state = legacyPath && existsSync(legacyPath) ? JSON.parse(readFileSync(legacyPath,'utf8')) : initialState();
     if (!Array.isArray(state.content) || !Array.isArray(state.audit)) throw new Error('Invalid legacy state');

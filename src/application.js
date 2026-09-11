@@ -35,6 +35,8 @@ import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
 import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants,listWorkspacesForUser,activateWorkspaceForUser,listActiveMembers,getMembership,updateMembershipRole,updateMembershipStatus} from './tenancy.js';
 import {installInvitations,createInvitation,listInvitations,resendInvitation,revokeInvitation,previewInvitation,acceptInvitation,roleForValidToken,checkInvitationRateLimit} from './invitations.js';
+import {installPlatformIdentity,getUserIdentity,requestEmailChange,resendEmailVerification,verifyEmailToken,requestPasswordReset,consumePasswordResetToken,checkForgotPasswordRateLimit,checkEmailVerificationRateLimit,recordPlatformAudit} from './platform-identity.js';
+import {installPlatformMail,platformMailStatus,sendVerificationEmail,sendPasswordResetEmail,sendInvitationEmail,sendSecurityNotice} from './runtime/platform-mail.js';
 import {installContent,listContent,getContent,getContentOrNull,insertContent,writeContent} from './content.js';
 import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
@@ -58,7 +60,7 @@ import {xOAuthConfigured,createXAuthorizeUrl,consumeXState,exchangeCodeForTokens
 import {testXConnection} from './runtime/x-publishing.js';
 import {linkedInOAuthConfigured,createLinkedInAuthorizeUrl,consumeLinkedInState,exchangeCodeForTokens as exchangeLinkedInCodeForTokens,resolveConnectedProfile as resolveLinkedInProfile,resolveAdministeredOrganizations,saveLinkedInConnection,linkedInOAuthStatus,disconnectLinkedIn} from './runtime/linkedin-oauth.js';
 import {testLinkedInConnection} from './runtime/linkedin-publishing.js';
-import {setWorkspaceAiDefault,setMaxAgentLevel} from './tenancy.js';
+import {setWorkspaceAiDefault,setMaxAgentLevel,getTenant} from './tenancy.js';
 import {installTenantAgentConfigs,getTenantAgentConfig,updateTenantAgentConfig,listTenantAgentConfigs,seedTenantAgentConfigs} from './runtime/agent-config.js';
 import {installToolDefinitions,listToolDefinitions,getToolDefinition} from './runtime/tool-definitions.js';
 import {installAgentToolAssignments,listAssignmentsForAgent,upsertAssignment,deleteAssignment,findAssignmentsUsingConnection} from './runtime/tool-assignments.js';
@@ -111,6 +113,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   ensureDefaultTenant(store.db); // real, lossless backfill — see docs/MULTI_TENANT_ARCHITECTURE.md
   installInvitations(store.db); // Multi-Tenant Phase 4C-3 — see docs/WORKSPACE_INVITATIONS.md
   installOnboarding(store.db); // Multi-Tenant Phase 4C-4 — see docs/WORKSPACE_ONBOARDING.md
+  installPlatformIdentity(store.db); // Multi-Tenant Phase 4C-5 — see docs/PLATFORM_IDENTITY.md
+  installPlatformMail(store.db); // Multi-Tenant Phase 4C-5 — see docs/PLATFORM_EMAIL.md
   installContent(store.db); // migrates legacy state.content into a real tenant-scoped table — see docs/CONTENT_MIGRATION.md
   installAuditLog(store.db); // migrates legacy state.audit into a real tenant-scoped table — see docs/AUDIT_MIGRATION.md
   installKnowledge(store.db);
@@ -202,6 +206,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const host=req.headers.host;
       if(!host || (publicUrl?host!==publicUrl.host:!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host))) fail(403,'Host not allowed');
       if(req.headers.origin && req.headers.origin!==(publicUrl?.origin||`http://${host}`)) fail(403,'Cross-origin request rejected');
+      // Part 45 — the ONE base used to build every outbound account/invitation link (email
+      // verification, password reset, invitation accept). Never inferred from an arbitrary
+      // client-controlled header: `host` above is already validated against the configured
+      // `PUBLIC_ORIGIN` (or the localhost-only pattern) two lines up, so this can never be
+      // spoofed into pointing an emailed link at an attacker-controlled domain.
+      const baseUrl=publicUrl?.origin||`http://${host}`;
       const url=new URL(req.url,`http://${host}`);
       // External links may open the public shell; API and embedded requests remain protected.
       const publicNavigation=req.method==='GET' && url.pathname==='/' &&
@@ -368,11 +378,51 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const token=invitationRegister[1],input=await body(req);
         const role=roleForValidToken(store.db,token); // re-validates the token fully; throws the real reason otherwise
         const created=auth.createUser({username:input.username,name:input.name,password:input.password},role);
-        const accepted=acceptInvitation(store.db,token,created.id);
+        const accepted=acceptInvitation(store.db,token,created.id,{isNewAccount:true});
         recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_INVITATION_ACCEPTED',itemId:accepted.tenantId,actorId:created.id,actorName:created.name,at:new Date().toISOString()},accepted.tenantId);
-        const result=auth.session(created);
+        // Re-read the fresh row: an EMAIL_BOUND invitation's acceptance (above) may just have
+        // set this brand-new account's email/email_verified_at directly — `created` (captured
+        // before that update) would otherwise report a stale, empty email in this response.
+        const result=auth.session(store.db.prepare('SELECT * FROM users WHERE id=?').get(created.id));
         res.setHeader('Set-Cookie',`hc_session=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secureCookie}`);
         return send(200,{user:result.user,csrf:result.csrf,workspace:{id:accepted.tenantId,name:accepted.tenantName,role:accepted.role}});
+      }
+      // Platform Identity Phase 4C-5 — three PUBLIC, token-authenticated routes, same
+      // placement rationale as the invitation routes above: a visitor clicking an emailed
+      // verification/reset link may have no session at all (different browser/device, or an
+      // expired one) or, for forgot-password, has no session by definition. Each is guarded by
+      // its own real, single-use, hashed, expiring token — never by a request-supplied user id.
+      if(req.method==='POST' && url.pathname==='/api/account/email/verify') {
+        checkEmailVerificationRateLimit(req.socket.remoteAddress);
+        const input=await body(req);
+        const result=verifyEmailToken(store.db,input.token);
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'USER_EMAIL_VERIFIED',itemId:result.userId,actorId:result.userId,at:new Date().toISOString()});
+        return send(200,{email:result.email});
+      }
+      // Part 24 — the response shape is ALWAYS identical regardless of whether the address
+      // matches a real, verified account (no user enumeration, Part 41): the generic message
+      // is returned unconditionally; only mail-sending (or not) differs behind the scenes.
+      if(req.method==='POST' && url.pathname==='/api/auth/forgot-password') {
+        checkForgotPasswordRateLimit(req.socket.remoteAddress);
+        const input=await body(req);
+        const {token,userId}=requestPasswordReset(store.db,input.email);
+        if(token) {
+          const resetUrl=`${baseUrl}/#reset-password/${token}`;
+          const locale=['ar','en'].includes(input.locale)?input.locale:'ar';
+          await sendPasswordResetEmail({db:store.db,env,fetcher},{to:input.email,locale,resetUrl});
+          recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'PASSWORD_RESET_REQUESTED',itemId:userId,actorId:userId,at:new Date().toISOString()});
+        }
+        return send(200,{message:'إن وُجد حساب مرتبط بهذا البريد، فقد أُرسل إليه رابط إعادة تعيين كلمة المرور.'});
+      }
+      if(req.method==='POST' && url.pathname==='/api/auth/reset-password') {
+        checkForgotPasswordRateLimit(req.socket.remoteAddress);
+        const input=await body(req);
+        const userId=consumePasswordResetToken(store.db,input.token);
+        auth.resetPassword(userId,input.password); // also invalidates every existing session for this user (Part 27)
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'PASSWORD_RESET_COMPLETED',itemId:userId,actorId:userId,at:new Date().toISOString()});
+        const user=store.db.prepare('SELECT email,preferred_locale FROM users WHERE id=?').get(userId);
+        if(user?.email)await sendSecurityNotice({db:store.db,env,fetcher},{to:user.email,locale:user.preferred_locale||'ar',message:user.preferred_locale==='en'?'Your HyperCool account password was just reset. If this was not you, contact your workspace owner immediately.':'تم للتو إعادة تعيين كلمة مرور حسابك على HyperCool. إن لم يكن هذا أنت، تواصل فورًا مع مالك منشأتك.'}).catch(()=>{});
+        return send(200,{ok:true});
       }
       if(url.pathname.startsWith('/api/')) {
         authorize(session,['owner','reviewer','operator']);
@@ -410,6 +460,35 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_ACTIVATED',itemId:workspace.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},workspace.id);
         return send(200,workspace);
       }
+      // Platform Identity Phase 4C-5 — Account Settings (Part 36/37: USER identity, never
+      // workspace/tenant settings). Deliberately placed here, alongside Workspace Selection,
+      // using ONLY `session.user.id` — a multi-membership user with no active workspace
+      // selection yet must still be able to manage their own account (Part 57: email identity
+      // is global, not scoped to any one workspace).
+      if(req.method==='GET' && url.pathname==='/api/account') {
+        return send(200,{...getUserIdentity(store.db,session.user.id),platformMail:platformMailStatus(env).status});
+      }
+      if(req.method==='POST' && url.pathname==='/api/account/email') {
+        checkEmailVerificationRateLimit(req.socket.remoteAddress);
+        const input=await body(req);
+        const hadVerifiedEmailBefore=!!getUserIdentity(store.db,session.user.id)?.emailVerifiedAt;
+        const {token,normalizedEmail}=requestEmailChange(store.db,session.user.id,input.email);
+        const verifyUrl=`${baseUrl}/#verify-email/${token}`;
+        const locale=session.user.preferredLocale||'ar';
+        const delivery=await sendVerificationEmail({db:store.db,env,fetcher},{to:normalizedEmail,locale,verifyUrl});
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:hadVerifiedEmailBefore?'USER_EMAIL_CHANGED':'USER_EMAIL_ADDED',itemId:session.user.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        if(delivery.delivered)recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'EMAIL_VERIFICATION_SENT',itemId:session.user.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,{pendingEmail:normalizedEmail,delivered:delivery.delivered,errorCode:delivery.errorCode||null});
+      }
+      if(req.method==='POST' && url.pathname==='/api/account/email/resend-verification') {
+        checkEmailVerificationRateLimit(req.socket.remoteAddress);
+        const {token,normalizedEmail}=resendEmailVerification(store.db,session.user.id);
+        const verifyUrl=`${baseUrl}/#verify-email/${token}`;
+        const locale=session.user.preferredLocale||'ar';
+        const delivery=await sendVerificationEmail({db:store.db,env,fetcher},{to:normalizedEmail,locale,verifyUrl});
+        if(delivery.delivered)recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'EMAIL_VERIFICATION_SENT',itemId:session.user.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,{pendingEmail:normalizedEmail,delivered:delivery.delivered,errorCode:delivery.errorCode||null});
+      }
       // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only
       // safe outcome for an unresolved multi-membership session on any non-workspace route).
@@ -428,11 +507,15 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           const input=await body(req);
           const {invitation,token}=createInvitation(store.db,session.tenantId,{email:input.email,role:input.role},session.user.id);
           recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_INVITATION_CREATED',itemId:invitation.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-          // The raw token is returned ONLY here, ONLY once, ONLY to the authorizing owner —
-          // never persisted plaintext (invitations.js stores only its hash), never returned
-          // by the list endpoint, never logged (Part 32/70). The frontend uses it to build a
-          // one-time copy-link and never stores it beyond that.
-          return send(201,{...invitation,token});
+          // Phase 4C-5 (Part 33) — best-effort platform-mail delivery of the accept link. The
+          // raw token is STILL returned to the owner regardless of delivery outcome (Part 33:
+          // "يمكن Owner أيضًا Copy Link إذا policy تسمح") — never persisted plaintext
+          // (invitations.js stores only its hash), never returned by the list endpoint, never
+          // logged (Part 32/70). The frontend must not claim "sent" unless `delivered:true`.
+          const tenant=getTenant(store.db,session.tenantId);
+          const acceptUrl=`${baseUrl}/#invite/${token}`;
+          const delivery=await sendInvitationEmail({db:store.db,env,fetcher},{to:invitation.email,locale:session.user.preferredLocale||'ar',workspaceName:tenant.name,acceptUrl,role:invitation.role});
+          return send(201,{...invitation,token,delivered:delivery.delivered});
         }
       }
       const invitationResend=url.pathname.match(/^\/api\/workspaces\/invitations\/([\w-]+)\/resend$/);
@@ -440,7 +523,10 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner']);
         const {invitation,token}=resendInvitation(store.db,session.tenantId,invitationResend[1]);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_INVITATION_RESENT',itemId:invitation.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-        return send(200,{...invitation,token});
+        const tenant=getTenant(store.db,session.tenantId);
+        const acceptUrl=`${baseUrl}/#invite/${token}`;
+        const delivery=await sendInvitationEmail({db:store.db,env,fetcher},{to:invitation.email,locale:session.user.preferredLocale||'ar',workspaceName:tenant.name,acceptUrl,role:invitation.role});
+        return send(200,{...invitation,token,delivered:delivery.delivered});
       }
       const invitationRevoke=url.pathname.match(/^\/api\/workspaces\/invitations\/([\w-]+)\/revoke$/);
       if(req.method==='POST' && invitationRevoke) {
@@ -1312,8 +1398,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
       if(req.method==='GET' && files[url.pathname]) {
         const file=files[url.pathname];

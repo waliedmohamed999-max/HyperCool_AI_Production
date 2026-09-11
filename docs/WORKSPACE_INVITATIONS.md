@@ -180,9 +180,40 @@ one-time link is copied to the clipboard, and the owner is told explicitly to se
 
 ## Known limitations
 
-- No real email delivery (documented above) — copy-link only.
-- `MEMBER_ALREADY_EXISTS` is not detected at *creation* time (no email field to check) —
-  handled at *acceptance* time instead (idempotent reactivation).
+- `MEMBER_ALREADY_EXISTS` is not detected at *creation* time (no reliable email-to-account
+  lookup existed at the time this table's identity model was designed) — handled at
+  *acceptance* time instead (idempotent reactivation).
 - No owner-transfer workflow beyond simple role changes (a tenant can have multiple owners;
   there is no single "primary owner" concept to transfer) — not required by this phase.
 - No invitation search/filter UI beyond the plain list — acceptable at expected volumes.
+
+## Phase 4C-5 update: real email delivery + identity-bound invitations
+
+The "no email delivery exists" limitation above is now **partially closed**: a real Platform
+Mail Service exists (`docs/PLATFORM_EMAIL.md`) and `POST /api/workspaces/invitations` /
+`.../resend` now attempt a real send of the accept link. The response's `delivered` flag
+reports the true outcome — the owner's copy-link fallback (unchanged from Phase 4C-3) remains
+available regardless, since a real transport may still be unconfigured or a send may still
+fail.
+
+Every invitation created from Phase 4C-5 onward is classified `EMAIL_BOUND` (a new
+`invitation_mode` column, additive) rather than the original `TOKEN_ONLY_LEGACY` trust model:
+
+- **A brand-new account** registering through an `EMAIL_BOUND` link (`/register`) has its email
+  promoted straight to verified — receiving the link at that address is treated as the same
+  proof email verification itself relies on (Part 35).
+- **An existing, authenticated user** accepting one (`/accept`) is refused (403) only on a
+  **provable mismatch** — they already have a *different* verified email on file. A user with
+  no verified email yet is **not** blocked (this was a deliberate revision after this phase's
+  own regression testing showed the stricter original design broke ordinary acceptance for
+  virtually every existing account, since almost none had a verified email yet — see
+  `docs/PLATFORM_IDENTITY.md`'s "Real bugs this phase's own testing found" section). A full
+  "verified email required to accept" policy is deferred to whenever email becomes mandatory
+  platform-wide, ahead of Phase 4C-6.
+- Every invitation created **before** this phase (and therefore never actually delivered by a
+  real mail service, since none existed) keeps its `TOKEN_ONLY_LEGACY` classification and
+  accepts on token possession alone, completely unchanged — this phase never reinterprets a
+  pre-existing invitation's trust model retroactively.
+
+The original "Security summary" table above is unaffected: every row in it remains true for
+both invitation modes.

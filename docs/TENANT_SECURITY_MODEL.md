@@ -186,3 +186,17 @@ invitation acceptance and member suspension/removal safe with zero new invalidat
 `workspace_invitations` table follows the same tenant-scoping discipline as every table in this
 document's classification: every read/write filters `tenant_id=?`, and a foreign id is
 indistinguishable from a nonexistent one (404), never a distinguishable "not yours" response.
+
+## Phase 4C-5 update: `users.email` is intentionally GLOBAL, not tenant-scoped
+
+`docs/PLATFORM_IDENTITY.md` adds `email`/`email_verified_at`/`pending_email` directly to the
+existing `users` table — the ONE identity concept in this system that is deliberately **not**
+tenant-scoped, by design (Part 57/58/59): one verified person can hold different roles across
+multiple workspaces without needing a duplicate account per workspace. This does not weaken
+tenant isolation anywhere else — `email_verification_tokens` and `password_reset_tokens` are
+likewise correctly global (keyed by `user_id`, never `tenant_id`), and every account-identity
+route (`/api/account/*`, `/api/auth/forgot-password`, `/api/auth/reset-password`) resolves its
+subject exclusively from `session.user.id` or a token's own `user_id` — never from
+`session.tenantId` or any request-supplied tenant value, so this new surface introduces no new
+cross-tenant attack path. `workspace_invitations.invitation_mode='EMAIL_BOUND'` (new) still
+enforces its identity check per-tenant-scoped invitation, unaffected by this global layer.

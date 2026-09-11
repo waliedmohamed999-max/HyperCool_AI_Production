@@ -1,20 +1,31 @@
 import {randomUUID, randomBytes, createHash} from 'node:crypto';
 import {fail} from './auth.js';
 import {getTenant} from './tenancy.js';
+import {normalizeEmail} from './platform-identity.js';
 
 // Multi-Tenant Phase 4C-3 — Workspace Invitations. A minimal, honest invitation model built
 // on the REAL constraints of this app's existing auth (server-side sessions, no JWT — Part
-// "reuse current auth") and its REAL user model (`users` has no email column at all — only
-// `username`, validated `[a-zA-Z0-9_.-]{3,40}`; see src/store.js). This module never invents
-// an email-matching identity check it cannot actually perform (Part 15's "if identity
-// mismatch: reject" only makes sense where an email/identity field exists to check against);
-// see docs/WORKSPACE_INVITATIONS.md's "Identity model" section for the full reasoning. The
-// security model actually used: possession of the real, hashed-at-rest, single-use, expiring
-// token is the sole authority to accept — the same trust model most real invite-link products
-// use once no verified email exists to bind against, applied honestly rather than faked.
+// "reuse current auth") and its REAL user model (`users` had no email column at all at the
+// time — only `username`, validated `[a-zA-Z0-9_.-]{3,40}`; see src/store.js). This module
+// never invents an email-matching identity check it cannot actually perform (Part 15's "if
+// identity mismatch: reject" only makes sense where an email/identity field exists to check
+// against); see docs/WORKSPACE_INVITATIONS.md's "Identity model" section for the full
+// reasoning. The security model actually used: possession of the real, hashed-at-rest,
+// single-use, expiring token is the sole authority to accept — the same trust model most real
+// invite-link products use once no verified email exists to bind against, applied honestly
+// rather than faked.
+//
+// Multi-Tenant Phase 4C-5 update — now that a real, global, verified User email identity
+// exists (`platform-identity.js`), every invitation created from this point on is
+// `EMAIL_BOUND` (Part 32): accepting it as an EXISTING user requires that user's own verified
+// email to equal the invitation's target address (Part 34) — token possession is no longer
+// the SOLE authority for a new invitation, only the entry ticket. Every invitation created
+// BEFORE this phase (and therefore never actually delivered by a real mail service, since none
+// existed) is honestly kept as `TOKEN_ONLY_LEGACY` and keeps working exactly as before —
+// this phase never revokes or reinterprets a pre-existing invitation's trust model
+// retroactively (Part 31).
 const hash=token=>createHash('sha256').update(token).digest('hex');
 const VALID_ROLES=['owner','reviewer','operator'];
-const EMAIL_RE=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const INVITATION_EXPIRY_MS=7*24*3600000; // 7 days — Part 4's "clear duration", documented in docs/WORKSPACE_INVITATIONS.md
 
 export function installInvitations(db) {
@@ -36,12 +47,12 @@ export function installInvitations(db) {
  CREATE INDEX IF NOT EXISTS idx_workspace_invitations_status ON workspace_invitations(status);
  CREATE INDEX IF NOT EXISTS idx_workspace_invitations_expires ON workspace_invitations(expires_at);
  CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_invitations_active_email ON workspace_invitations(tenant_id,email) WHERE status='PENDING';`);
-}
-function normalizeEmail(email) {
- if(typeof email!=='string')fail(400,'البريد الإلكتروني مطلوب');
- const trimmed=email.trim().toLowerCase();
- if(!trimmed||trimmed.length>254||!EMAIL_RE.test(trimmed))fail(400,'صيغة البريد الإلكتروني غير صحيحة');
- return trimmed;
+ // Phase 4C-5 (Part 29-32) — additive only. Existing rows (created before Platform Identity
+ // existed, and therefore never actually delivered by a real mail service) default to the
+ // honest `TOKEN_ONLY_LEGACY` classification and keep accepting on token possession alone,
+ // unchanged. `createInvitation` marks every NEW row `EMAIL_BOUND` going forward.
+ const columns=db.prepare("SELECT name FROM pragma_table_info('workspace_invitations')").all().map(r=>r.name);
+ if(!columns.includes('invitation_mode'))db.exec("ALTER TABLE workspace_invitations ADD COLUMN invitation_mode TEXT NOT NULL DEFAULT 'TOKEN_ONLY_LEGACY' CHECK(invitation_mode IN ('TOKEN_ONLY_LEGACY','EMAIL_BOUND'))");
 }
 function genToken() { return randomBytes(32).toString('hex'); }
 // A PENDING row past its own expires_at is EXPIRED — derived live, at read time, from a
@@ -50,7 +61,7 @@ function genToken() { return randomBytes(32).toString('hex'); }
 function effectiveStatus(row) { return row.status==='PENDING' && new Date(row.expires_at).getTime()<Date.now() ? 'EXPIRED' : row.status; }
 function hydrate(row) {
  if(!row)return null;
- return {id:row.id,tenantId:row.tenant_id,email:row.email,role:row.role,status:effectiveStatus(row),invitedByUserId:row.invited_by_user_id,expiresAt:row.expires_at,acceptedAt:row.accepted_at,revokedAt:row.revoked_at,createdAt:row.created_at,updatedAt:row.updated_at};
+ return {id:row.id,tenantId:row.tenant_id,email:row.email,role:row.role,status:effectiveStatus(row),invitationMode:row.invitation_mode,invitedByUserId:row.invited_by_user_id,expiresAt:row.expires_at,acceptedAt:row.accepted_at,revokedAt:row.revoked_at,createdAt:row.created_at,updatedAt:row.updated_at};
 }
 function getRawById(db,tenantId,id) { return db.prepare('SELECT * FROM workspace_invitations WHERE id=? AND tenant_id=?').get(id,tenantId); }
 function findByToken(db,token) {
@@ -79,12 +90,14 @@ export function createInvitation(db,tenantId,{email,role},invitedByUserId) {
  const now=new Date().toISOString(),token=genToken(),expiresAt=new Date(Date.now()+INVITATION_EXPIRY_MS).toISOString();
  const existing=db.prepare("SELECT id FROM workspace_invitations WHERE tenant_id=? AND email=? AND status='PENDING'").get(tenantId,normalizedEmail);
  if(existing) {
-  db.prepare('UPDATE workspace_invitations SET token_hash=?,role=?,invited_by_user_id=?,expires_at=?,updated_at=? WHERE id=?').run(hash(token),role,invitedByUserId,expiresAt,now,existing.id);
+  // Part 32 — a fresh invite action always intends the new, binding policy, even if it
+  // happens to reuse an existing PENDING row for the same address.
+  db.prepare("UPDATE workspace_invitations SET token_hash=?,role=?,invited_by_user_id=?,expires_at=?,invitation_mode='EMAIL_BOUND',updated_at=? WHERE id=?").run(hash(token),role,invitedByUserId,expiresAt,now,existing.id);
   return {invitation:hydrate(getRawById(db,tenantId,existing.id)),token};
  }
  const id=randomUUID();
- db.prepare('INSERT INTO workspace_invitations (id,tenant_id,email,role,token_hash,status,invited_by_user_id,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-  .run(id,tenantId,normalizedEmail,role,hash(token),'PENDING',invitedByUserId,expiresAt,now,now);
+ db.prepare("INSERT INTO workspace_invitations (id,tenant_id,email,role,token_hash,status,invitation_mode,invited_by_user_id,expires_at,created_at,updated_at) VALUES (?,?,?,?,?,'PENDING','EMAIL_BOUND',?,?,?,?)")
+  .run(id,tenantId,normalizedEmail,role,hash(token),invitedByUserId,expiresAt,now,now);
  return {invitation:hydrate(getRawById(db,tenantId,id)),token};
 }
 export function listInvitations(db,tenantId) {
@@ -149,8 +162,43 @@ export function roleForValidToken(db,token) { return validateForAcceptance(db,to
  * impossible at the schema level regardless. Marks the invitation ACCEPTED and therefore
  * single-use: `validateForAcceptance` rejects a second call with the same token outright.
  */
-export function acceptInvitation(db,token,userId) {
+/**
+ * Phase 4C-5 (Part 30/34/35/47/48) identity gate — only for `EMAIL_BOUND` invitations (a
+ * legacy `TOKEN_ONLY_LEGACY` row skips this entirely, unchanged from before this phase, Part
+ * 31).
+ *
+ * `isNewAccount:true` (the `/register` route, called immediately after `createUser` with no
+ * prior identity of its own) treats having received this exact invitation link as the same
+ * kind of proof email verification itself relies on — receipt of a link at that address — and
+ * promotes the brand-new account's email straight to verified (Part 35: "email already implied
+ * by invite").
+ *
+ * `isNewAccount:false` (an existing, already-authenticated user hitting `/accept`) rejects only
+ * a PROVABLE mismatch: a user who already has a DIFFERENT verified email is refused (Part 34 —
+ * "لا يكفي امتلاك token وحده" for a genuinely wrong identity). A user with NO verified email
+ * yet is deliberately NOT blocked here — Part 47/48's own transition rule ("current legacy
+ * users can continue" / "do not block app usage immediately") applies just as much to
+ * accepting a colleague's invitation as it does to using the rest of the app; requiring every
+ * existing HyperCool user to verify an email before they could accept ANY invitation would be
+ * a hard new blocker this phase explicitly says not to introduce yet. This still closes the
+ * real gap Part 34 is about (a DIFFERENT verified person accepting someone else's invite) while
+ * a full "verified email required to accept" policy is deferred to whenever Part 48's gate
+ * before Phase 4C-6 actually makes verified email mandatory platform-wide.
+ */
+function enforceEmailBinding(db,row,userId,{isNewAccount}) {
+ if(row.invitation_mode!=='EMAIL_BOUND')return;
+ if(isNewAccount) {
+  const now=new Date().toISOString();
+  try{db.prepare('UPDATE users SET email=?,email_verified_at=?,pending_email=NULL WHERE id=?').run(row.email,now,userId);}
+  catch(error){if(String(error.message).includes('UNIQUE'))fail(409,'هذا البريد مستخدم من حساب آخر بالفعل');throw error;}
+  return;
+ }
+ const user=db.prepare('SELECT email,email_verified_at FROM users WHERE id=?').get(userId);
+ if(user?.email_verified_at && user.email!==row.email)fail(403,'هذه الدعوة مخصّصة لبريد إلكتروني موثّق مختلف — سجّل الدخول بالحساب الذي يحمل ذلك البريد الموثّق');
+}
+export function acceptInvitation(db,token,userId,{isNewAccount=false}={}) {
  const row=validateForAcceptance(db,token);
+ enforceEmailBinding(db,row,userId,{isNewAccount});
  const tenant=getTenant(db,row.tenant_id);
  const now=new Date().toISOString();
  const existingMembership=db.prepare('SELECT id FROM tenant_memberships WHERE tenant_id=? AND user_id=?').get(row.tenant_id,userId);

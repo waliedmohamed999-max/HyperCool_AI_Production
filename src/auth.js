@@ -1,7 +1,10 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 export function fail(status,message) { throw Object.assign(new Error(message),{status}); }
 const hash = value => createHash('sha256').update(value).digest('hex');
-const publicUser = user => ({id:user.id,username:user.username,name:user.name,role:user.role,preferredLocale:user.preferred_locale||null});
+// Phase 4C-5 — `email`/`emailVerifiedAt`/`pendingEmail` added: safe to expose to the user
+// themselves on every `/api/auth` call (their own identity, never another user's), and lets
+// the lightweight "add your email" banner (Part 47/69) render without a second round-trip.
+const publicUser = user => ({id:user.id,username:user.username,name:user.name,role:user.role,preferredLocale:user.preferred_locale||null,email:user.email||null,emailVerifiedAt:user.email_verified_at||null,pendingEmail:user.pending_email||null});
 function encodePassword(password) {
   const salt=randomBytes(16).toString('hex');
   return `${salt}:${scryptSync(password,salt,64).toString('hex')}`;
@@ -31,7 +34,15 @@ export function createAuth(db) {
       if(entry && entry.until>now && entry.count>=10) fail(429,'محاولات كثيرة؛ حاول بعد 15 دقيقة');
       attempts.set(address,{count:entry && entry.until>now?entry.count+1:1,until:entry && entry.until>now?entry.until:now+900000});
       if(typeof input.password!=='string' || input.password.length>256 || typeof input.username!=='string') fail(401,'بيانات الدخول غير صحيحة');
-      const user=db.prepare('SELECT * FROM users WHERE username=?').get(input.username.toLowerCase());
+      // Phase 4C-5 (Part 20-22) — the SAME identity field also accepts a verified email: a
+      // real username can never contain '@' (createUser's own pattern forbids it), so this is
+      // unambiguous. Only a VERIFIED email is ever accepted here — Part 22's explicit policy
+      // ("لا تستخدم unverified email كlogin identity") — an unverified `pending_email` never
+      // matches this lookup at all, it is only ever checked against `email` post-verification.
+      const identity=input.username.trim().toLowerCase();
+      const user=identity.includes('@')
+        ? db.prepare('SELECT * FROM users WHERE email=? AND email_verified_at IS NOT NULL').get(identity)
+        : db.prepare('SELECT * FROM users WHERE username=?').get(identity);
       const valid=matches(input.password,user?.password||dummy);
       if(!user || !valid) fail(401,'بيانات الدخول غير صحيحة');
       attempts.delete(address);

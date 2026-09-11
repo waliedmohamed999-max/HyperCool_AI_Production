@@ -1,7 +1,7 @@
 import {initI18n,onLocaleChange,getLocale,setLocale,t} from './i18n.js';
 import {installShell,shellPage,shellData} from './components/layout/app-shell.js';
 import {installWorkspace,renderWorkspace,beforeWorkspaceRender,workspaceAuth} from './pages/workspace.js';
-import {toast,confirmAction} from './components/ui/index.js';
+import {toast,confirmAction,button} from './components/ui/index.js';
 const $=selector=>document.querySelector(selector);
 import {renderKnowledge,submitKnowledge} from './knowledge.js';
 import {installPlanningFields,addContentActions,renderPlanning,submitPlanning} from './planning.js';
@@ -16,6 +16,8 @@ import {renderTeam,installTeamInteractions,clickTeam} from './team.js';
 import {resolveActiveWorkspace,renderWorkspaceGate,hideWorkspaceGate,renderWorkspaceSwitcher} from './components/workspace-switcher.js';
 import {installControlCenter,renderControlCenter} from './pages/control-center.js';
 import {installOnboardingPage,renderOnboardingPage} from './pages/onboarding.js';
+import {installAccountPage,renderAccountPage} from './pages/account.js';
+import {isRecoveryRoute,installRecoveryPage,renderRecoveryPage} from './pages/recovery.js';
 import {isInviteRoute,renderInvitePage} from './pages/invite.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
@@ -28,6 +30,8 @@ installShell();
 installWorkspace();
 installControlCenter();
 installOnboardingPage();
+installAccountPage();
+installRecoveryPage();
 installCRMInteractions();
 installContentInteractions();
 installMemoryInteractions();
@@ -56,7 +60,16 @@ navLinks.forEach(a=>a.addEventListener('click',event=>{
   showPage(page);
 }));
 window.addEventListener('popstate',()=>showPage(currentPage()));
-window.addEventListener('hashchange',()=>showPage(currentPage()));
+// A same-tab navigation INTO or OUT OF the standalone recovery/invite flows (e.g. clicking
+// "Forgot password?" from the login screen) needs a full `render()` cycle, not just
+// `showPage()` — those flows force auth-panel/protected/session-bar hidden directly (see
+// pages/recovery.js), and only `render()` re-evaluates the route and restores normal
+// visibility. Leaving them (their own "back to app" actions) uses a full page reload instead,
+// so this only needs to handle the "entering" direction.
+window.addEventListener('hashchange',()=>{
+  if(isInviteRoute()||isRecoveryRoute())render().catch(error=>message(error.message,'error'));
+  else showPage(currentPage());
+});
 const roles=new Proxy({},{get:(_,role)=>t('navigation.role'+role.charAt(0).toUpperCase()+role.slice(1))});
 let viewData=new Map();
 // `method` (Phase 4C-2/4C-3 addition): optional HTTP method override for the routes that are
@@ -68,6 +81,24 @@ function message(text,type='info'){toast(text,type);}
 // One confirmation layer for consequential button actions; existing handlers execute once after acceptance.
 const confirmedButtons=new WeakSet();
 document.addEventListener('click',async event=>{const b=event.target.closest('[data-approval-decide],[data-escalation-resolve],[data-cancel-content],[data-team-danger]');if(!b)return;if(confirmedButtons.has(b)){confirmedButtons.delete(b);return;}event.preventDefault();event.stopImmediatePropagation();if(await confirmAction(t('common.confirmActionTitle'),t('common.confirmActionBody'))){confirmedButtons.add(b);b.click();}},true);
+// Phase 4C-5 (Part 47/69) — a non-blocking, dismissible notice for a legacy account with no
+// email at all yet. Never shown once an email exists (verified OR merely pending — the user
+// has already taken the action this banner exists to prompt). Dismissal is per-browser-tab
+// only (sessionStorage, not persisted server-side) so it never nags again this session but
+// still reappears on the next real login, matching "not every page, but don't hide it either".
+function renderEmailBanner(auth){
+  const banner=$('#email-banner');
+  let dismissed=false;
+  try{dismissed=sessionStorage.getItem('hc_email_banner_dismissed')==='1';}catch{}
+  if(dismissed || auth.user.email || auth.user.pendingEmail){banner.hidden=true;return;}
+  banner.hidden=false;
+  banner.innerHTML=`<span>${escape(t('account.banner.text'))}</span>`;
+  const go=button(t('account.banner.action'),{variant:'primary'});
+  go.onclick=()=>{location.hash='#account';};
+  const dismiss=button(t('account.banner.dismiss'),{variant:'ghost'});
+  dismiss.onclick=()=>{try{sessionStorage.setItem('hc_email_banner_dismissed','1');}catch{}banner.hidden=true;};
+  banner.append(go,dismiss);
+}
 async function render(){
   beforeWorkspaceRender();
   viewData=new Map();
@@ -76,6 +107,11 @@ async function render(){
   // invitee may have no session at all yet): handled first, short-circuiting the rest of
   // this render entirely, whether or not the visitor is currently authenticated.
   if(isInviteRoute()){await renderInvitePage(auth,api);return;}
+  // Phase 4C-5 — email verification / forgot-password / reset-password: same
+  // outside-the-auth-gate rationale as the invitation page above (a visitor may have no
+  // session at all, or an expired one, or be on a different device than where they're
+  // logged in).
+  if(isRecoveryRoute()){await renderRecoveryPage();return;}
   workspaceAuth(auth);
   $('#auth-panel').hidden=!!auth.user;
   $('#protected').hidden=!auth.user;
@@ -102,6 +138,8 @@ async function render(){
   $('#session-name').textContent=`${auth.user.name} · ${roles[auth.user.role]}`;
   $('#draft').hidden=auth.user.role==='reviewer';
   $('#nav-users').hidden=auth.user.role!=='owner';
+  renderEmailBanner(auth);
+  await renderAccountPage({api,auth});
   showPage(currentPage());
   if(auth.user.role==='owner')await renderTeam({api});
   const state=await api('/api/state');
