@@ -1,5 +1,6 @@
 import {ConnectorError} from '../connectors.js';
 import {resolveMetaAccessToken} from './meta-oauth.js';
+import {resolveActiveTenantId} from '../tenancy.js';
 
 const GRAPH_VERSION='v21.0';
 const GRAPH_BASE='https://graph.facebook.com/'+GRAPH_VERSION;
@@ -13,12 +14,22 @@ async function requestJson(fetcher,url,options={}) {
  if(!response.ok||data.error)throw new ConnectorError(response.status===401||response.status===403?'CREDENTIALS_REJECTED':response.status===429?'RATE_LIMITED':'PROVIDER_ERROR');
  return data;
 }
-function instagramAccountId(db) {
- const row=db.prepare('SELECT metadata FROM integration_credentials WHERE provider=?').get('meta');
+// Multi-Tenant Phase 4B (Part 63/94) — these two lookups used to read `integration_credentials`
+// by provider ALONE, with no tenant_id filter at all: with a second tenant's `meta` row in the
+// same table, SQLite would return whichever row it happened to store first, silently leaking
+// one tenant's Instagram/Page id into another tenant's publish call. `tenantId` (threaded from
+// ctx.tenantId at every real call site) closes that; a null tenantId falls back to
+// resolveActiveTenantId(db) exactly as before, for the one tenant that exists today.
+function instagramAccountId(db,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const row=db.prepare('SELECT metadata FROM integration_credentials WHERE provider=? AND tenant_id=?').get('meta',resolvedTenantId);
  return row?.metadata?JSON.parse(row.metadata)?.instagram?.id:null;
 }
-function pageId(db,env) {
- return env.META_PAGE_ID||(()=>{const row=db.prepare('SELECT external_account_id FROM integration_credentials WHERE provider=?').get('meta');return row?.external_account_id||null;})();
+function pageId(db,env,tenantId=null) {
+ if(env.META_PAGE_ID)return env.META_PAGE_ID;
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const row=db.prepare('SELECT external_account_id FROM integration_credentials WHERE provider=? AND tenant_id=?').get('meta',resolvedTenantId);
+ return row?.external_account_id||null;
 }
 /**
  * Instagram's real publish flow is two calls: create a media container (image/video URL +
@@ -28,9 +39,9 @@ function pageId(db,env) {
  * "PUBLISHING SAFETY" section BEFORE calling this — this function assumes they already
  * passed and only executes the actual API calls.
  */
-export async function publishToInstagram({store,env,fetcher=fetch},{imageUrl,caption}) {
- const resolved=resolveMetaAccessToken({store,env},'page');
- const igId=instagramAccountId(store.db);
+export async function publishToInstagram({store,env,fetcher=fetch},{imageUrl,caption},tenantId=null) {
+ const resolved=resolveMetaAccessToken({store,env},'page',tenantId);
+ const igId=instagramAccountId(store.db,tenantId);
  if(!resolved||!igId)return {status:'INTEGRATION_REQUIRED',integration:'meta'};
  const container=await requestJson(fetcher,`${GRAPH_BASE}/${igId}/media`,{
   method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${resolved.token}`},
@@ -44,9 +55,9 @@ export async function publishToInstagram({store,env,fetcher=fetch},{imageUrl,cap
  if(!published.id)return {status:'FAILED',errorDetail:'No published post id returned'};
  return {status:'PUBLISHED',externalPostId:published.id,liveUrl:`https://www.instagram.com/p/${published.id}/`};
 }
-export async function publishToFacebook({store,env,fetcher=fetch},{message,link}) {
- const resolved=resolveMetaAccessToken({store,env},'page');
- const id=pageId(store.db,env);
+export async function publishToFacebook({store,env,fetcher=fetch},{message,link},tenantId=null) {
+ const resolved=resolveMetaAccessToken({store,env},'page',tenantId);
+ const id=pageId(store.db,env,tenantId);
  if(!resolved||!id)return {status:'INTEGRATION_REQUIRED',integration:'meta'};
  const published=await requestJson(fetcher,`${GRAPH_BASE}/${id}/feed`,{
   method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${resolved.token}`},

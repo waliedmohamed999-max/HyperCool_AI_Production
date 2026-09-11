@@ -104,16 +104,16 @@ export function disconnectMicrosoft(db) {
  * MICROSOFT_ACCESS_TOKEN env var if one is set (matching the Salla/Meta precedent), else
  * returns null so callers can report TOKEN_EXPIRED/INTEGRATION_REQUIRED honestly.
  */
-export async function resolveMicrosoftAccessToken({store,env,fetcher=fetch}) {
+export async function resolveMicrosoftAccessToken({store,env,fetcher=fetch},tenantId=null) {
  if(credentialsConfigured(env)) {
   let creds;
-  try {creds=getCredentials(store.db,env,'microsoft365');} catch {creds=null;}
+  try {creds=getCredentials(store.db,env,'microsoft365',tenantId);} catch {creds=null;}
   if(creds) {
    if(!isExpiringSoon(creds.expiresAt))return {token:creds.accessToken,source:'oauth'};
    if(!creds.refreshToken)return env.MICROSOFT_ACCESS_TOKEN?{token:env.MICROSOFT_ACCESS_TOKEN,source:'static'}:null;
    try {
     const refreshed=await refreshTokens({env,fetcher,refreshToken:creds.refreshToken});
-    saveCredentials(store.db,env,'microsoft365',{...refreshed,externalAccountId:creds.externalAccountId,metadata:creds.metadata},null);
+    saveCredentials(store.db,env,'microsoft365',{...refreshed,externalAccountId:creds.externalAccountId,metadata:creds.metadata},null,tenantId);
     return {token:refreshed.accessToken,source:'oauth'};
    } catch {
     return env.MICROSOFT_ACCESS_TOKEN?{token:env.MICROSOFT_ACCESS_TOKEN,source:'static'}:null;

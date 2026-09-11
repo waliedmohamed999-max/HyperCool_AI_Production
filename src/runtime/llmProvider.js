@@ -6,13 +6,18 @@ import {ConnectorError} from '../connectors.js';
 // `override` (per-agent provider/model — see agent_registry.provider/model) always wins
 // over the environment default when present; it exists so e.g. compliance can pin a
 // specific low-temperature model while sales keeps the account default.
+// `override.apiKey` — Multi-Tenant Phase 4B (Part 15): when a TenantAgentConfig pins a real
+// `integration_connections` row (anthropic/openai) via `ai_connection_id`, the caller
+// (runtime.js) resolves that connection's vault credential and passes its key here, taking
+// precedence over the env var. No existing caller passes this, so every current call site
+// (env-var-only) is byte-for-byte unchanged.
 function resolveConfig(env,override={}) {
  const provider=override.provider||env.AI_PROVIDER||'anthropic';
  if(provider==='openai') {
-  return {provider,apiKey:env.OPENAI_API_KEY,model:override.model||env.OPENAI_DEFAULT_MODEL||env.OPENAI_MODEL};
+  return {provider,apiKey:override.apiKey||env.OPENAI_API_KEY,model:override.model||env.OPENAI_DEFAULT_MODEL||env.OPENAI_MODEL};
  }
  if(provider==='anthropic') {
-  return {provider,apiKey:env.AI_API_KEY||env.ANTHROPIC_API_KEY,model:override.model||env.AI_DEFAULT_MODEL||env.ANTHROPIC_MODEL};
+  return {provider,apiKey:override.apiKey||env.AI_API_KEY||env.ANTHROPIC_API_KEY,model:override.model||env.AI_DEFAULT_MODEL||env.ANTHROPIC_MODEL};
  }
  // An unrecognized provider name must surface as UNSUPPORTED_PROVIDER, never silently
  // coerce to Anthropic — a typo in AI_PROVIDER or a bad per-agent override should fail

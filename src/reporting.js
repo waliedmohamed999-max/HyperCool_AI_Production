@@ -54,7 +54,7 @@ export function buildWeeklyReport(store,weekStart,tenantId=null) {
  const auditInWeek=listAuditLog(store.db,{tenantId}).filter(entry=>inWeek(entry.at));
  const compliance=listComplianceChecksSince(store.db,startInstant,tenantId).filter(run=>inWeek(run.finishedAt||run.createdAt));
  const complianceCompleted=compliance.filter(run=>run.status==='COMPLETED');
- const autonomyChanges=listAutonomyChanges(store.db,startInstant).filter(entry=>inWeek(entry.at));
+ const autonomyChanges=listAutonomyChanges(store.db,startInstant,tenantId).filter(entry=>inWeek(entry.at));
  const jobs=listJobs(store.db,tenantId).filter(job=>inWeek(job.createdAt));
  const slots=listSlots(store.db,tenantId).filter(slot=>slot.date>=weekStart && slot.date<weekEnd);
  const leadsInWeek=listLeads(store.db,tenantId).filter(lead=>inWeek(lead.createdAt));

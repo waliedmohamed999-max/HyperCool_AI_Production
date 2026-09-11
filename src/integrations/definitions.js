@@ -49,6 +49,18 @@ const DEFINITIONS=[
  {slug:'linkedin',nameAr:'لينكدإن',nameEn:'LinkedIn',category:'social',descAr:'نشر على صفحة الشركة في لينكدإن.',descEn:'Publish to a LinkedIn Company Page.',authType:'OAUTH2',iconKey:'linkedin',capabilities:['organization.publish','analytics'],isAvailable:1},
  {slug:'canva',nameAr:'كانفا',nameEn:'Canva',category:'design',descAr:'تصميم الأصول البصرية — غير مُفعّل تقنيًا بعد.',descEn:'Visual asset design — not technically implemented yet.',authType:'NONE',iconKey:'canva',capabilities:[],isAvailable:0}
 ];
+// Multi-Tenant Phase 4B (Part 13/14/96) — connection_mode is a HONEST, code-derived fact
+// about the OAuth flow that actually exists today, never a promise. `integration_connections`
+// structurally allows many rows per (tenant, provider) for every provider — but the credential
+// layer underneath (`integration_credentials`, PRIMARY KEY(tenant_id, provider) — see
+// credentials.js) can only ever hold ONE row per tenant for whatsapp/meta/microsoft365/x/
+// linkedin, and every one of those providers' "Connect" flows (saveCredentials' upsert)
+// OVERWRITES that single row rather than adding a second. Salla is the one non-AI provider
+// proven end-to-end with real multiple simultaneous connections (see
+// docs/AGENT_TOOL_MAPPING.md's Salla multi-store test); Anthropic/OpenAI likewise (AI
+// multi-connection test, same doc). Canva has no real implementation at all (see above).
+const CONNECTION_MODE={anthropic:'MULTI',openai:'MULTI',salla:'MULTI',whatsapp:'SINGLE',meta:'SINGLE',microsoft365:'SINGLE',x:'SINGLE',linkedin:'SINGLE',canva:'UNAVAILABLE'};
+export function connectionModeFor(slug) { return CONNECTION_MODE[slug]||'SINGLE'; }
 function seedIntegrationDefinitions(db) {
  const now=new Date().toISOString();
  const insert=db.prepare(`INSERT INTO integration_definitions (id,slug,name_ar,name_en,category,description_ar,description_en,auth_type,icon_key,capabilities,is_available,created_at,updated_at)
@@ -57,7 +69,7 @@ function seedIntegrationDefinitions(db) {
  for(const def of DEFINITIONS)insert.run({...def,capabilities:JSON.stringify(def.capabilities),now});
 }
 function hydrate(row) {
- return {id:row.id,slug:row.slug,nameAr:row.name_ar,nameEn:row.name_en,category:row.category,descriptionAr:row.description_ar,descriptionEn:row.description_en,authType:row.auth_type,iconKey:row.icon_key,capabilities:JSON.parse(row.capabilities),isAvailable:!!row.is_available,createdAt:row.created_at,updatedAt:row.updated_at};
+ return {id:row.id,slug:row.slug,nameAr:row.name_ar,nameEn:row.name_en,category:row.category,descriptionAr:row.description_ar,descriptionEn:row.description_en,authType:row.auth_type,iconKey:row.icon_key,capabilities:JSON.parse(row.capabilities),isAvailable:!!row.is_available,connectionMode:connectionModeFor(row.slug),createdAt:row.created_at,updatedAt:row.updated_at};
 }
 export function listIntegrationDefinitions(db) {
  return db.prepare('SELECT * FROM integration_definitions ORDER BY category,slug').all().map(hydrate);

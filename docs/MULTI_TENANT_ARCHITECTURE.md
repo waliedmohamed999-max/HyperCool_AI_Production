@@ -303,3 +303,18 @@ piece) — these are real, substantial next-phase items, not oversights:
   agent knowing which connection to use for a given call yet.
 
 None of the above were silently skipped — each is a real, scoped, buildable next phase.
+
+## Phase 4B update: per-tenant agent configuration now exists
+
+The "Per-tenant agent configuration" gap noted above is now closed:
+`tenant_agent_configs` (`src/runtime/agent-config.js`) gives every tenant its own
+`enabled`/`ai_connection_id`/`model`/`temperature`/`max_tokens`/`timeout_ms` per agent, on top
+of the already-tenant-scoped `agent_autonomy` ledger — `agent_registry` itself is unchanged
+and stays the GLOBAL `AgentDefinition` (prompt, payload schema, id). Agent Tool Mapping
+(`agent_tool_assignments`) and Agent Readiness are also now real — see
+`docs/AGENT_TOOL_MAPPING.md`, `docs/AGENT_READINESS.md`, and
+`docs/CONNECTION_AWARE_RUNTIME.md`. Still not built, unchanged from the list above: the
+Control Center UI, onboarding wizard, and generic multi-connection OAuth for
+WhatsApp/Meta/Microsoft/X/LinkedIn (Salla and the two AI providers are the ones proven
+end-to-end with real multiple simultaneous connections — see
+`docs/CONNECTION_AWARE_RUNTIME.md`'s connection-mode matrix).

@@ -53,7 +53,7 @@ export async function renewMicrosoftSubscriptionIfNeeded({store,env,fetcher=fetc
  if(!subscription?.id)return {skipped:'NO_SUBSCRIPTION'};
  if(!isExpiringSoon(subscription.expiresAt,6*3600000))return {skipped:'NOT_DUE'};
  try {
-  const renewed=await renewMailSubscription({store,env,fetcher},subscription.id);
+  const renewed=await renewMailSubscription({store,env,fetcher},subscription.id,tenantId);
   updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{...subscription,expiresAt:renewed.expiresAt,lastRenewedAt:new Date().toISOString()}},tenantId,env);
   return {renewed:true,expiresAt:renewed.expiresAt};
  } catch(error) {

@@ -60,9 +60,9 @@ function classifySendError(status,data) {
  if(status>=500)return 'API_UNAVAILABLE';
  return 'OTHER';
 }
-export function whatsappConfigured({store,env}) {
- const resolved=resolveMetaAccessToken({store,env},'whatsapp');
- const phoneNumberId=connectedWhatsAppPhoneNumberId(store.db,env);
+export function whatsappConfigured({store,env},tenantId=null) {
+ const resolved=resolveMetaAccessToken({store,env},'whatsapp',tenantId);
+ const phoneNumberId=connectedWhatsAppPhoneNumberId(store.db,env,tenantId);
  return !!(resolved&&phoneNumberId);
 }
 /**
@@ -72,9 +72,9 @@ export function whatsappConfigured({store,env}) {
  * passed. This function itself still enforces nothing beyond "is the integration usable" —
  * it is a thin, honest HTTP client, not a second policy layer.
  */
-export async function sendWhatsAppMessage({store,env,fetcher=fetch},{to,text,templateName,templateLanguage,templateComponents}) {
- const resolved=resolveMetaAccessToken({store,env},'whatsapp');
- const phoneNumberId=connectedWhatsAppPhoneNumberId(store.db,env);
+export async function sendWhatsAppMessage({store,env,fetcher=fetch},{to,text,templateName,templateLanguage,templateComponents},tenantId=null) {
+ const resolved=resolveMetaAccessToken({store,env},'whatsapp',tenantId);
+ const phoneNumberId=connectedWhatsAppPhoneNumberId(store.db,env,tenantId);
  if(!resolved||!phoneNumberId)return {status:'INTEGRATION_REQUIRED',integration:'whatsapp'};
  const body=templateName
   ?{messaging_product:'whatsapp',to,type:'template',template:{name:templateName,language:{code:templateLanguage||'ar'},...(templateComponents?{components:templateComponents}:{})}}

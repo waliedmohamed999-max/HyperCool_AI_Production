@@ -106,16 +106,16 @@ export function disconnectX(db) {
  * app-only Bearer token is REJECTED by that endpoint. `kind` distinguishes the two: 'publish'
  * only ever returns the OAuth token (or null), 'read' also accepts the static bearer.
  */
-export async function resolveXAccessToken({store,env,fetcher=fetch},kind='publish') {
+export async function resolveXAccessToken({store,env,fetcher=fetch},kind='publish',tenantId=null) {
  if(credentialsConfigured(env)) {
   let creds;
-  try {creds=getCredentials(store.db,env,'x');} catch {creds=null;}
+  try {creds=getCredentials(store.db,env,'x',tenantId);} catch {creds=null;}
   if(creds) {
    if(!isExpiringSoon(creds.expiresAt))return {token:creds.accessToken,source:'oauth'};
    if(!creds.refreshToken)return kind==='read'&&env.X_BEARER_TOKEN?{token:env.X_BEARER_TOKEN,source:'static'}:null;
    try {
     const refreshed=await refreshTokens({env,fetcher,refreshToken:creds.refreshToken});
-    saveCredentials(store.db,env,'x',{...refreshed,externalAccountId:creds.externalAccountId,metadata:undefined},null);
+    saveCredentials(store.db,env,'x',{...refreshed,externalAccountId:creds.externalAccountId,metadata:undefined},null,tenantId);
     return {token:refreshed.accessToken,source:'oauth'};
    } catch {
     return kind==='read'&&env.X_BEARER_TOKEN?{token:env.X_BEARER_TOKEN,source:'static'}:null;

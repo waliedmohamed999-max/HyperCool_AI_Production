@@ -242,3 +242,20 @@ one real webhook — sequential connects (the realistic case) resolve fine.
   app boots cleanly against the copy, all 4 new tables are created, `integration_definitions`
   seeds exactly 9 rows, and existing `users`/`tenants` row counts are unchanged.
 - Full suite: 330/330 green (297 pre-existing + 24 + 9 new).
+
+## Phase 4B update: connection_mode + the legacy-lookup tenant bug this phase's tests found
+
+`IntegrationDefinition` now carries a derived `connectionMode` field (`MULTI`/`SINGLE`/
+`UNAVAILABLE`) — see `docs/CONNECTION_AWARE_RUNTIME.md`'s matrix for the honest, code-derived
+per-provider answer and why `whatsapp`/`meta`/`microsoft365`/`x`/`linkedin` are `SINGLE`
+despite `integration_connections` structurally allowing many rows (the constraint is the
+`integration_credentials` PRIMARY KEY(tenant_id, provider) one layer down, not this table).
+
+Phase 4B's own multi-tenant tests also surfaced a real bug in this phase's compatibility
+bridge: several legacy OAuth resolvers (`resolveMetaAccessToken`, `resolveMicrosoftAccessToken`,
+`resolveXAccessToken`, `resolveLinkedInAccessToken`, and the publish helpers built on them)
+never threaded a `tenantId` through to `getCredentials`/`getCredentialsMeta`, so they broke
+(`TENANT_CONTEXT_REQUIRED`) the moment a real second tenant existed. Fixed in Phase 4B — see
+`docs/CONNECTION_AWARE_RUNTIME.md`'s "Legacy provider lookup refactor" section for the full
+list of what changed and what remains a documented, temporary fallback (single-workspace admin
+routes only).

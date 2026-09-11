@@ -23,11 +23,11 @@ function classifyError(status,data) {
  if(status>=500)return 'API_UNAVAILABLE';
  return 'OTHER';
 }
-export async function microsoftConfigured({store,env}) {
- return !!(await resolveMicrosoftAccessToken({store,env}));
+export async function microsoftConfigured({store,env},tenantId=null) {
+ return !!(await resolveMicrosoftAccessToken({store,env},tenantId));
 }
-async function authHeaders({store,env,fetcher}) {
- const resolved=await resolveMicrosoftAccessToken({store,env,fetcher});
+async function authHeaders({store,env,fetcher},tenantId=null) {
+ const resolved=await resolveMicrosoftAccessToken({store,env,fetcher},tenantId);
  if(!resolved)return null;
  return {authorization:`Bearer ${resolved.token}`};
 }
@@ -42,8 +42,8 @@ export async function testMicrosoftConnection({store,env,fetcher=fetch}) {
  * Real sendMail via Graph. `retryAfterFromHeaders` surfaces Graph's own Retry-After (429)
  * so a caller can back off correctly instead of guessing a delay (spec Part BF).
  */
-export async function sendMail({store,env,fetcher=fetch},{to,cc,bcc,subject,bodyHtml,attachments=[]}) {
- const headers=await authHeaders({store,env,fetcher});
+export async function sendMail({store,env,fetcher=fetch},{to,cc,bcc,subject,bodyHtml,attachments=[]},tenantId=null) {
+ const headers=await authHeaders({store,env,fetcher},tenantId);
  if(!headers)return {status:'INTEGRATION_REQUIRED',integration:'microsoft365'};
  const recipient=addr=>({emailAddress:{address:addr}});
  const message={
@@ -69,8 +69,8 @@ export async function sendMail({store,env,fetcher=fetch},{to,cc,bcc,subject,body
 /** Finds the just-sent message in Sent Items to recover its real Graph id/internetMessageId
  * for threading — best-effort; a caller that doesn't get a match still has a SENT message
  * recorded, just without a provider id to correlate future replies against. */
-export async function findRecentSentMessage({store,env,fetcher=fetch},{subject,to}) {
- const headers=await authHeaders({store,env,fetcher});
+export async function findRecentSentMessage({store,env,fetcher=fetch},{subject,to},tenantId=null) {
+ const headers=await authHeaders({store,env,fetcher},tenantId);
  if(!headers)return null;
  const filter=encodeURIComponent(`subject eq '${subject.replace(/'/g,"''")}'`);
  const {ok,data}=await requestJson(fetcher,`${graphBase(env)}/me/mailFolders/sentitems/messages?$filter=${filter}&$top=5&$orderby=sentDateTime desc`,{headers});
@@ -98,8 +98,8 @@ export async function createMailSubscription({store,env,fetcher=fetch},{notifica
  if(!ok)throw new ConnectorError(classifyError(status,data)==='AUTH'?'CREDENTIALS_REJECTED':'PROVIDER_ERROR');
  return {subscriptionId:data.id,expiresAt:data.expirationDateTime,resource:data.resource};
 }
-export async function renewMailSubscription({store,env,fetcher=fetch},subscriptionId) {
- const headers=await authHeaders({store,env,fetcher});
+export async function renewMailSubscription({store,env,fetcher=fetch},subscriptionId,tenantId=null) {
+ const headers=await authHeaders({store,env,fetcher},tenantId);
  if(!headers)throw new ConnectorError('MICROSOFT_NOT_CONFIGURED');
  const expirationDateTime=new Date(Date.now()+4230*60000).toISOString();
  const {ok,status,data}=await requestJson(fetcher,`${graphBase(env)}/subscriptions/${subscriptionId}`,{
@@ -114,8 +114,8 @@ export async function deleteMailSubscription({store,env,fetcher=fetch},subscript
  await requestJson(fetcher,`${graphBase(env)}/subscriptions/${subscriptionId}`,{method:'DELETE',headers}).catch(()=>{});
 }
 // --- Calendar -----------------------------------------------------------------------------
-export async function createCalendarEvent({store,env,fetcher=fetch},{title,start,end,timezone='Asia/Riyadh',participants=[],location,notes}) {
- const headers=await authHeaders({store,env,fetcher});
+export async function createCalendarEvent({store,env,fetcher=fetch},{title,start,end,timezone='Asia/Riyadh',participants=[],location,notes},tenantId=null) {
+ const headers=await authHeaders({store,env,fetcher},tenantId);
  if(!headers)return {status:'INTEGRATION_REQUIRED',integration:'microsoft365'};
  const event={
   subject:title,start:{dateTime:start,timeZone:timezone},end:{dateTime:end,timeZone:timezone},
@@ -129,8 +129,8 @@ export async function createCalendarEvent({store,env,fetcher=fetch},{title,start
  if(!ok)return {status:'FAILED',errorClass:classifyError(status,data),errorDetail:data?.error?.message||null};
  return {status:'CREATED',externalEventId:data.id,webLink:data.webLink};
 }
-export async function getCalendarAvailability({store,env,fetcher=fetch},{emails,start,end,timezone='Asia/Riyadh'}) {
- const headers=await authHeaders({store,env,fetcher});
+export async function getCalendarAvailability({store,env,fetcher=fetch},{emails,start,end,timezone='Asia/Riyadh'},tenantId=null) {
+ const headers=await authHeaders({store,env,fetcher},tenantId);
  if(!headers)return {status:'INTEGRATION_REQUIRED',integration:'microsoft365'};
  const {ok,status,data}=await requestJson(fetcher,`${graphBase(env)}/me/calendar/getSchedule`,{
   method:'POST',headers:{...headers,'content-type':'application/json'},

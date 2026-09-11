@@ -25,8 +25,8 @@ async function requestRaw(fetcher,url,options={}) {
  * response header on success, not in the JSON body (which is typically empty on 201) —
  * reading the header is the correct, real integration detail, not a guess.
  */
-export async function publishLinkedInPost({store,env,fetcher=fetch},{text,link}) {
- const resolved=await resolveLinkedInAccessToken({store,env,fetcher});
+export async function publishLinkedInPost({store,env,fetcher=fetch},{text,link},tenantId=null) {
+ const resolved=await resolveLinkedInAccessToken({store,env,fetcher},tenantId);
  if(!resolved||!resolved.organizationId)return {status:'INTEGRATION_REQUIRED',integration:'linkedin'};
  if(typeof text!=='string'||!text.trim())return {status:'FAILED',errorCode:'INVALID_CONTENT',errorDetail:'EMPTY_TEXT'};
  const body={

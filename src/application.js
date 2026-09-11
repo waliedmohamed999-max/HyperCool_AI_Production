@@ -57,6 +57,12 @@ import {xOAuthConfigured,createXAuthorizeUrl,consumeXState,exchangeCodeForTokens
 import {testXConnection} from './runtime/x-publishing.js';
 import {linkedInOAuthConfigured,createLinkedInAuthorizeUrl,consumeLinkedInState,exchangeCodeForTokens as exchangeLinkedInCodeForTokens,resolveConnectedProfile as resolveLinkedInProfile,resolveAdministeredOrganizations,saveLinkedInConnection,linkedInOAuthStatus,disconnectLinkedIn} from './runtime/linkedin-oauth.js';
 import {testLinkedInConnection} from './runtime/linkedin-publishing.js';
+import {setWorkspaceAiDefault,setMaxAgentLevel} from './tenancy.js';
+import {installTenantAgentConfigs,getTenantAgentConfig,updateTenantAgentConfig,listTenantAgentConfigs,seedTenantAgentConfigs} from './runtime/agent-config.js';
+import {installToolDefinitions,listToolDefinitions,getToolDefinition} from './runtime/tool-definitions.js';
+import {installAgentToolAssignments,listAssignmentsForAgent,upsertAssignment,deleteAssignment,findAssignmentsUsingConnection} from './runtime/tool-assignments.js';
+import {evaluateAgentReadiness,evaluateAllToolsReadiness} from './runtime/agent-readiness.js';
+import {levels as autonomyLevels} from './autonomy.js';
 
 const packageVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
 // Environment validation — logged at startup, never crashes the process. Every core config
@@ -122,6 +128,15 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installWebhookEvents(store.db);
   installWhatsAppTemplates(store.db);
   seedRegistry(store.db);
+  // Multi-Tenant Phase 4B — Agent Tool Assignment + Tool-to-Connection Mapping + Agent
+  // Readiness, see docs/AGENT_TOOL_MAPPING.md. `tool_definitions` must install AFTER
+  // seedRegistry (no real dependency, just keeping every "seed a global catalog" call
+  // grouped) and BEFORE the tenant config seed loop below, which reads agent_registry's
+  // legacy enabled flag as its one-time migration default (Part 49/91: no data loss).
+  installToolDefinitions(store.db);
+  installTenantAgentConfigs(store.db);
+  installAgentToolAssignments(store.db);
+  for(const {id:tenantId} of store.db.prepare('SELECT id FROM tenants').all())seedTenantAgentConfigs(store.db,tenantId);
   const eventBus=createEventBus(store.db);
   const agentRuntime=createAgentRuntime({store,env,fetcher,eventBus});
   const {routes:orchestratorRoutes}=installOrchestrator(eventBus,agentRuntime,store.db);
@@ -375,7 +390,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         return send(200,action==='remove'?{ok:true}:auth.get(id)||{ok:true});
       }
       if(req.method==='GET' && url.pathname==='/api/agents') {
-        const autonomy=currentAutonomy(store.db);
+        const autonomy=currentAutonomy(store.db,session.tenantId);
         const integrations=integrationStatus(env,store.db);
         const integrationNames={whatsapp:'واتساب',meta:'ميتا (Instagram/Facebook)',x:'X',linkedin:'لينكدإن',microsoft365:'Microsoft 365',canva:'Canva',salla_webhooks:'ويبهوكس سلة'};
         return send(200,agentDefinitions.map(agent=>{
@@ -413,10 +428,21 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const agentEnable=url.pathname.match(/^\/api\/agents\/([\w-]+)\/enabled$/);
       if(agentEnable) {
         authorize(session,['owner']);
-        if(req.method==='POST'){const input=await body(req);const row=setEnabled(store.db,agentEnable[1],!!input.enabled);if(!row)fail(404,'وكيل غير موجود');return send(200,row);}
+        if(req.method==='POST'){
+          const input=await body(req);
+          const row=setEnabled(store.db,agentEnable[1],!!input.enabled);
+          if(!row)fail(404,'وكيل غير موجود');
+          // Multi-Tenant Phase 4B: `agent_registry.enabled` is now only the legacy default a
+          // brand-new tenant's config is seeded from (Part 49) — the tenant-scoped
+          // TenantAgentConfig is what execution actually reads (runtime.js). Kept in sync
+          // here so this pre-existing route keeps working exactly as before for the calling
+          // tenant, rather than silently becoming a no-op once a config row exists.
+          updateTenantAgentConfig(store.db,session.tenantId,agentEnable[1],{enabled:!!input.enabled});
+          return send(200,row);
+        }
       }
       const agentHealth=url.pathname.match(/^\/api\/agents\/([\w-]+)\/health$/);
-      if(req.method==='GET' && agentHealth)return send(200,promotionEligibility(store.db,agentHealth[1]));
+      if(req.method==='GET' && agentHealth)return send(200,promotionEligibility(store.db,agentHealth[1],session.tenantId));
       const agentRuns=url.pathname.match(/^\/api\/agents\/([\w-]+)\/runs$/);
       if(req.method==='GET' && agentRuns)return send(200,listRuns(store.db,{agentId:agentRuns[1],limit:50},session.tenantId));
       const agentRunTrigger=url.pathname.match(/^\/api\/agents\/([\w-]+)\/run$/);
@@ -432,6 +458,99 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const run=getRun(store.db,runDetail[1],session.tenantId);
         if(!run)fail(404,'التشغيلة غير موجودة');
         return send(200,{...run,toolCalls:listToolCalls(store.db,runDetail[1])});
+      }
+      // ---------------------------------------------------------------------------------
+      // Multi-Tenant Phase 4B — Agent Tool Assignment + Tool-to-Connection Mapping + Agent
+      // Readiness backend API. Read routes (config/tools/readiness) are owner+operator, same
+      // bar as every other agent-status read in this file; mutations (config PATCH, tool
+      // PUT/DELETE, workspace AI/safety-ceiling) are owner-only, matching credential-adjacent
+      // routes elsewhere. Every response is built from real service calls — never a stored
+      // "looks ready" flag (Part 31) — and never includes a vault secret (Part 21/75).
+      // ---------------------------------------------------------------------------------
+      const agentConfigRoute=url.pathname.match(/^\/api\/agents\/([\w-]+)\/config$/);
+      if(agentConfigRoute) {
+        const agentId=agentConfigRoute[1];
+        if(req.method==='GET') {
+          authorize(session,['owner','operator']);
+          if(!getAgent(store.db,agentId))fail(404,'وكيل غير موجود');
+          const config=getTenantAgentConfig(store.db,session.tenantId,agentId);
+          return send(200,config||{tenantId:session.tenantId,agentId,enabled:true,aiConnectionId:null,model:null,temperature:null,maxTokens:null,timeoutMs:null,approvalPolicy:null});
+        }
+        if(req.method==='PATCH') {
+          authorize(session,['owner']);
+          const input=await body(req);
+          const before=getTenantAgentConfig(store.db,session.tenantId,agentId);
+          const updated=updateTenantAgentConfig(store.db,session.tenantId,agentId,input);
+          const now=new Date().toISOString();
+          if(input.aiConnectionId!==undefined && input.aiConnectionId!==before?.aiConnectionId)
+           recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_AI_CONNECTION_CHANGED',itemId:agentId,connectionId:input.aiConnectionId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+          if(input.model!==undefined && input.model!==before?.model)
+           recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_MODEL_CHANGED',itemId:agentId,model:input.model,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+          return send(200,updated);
+        }
+      }
+      const agentToolsRoute=url.pathname.match(/^\/api\/agents\/([\w-]+)\/tools$/);
+      if(req.method==='GET' && agentToolsRoute) {
+        authorize(session,['owner','operator']);
+        const agentId=agentToolsRoute[1];
+        if(!getAgent(store.db,agentId))fail(404,'وكيل غير موجود');
+        const assignments=new Map(listAssignmentsForAgent(store.db,session.tenantId,agentId).map(a=>[a.toolSlug,a]));
+        const tools=listToolDefinitions(store.db).filter(t=>!t.allowedAgents||t.allowedAgents.includes(agentId));
+        return send(200,tools.map(tool=>({...tool,assignment:assignments.get(tool.slug)||null})));
+      }
+      const agentToolItem=url.pathname.match(/^\/api\/agents\/([\w-]+)\/tools\/([\w-]+)$/);
+      if(agentToolItem) {
+        authorize(session,['owner']);
+        const [,agentId,toolSlug]=agentToolItem;
+        if(req.method==='PUT') {
+          const input=await body(req);
+          const before=getToolDefinition(store.db,toolSlug)&&listAssignmentsForAgent(store.db,session.tenantId,agentId).find(a=>a.toolSlug===toolSlug);
+          const assignment=upsertAssignment(store.db,session.tenantId,agentId,toolSlug,{enabled:input.enabled,connectionId:input.connectionId,policyOverride:input.policyOverride});
+          const now=new Date().toISOString();
+          if(input.enabled===false)recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_TOOL_DISABLED',itemId:agentId,toolSlug,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+          else if(!before)recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_TOOL_ASSIGNED',itemId:agentId,toolSlug,connectionId:assignment.connectionId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+          else if(input.connectionId!==undefined && input.connectionId!==before.connectionId)recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_TOOL_CONNECTION_CHANGED',itemId:agentId,toolSlug,connectionId:assignment.connectionId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+          return send(200,assignment);
+        }
+        if(req.method==='DELETE')return send(200,deleteAssignment(store.db,session.tenantId,agentId,toolSlug));
+      }
+      if(req.method==='GET' && url.pathname==='/api/tools') {
+        authorize(session,['owner','operator']);
+        return send(200,listToolDefinitions(store.db,{category:url.searchParams.get('category')||undefined}));
+      }
+      const toolConnections=url.pathname.match(/^\/api\/tools\/([\w-]+)\/connections$/);
+      if(req.method==='GET' && toolConnections) {
+        authorize(session,['owner','operator']);
+        const tool=getToolDefinition(store.db,toolConnections[1]);
+        if(!tool)fail(404,'أداة غير معروفة');
+        if(!tool.integrationSlug)return send(200,[]);
+        return send(200,listConnections(store.db,{integrationDefinitionId:tool.integrationSlug},session.tenantId));
+      }
+      const agentReadiness=url.pathname.match(/^\/api\/agents\/([\w-]+)\/readiness$/);
+      if(req.method==='GET' && agentReadiness) {
+        authorize(session,['owner','operator']);
+        if(!getAgent(store.db,agentReadiness[1]))fail(404,'وكيل غير موجود');
+        return send(200,evaluateAgentReadiness(store.db,env,{tenantId:session.tenantId,agentId:agentReadiness[1]}));
+      }
+      if(req.method==='PATCH' && url.pathname==='/api/tenant/ai-default') {
+        authorize(session,['owner']);
+        const input=await body(req);
+        if(input.connectionId!==undefined && input.connectionId!==null) {
+          const connection=getConnectionOrNull(store.db,input.connectionId,session.tenantId);
+          if(!connection)fail(400,'الاتصال غير موجود لهذه المنشأة');
+          if(!['anthropic','openai'].includes(connection.integrationDefinitionId))fail(400,'الاتصال المحدد ليس اتصال مزوّد ذكاء اصطناعي');
+        }
+        const tenant=setWorkspaceAiDefault(store.db,session.tenantId,{connectionId:input.connectionId??null,model:input.model??null});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_AI_DEFAULT_CHANGED',itemId:session.tenantId,connectionId:tenant.defaultAiConnectionId,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,tenant);
+      }
+      if(req.method==='PATCH' && url.pathname==='/api/tenant/safety-ceiling') {
+        authorize(session,['owner']);
+        const input=await body(req);
+        if(input.level!==null && !autonomyLevels.includes(input.level))fail(400,'مستوى غير صالح');
+        const tenant=setMaxAgentLevel(store.db,session.tenantId,input.level??null);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'TENANT_SAFETY_CEILING_CHANGED',itemId:session.tenantId,detail:input.level||'NONE',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,tenant);
       }
       if(url.pathname==='/api/approvals') {
         if(req.method==='GET')return send(200,listApprovals(store.db,{status:url.searchParams.get('status')||undefined},session.tenantId));
@@ -451,13 +570,24 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           const proposed=JSON.parse(decided.proposed_output);
           if(proposed?.to && proposed?.subject && proposed?.bodyHtml) {
             try {
-             const sendResult=await sendMail({store,env,fetcher},{to:proposed.to,cc:proposed.cc,subject:proposed.subject,bodyHtml:proposed.bodyHtml});
+             const sendResult=await sendMail({store,env,fetcher},{to:proposed.to,cc:proposed.cc,subject:proposed.subject,bodyHtml:proposed.bodyHtml},session.tenantId);
              if(sendResult.status==='SENT' && proposed.leadId)recordChannelMessage(store,{leadId:proposed.leadId,channel:'Email',direction:'OUTBOUND',text:proposed.bodyHtml,subject:proposed.subject,cc:proposed.cc||null,messageType:'email'},session.user,session.tenantId);
              return send(200,{...decided,emailSendResult:sendResult});
             } catch(error) {
              return send(200,{...decided,emailSendResult:{status:'FAILED',errorDetail:error.message}});
             }
           }
+        }
+        // Multi-Tenant Phase 4B (Part 40-42) — the generic resume path for a connection-aware
+        // tool gated by ToolDefinition.requiresApprovalBelowLevel (today: whatsapp_send at
+        // L1). Re-validates the EXACT connection this approval was raised against is still
+        // available (never silently re-targets a different one — see
+        // runtime.js's resumeToolApproval) and re-invokes the SAME tool handler that would
+        // have run immediately at a higher permission level — no second execution path.
+        if(decided.status==='APPROVED' && decided.action_type==='agent_tool_send') {
+          const toolResult=await agentRuntime.resumeToolApproval(decided);
+          recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_TOOL_APPROVAL_EXECUTED',itemId:decided.id,toolSlug:decided.tool_slug,resultStatus:toolResult?.status||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+          return send(200,{...decided,toolResult});
         }
         return send(200,decided);
       }
@@ -474,7 +604,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && url.pathname==='/api/frost/run-now') {authorize(session,['owner']);return send(200,await scheduler.tick());}
       const autonomyRoute=url.pathname.match(/^\/api\/agents\/([\w-]+)\/autonomy$/);
       if(autonomyRoute) {
-        if(req.method==='GET')return send(200,listAutonomyLog(store.db,autonomyRoute[1]));
+        if(req.method==='GET')return send(200,listAutonomyLog(store.db,autonomyRoute[1],session.tenantId));
         if(req.method==='POST') {authorize(session,['owner']);return send(201,setAutonomy(store,autonomyRoute[1],await body(req),session.user,env,session.tenantId));}
       }
       if(req.method==='GET' && url.pathname==='/api/connections') return send(200,connectionStatus(env));
@@ -575,7 +705,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(lead.humanHold)fail(409,'المحادثة موقوفة بانتظار مراجعة بشرية');
         if(!lead.phone)fail(409,'لا يوجد رقم هاتف لهذا العميل');
         if(!input.templateName && !(lead.lastInboundAt && Date.now()-Date.parse(lead.lastInboundAt)<=86400000))fail(409,'خارج نافذة خدمة العملاء (24 ساعة) — استخدم قالبًا معتمدًا');
-        const result=await sendWhatsAppMessage({store,env,fetcher},{to:lead.phone,text:input.text,templateName:input.templateName,templateLanguage:input.templateLanguage});
+        const result=await sendWhatsAppMessage({store,env,fetcher},{to:lead.phone,text:input.text,templateName:input.templateName,templateLanguage:input.templateLanguage},session.tenantId);
         if(result.status==='SENT')recordChannelMessage(store,{leadId:id,channel:'WhatsApp',direction:'OUTBOUND',text:input.text||`[template:${input.templateName}]`,externalMessageId:result.externalMessageId,messageType:input.templateName?'template':'text'},session.user,session.tenantId);
         return send(200,result);
       }
@@ -861,7 +991,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           riskLevel:category==='legal'?'HIGH':'MEDIUM',reason:`${session.user.name} drafted a ${category} email to ${lead.email} — requires owner approval before sending.`,tenantId:session.tenantId});
          return send(200,{status:'WAITING_APPROVAL',approvalId:approval.id});
         }
-        const result=await sendMail({store,env,fetcher},{to:lead.email,cc:input.cc,subject:input.subject,bodyHtml:input.bodyHtml});
+        const result=await sendMail({store,env,fetcher},{to:lead.email,cc:input.cc,subject:input.subject,bodyHtml:input.bodyHtml},session.tenantId);
         if(result.status==='SENT')recordChannelMessage(store,{leadId:id,channel:'Email',direction:'OUTBOUND',text:input.bodyHtml,subject:input.subject,cc:input.cc||null,messageType:'email'},session.user,session.tenantId);
         return send(200,result);
       }

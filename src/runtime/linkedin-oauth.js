@@ -106,9 +106,9 @@ export function disconnectLinkedIn(db) {
 export function setLinkedInOrganization(db,organization) {
  return updateCredentialsMetadata(db,'linkedin',{organization});
 }
-function organizationIdFromMeta(db,env) {
+function organizationIdFromMeta(db,env,tenantId=null) {
  if(env.LINKEDIN_ORGANIZATION_ID)return env.LINKEDIN_ORGANIZATION_ID;
- const meta=getCredentialsMeta(db,'linkedin');
+ const meta=getCredentialsMeta(db,'linkedin',tenantId);
  return meta?.metadata?.organization?.id||null;
 }
 /**
@@ -118,12 +118,12 @@ function organizationIdFromMeta(db,env) {
  * linkedInOAuthStatus's `reauthorizeRequired` flag drives). Falls back to a static
  * LINKEDIN_ACCESS_TOKEN + LINKEDIN_ORGANIZATION_ID pair for a manually-issued token.
  */
-export async function resolveLinkedInAccessToken({store,env,fetcher=fetch}) {
+export async function resolveLinkedInAccessToken({store,env,fetcher=fetch},tenantId=null) {
  if(credentialsConfigured(env)) {
   let creds;
-  try {creds=getCredentials(store.db,env,'linkedin');} catch {creds=null;}
+  try {creds=getCredentials(store.db,env,'linkedin',tenantId);} catch {creds=null;}
   if(creds) {
-   if(!isExpiringSoon(creds.expiresAt))return {token:creds.accessToken,organizationId:organizationIdFromMeta(store.db,env),source:'oauth'};
+   if(!isExpiringSoon(creds.expiresAt))return {token:creds.accessToken,organizationId:organizationIdFromMeta(store.db,env,tenantId),source:'oauth'};
    return env.LINKEDIN_ACCESS_TOKEN?{token:env.LINKEDIN_ACCESS_TOKEN,organizationId:env.LINKEDIN_ORGANIZATION_ID||null,source:'static'}:null;
   }
  }

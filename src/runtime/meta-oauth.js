@@ -111,10 +111,10 @@ export function disconnectMeta(db) {
  * legacy static WHATSAPP_ACCESS_TOKEN/META_ACCESS_TOKEN env vars so nothing that already
  * worked breaks. Returns null (never throws) when nothing is usable.
  */
-export function resolveMetaAccessToken({store,env},kind='page') {
+export function resolveMetaAccessToken({store,env},kind='page',tenantId=null) {
  if(credentialsConfigured(env)) {
   let creds;
-  try {creds=getCredentials(store.db,env,'meta');} catch {creds=null;}
+  try {creds=getCredentials(store.db,env,'meta',tenantId);} catch {creds=null;}
   if(creds && !isExpiringSoon(creds.expiresAt)) {
    if(kind==='page'||kind==='whatsapp') {
     const pageToken=creds.extra?.pageAccessToken;
@@ -126,8 +126,8 @@ export function resolveMetaAccessToken({store,env},kind='page') {
  const staticToken=kind==='whatsapp'?(env.WHATSAPP_ACCESS_TOKEN||env.META_ACCESS_TOKEN):env.META_ACCESS_TOKEN;
  return staticToken?{token:staticToken,source:'static',metadata:null}:null;
 }
-export function connectedWhatsAppPhoneNumberId(db,env) {
+export function connectedWhatsAppPhoneNumberId(db,env,tenantId=null) {
  if(env.WHATSAPP_PHONE_NUMBER_ID)return env.WHATSAPP_PHONE_NUMBER_ID;
- const meta=getCredentialsMeta(db,'meta');
+ const meta=getCredentialsMeta(db,'meta',tenantId);
  return meta?.metadata?.whatsapp?.phoneNumberId||null;
 }

@@ -20,6 +20,7 @@ import {promotionEligibility} from '../src/runtime/permissions.js';
 import {normalizeSallaProduct} from '../src/connectors.js';
 import {installContent} from '../src/content.js';
 import {installAuditLog} from '../src/audit.js';
+import {resolveActiveTenantId} from '../src/tenancy.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
 const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model'};
@@ -186,23 +187,24 @@ test('14-day promotion eligibility is computed from real run/escalation history,
  const store=fixture();
  try{
   const now=Date.now();
-  const insertRun=(status,daysAgo)=>store.db.prepare('INSERT INTO agent_runs (id,agent_id,trigger_type,status,input_context,started_at) VALUES (?,?,?,?,?,?)')
-   .run('r'+Math.random(),'copy','TEST',status,'{}',new Date(now-daysAgo*86400000).toISOString());
+  const tenantId=resolveActiveTenantId(store.db);
+  const insertRun=(status,daysAgo)=>store.db.prepare('INSERT INTO agent_runs (id,tenant_id,agent_id,trigger_type,status,input_context,started_at) VALUES (?,?,?,?,?,?,?)')
+   .run('r'+Math.random(),tenantId,'copy','TEST',status,'{}',new Date(now-daysAgo*86400000).toISOString());
   for(let i=0;i<5;i++)insertRun('COMPLETED',i);
-  let eligibility=promotionEligibility(store.db,'copy');
+  let eligibility=promotionEligibility(store.db,'copy',tenantId);
   assert.equal(eligibility.eligible,false); // clean runs exist, but the earliest is only 4 days old — 14-day bar not met yet
   assert.equal(eligibility.health.failed_runs,0);
   insertRun('FAILED',1);
-  eligibility=promotionEligibility(store.db,'copy');
+  eligibility=promotionEligibility(store.db,'copy',tenantId);
   assert.equal(eligibility.eligible,false);
   assert.equal(eligibility.status,'NOT_ELIGIBLE');
 
   const cleanAgent='strategy';
-  const insertCleanRun=(daysAgo)=>store.db.prepare('INSERT INTO agent_runs (id,agent_id,trigger_type,status,input_context,started_at) VALUES (?,?,?,?,?,?)')
-   .run('c'+daysAgo,cleanAgent,'TEST','COMPLETED','{}',new Date(now-daysAgo*86400000).toISOString());
+  const insertCleanRun=(daysAgo)=>store.db.prepare('INSERT INTO agent_runs (id,tenant_id,agent_id,trigger_type,status,input_context,started_at) VALUES (?,?,?,?,?,?,?)')
+   .run('c'+daysAgo,tenantId,cleanAgent,'TEST','COMPLETED','{}',new Date(now-daysAgo*86400000).toISOString());
   insertCleanRun(20); // establishes the 14-day-old reference point (first-ever run)
   insertCleanRun(3);insertCleanRun(1); // recent clean activity inside the health window
-  const cleanEligibility=promotionEligibility(store.db,cleanAgent);
+  const cleanEligibility=promotionEligibility(store.db,cleanAgent,tenantId);
   assert.equal(cleanEligibility.eligible,true);
   assert.equal(cleanEligibility.status,'ELIGIBLE_FOR_PROMOTION');
  }finally{store.close();}

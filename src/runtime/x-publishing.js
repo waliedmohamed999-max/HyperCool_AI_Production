@@ -58,8 +58,8 @@ async function requestJson(fetcher,url,options={}) {
  * rather than FAILED — the request may have gone through on X's side; the caller (see
  * runtime/tools.js x_publish) must never blindly retry that state (spec Part Q).
  */
-export async function publishTweet({store,env,fetcher=fetch},{text}) {
- const resolved=await resolveXAccessToken({store,env,fetcher},'publish');
+export async function publishTweet({store,env,fetcher=fetch},{text},tenantId=null) {
+ const resolved=await resolveXAccessToken({store,env,fetcher},'publish',tenantId);
  if(!resolved)return {status:'INTEGRATION_REQUIRED',integration:'x'};
  const validation=validateTweetText(text);
  if(!validation.valid)return {status:'FAILED',errorCode:'INVALID_CONTENT',errorDetail:validation.reason};

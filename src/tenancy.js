@@ -24,6 +24,16 @@ export function installTenancy(db) {
   CREATE INDEX IF NOT EXISTS idx_tenant_memberships_user ON tenant_memberships(user_id);
   CREATE INDEX IF NOT EXISTS idx_tenant_memberships_tenant ON tenant_memberships(tenant_id);
  `);
+ // Multi-Tenant Phase 4B (Part 17/37) — additive, guarded columns, same pattern as
+ // registry.js/runtime.js. `default_ai_connection_id`/`default_ai_model` let a tenant set a
+ // workspace-wide AI provider connection/model that any TenantAgentConfig without its own
+ // override inherits (Part 17). `max_agent_level` is a per-tenant safety ceiling (Part 37) —
+ // nullable, meaning "no additional ceiling beyond the system-wide SYSTEM_MODE cap" by
+ // default; distinct from an individual agent's own audited autonomy level.
+ const columns=db.prepare('PRAGMA table_info(tenants)').all().map(c=>c.name);
+ if(!columns.includes('default_ai_connection_id'))db.exec('ALTER TABLE tenants ADD COLUMN default_ai_connection_id TEXT');
+ if(!columns.includes('default_ai_model'))db.exec('ALTER TABLE tenants ADD COLUMN default_ai_model TEXT');
+ if(!columns.includes('max_agent_level'))db.exec('ALTER TABLE tenants ADD COLUMN max_agent_level TEXT');
 }
 /**
  * Idempotent, lossless backfill (spec Part 99-101). The very first call on a real database
@@ -96,7 +106,20 @@ export function resolveTenantForUser(db,userId) {
 export function getTenant(db,tenantId) {
  const row=db.prepare('SELECT * FROM tenants WHERE id=?').get(tenantId);
  if(!row)return null;
- return {id:row.id,name:row.name,slug:row.slug,status:row.status,plan:row.plan,defaultLocale:row.default_locale,timezone:row.timezone,brandingSettings:row.branding_settings?JSON.parse(row.branding_settings):null,systemMode:row.system_mode,createdAt:row.created_at,updatedAt:row.updated_at};
+ return {id:row.id,name:row.name,slug:row.slug,status:row.status,plan:row.plan,defaultLocale:row.default_locale,timezone:row.timezone,brandingSettings:row.branding_settings?JSON.parse(row.branding_settings):null,systemMode:row.system_mode,
+  defaultAiConnectionId:row.default_ai_connection_id,defaultAiModel:row.default_ai_model,maxAgentLevel:row.max_agent_level,createdAt:row.created_at,updatedAt:row.updated_at};
+}
+// Multi-Tenant Phase 4B (Part 17/37) — the workspace-level AI default and safety ceiling.
+// `setWorkspaceAiDefault`'s `connectionId` is validated by the caller (application.js route)
+// to actually belong to this tenant and be an anthropic/openai connection before this is
+// called — this function itself only persists, matching every other setter in this codebase.
+export function setWorkspaceAiDefault(db,tenantId,{connectionId=null,model=null}) {
+ db.prepare('UPDATE tenants SET default_ai_connection_id=?,default_ai_model=?,updated_at=? WHERE id=?').run(connectionId,model,new Date().toISOString(),tenantId);
+ return getTenant(db,tenantId);
+}
+export function setMaxAgentLevel(db,tenantId,level) {
+ db.prepare('UPDATE tenants SET max_agent_level=?,updated_at=? WHERE id=?').run(level,new Date().toISOString(),tenantId);
+ return getTenant(db,tenantId);
 }
 export function listTenantMembers(db,tenantId) {
  return db.prepare('SELECT tm.id,tm.user_id AS userId,u.name,u.username,tm.role,tm.status,tm.is_owner AS isOwner,tm.created_at AS createdAt FROM tenant_memberships tm JOIN users u ON u.id=tm.user_id WHERE tm.tenant_id=? ORDER BY tm.created_at').all(tenantId);
