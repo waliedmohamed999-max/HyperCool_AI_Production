@@ -7,6 +7,7 @@
   "agents": { "title": "Agent Team", "description": "Monitor runs, review decisions, and manage each agent's permissions." },
   "knowledge": { "title": "Brand Memory", "description": "The single source of truth for facts, policies, and knowledge used by the AI system." },
   "integrations": { "title": "Integrations", "description": "Connect the channels and services HyperCool's system depends on." },
+  "control-center": { "title": "Integration & Agent Control Center", "description": "Connect your company's services, choose which tools each agent can use, and track connection health and agent readiness in one place." },
   "audit": { "title": "Operations Log", "description": "A documented record of what happened and who did it." },
   "users": { "title": "Team Accounts", "description": "Manage team members, roles, permissions, and system access." },
   "workspace": "Workspace",

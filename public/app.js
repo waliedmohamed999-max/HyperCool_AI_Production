@@ -14,6 +14,7 @@ import {renderMemory,installMemoryInteractions} from './memory.js';
 import {renderIntegrations,installIntegrationInteractions,checkAllIntegrations} from './integrations.js';
 import {renderTeam,installTeamInteractions,clickTeam} from './team.js';
 import {resolveActiveWorkspace,renderWorkspaceGate,hideWorkspaceGate,renderWorkspaceSwitcher} from './components/workspace-switcher.js';
+import {installControlCenter,renderControlCenter} from './pages/control-center.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
 // access so a language switch relabels the whole audit trail with no other code touched.
@@ -23,6 +24,7 @@ await initI18n();
 installPlanningFields();
 installShell();
 installWorkspace();
+installControlCenter();
 installCRMInteractions();
 installContentInteractions();
 installMemoryInteractions();
@@ -105,6 +107,7 @@ async function render(){
   await renderKnowledge({api,auth,escape});
   await renderMemory({api,auth});
   await renderIntegrations({api});
+  await renderControlCenter({api,auth});
   $('#items').querySelectorAll(':scope > article').forEach((card,index)=>addContentActions(card,state.content[index],auth,escape));
   await renderPlanning({api,auth,state,escape});
   await renderCRM({api,auth,escape});

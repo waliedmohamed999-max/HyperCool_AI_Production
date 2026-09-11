@@ -62,6 +62,7 @@ import {installTenantAgentConfigs,getTenantAgentConfig,updateTenantAgentConfig,l
 import {installToolDefinitions,listToolDefinitions,getToolDefinition} from './runtime/tool-definitions.js';
 import {installAgentToolAssignments,listAssignmentsForAgent,upsertAssignment,deleteAssignment,findAssignmentsUsingConnection} from './runtime/tool-assignments.js';
 import {evaluateAgentReadiness,evaluateAllToolsReadiness} from './runtime/agent-readiness.js';
+import {buildControlCenterSummary} from './runtime/control-center.js';
 import {connectionGrantsCapability} from './runtime/capability-map.js';
 import {levels as autonomyLevels} from './autonomy.js';
 
@@ -573,6 +574,15 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner','operator']);
         if(!getAgent(store.db,agentReadiness[1]))fail(404,'وكيل غير موجود');
         return send(200,evaluateAgentReadiness(store.db,env,{tenantId:session.tenantId,agentId:agentReadiness[1]}));
+      }
+      // Multi-Tenant Phase 4C-2 — Control Center. ONE real, tenant-scoped aggregation call
+      // (src/runtime/control-center.js) so the whole dashboard never needs N+1 fetches from
+      // the frontend (Phase 4B's own performance principle). Same owner/operator bar as every
+      // other agent-config/readiness read this dashboard surfaces — a reviewer has no
+      // legitimate reason to see connection/AI-provider configuration.
+      if(req.method==='GET' && url.pathname==='/api/control-center/summary') {
+        authorize(session,['owner','operator']);
+        return send(200,buildControlCenterSummary(store.db,env,session.tenantId,session.user.role));
       }
       if(req.method==='PATCH' && url.pathname==='/api/tenant/ai-default') {
         authorize(session,['owner']);
@@ -1164,8 +1174,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','pages/workspace.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
       if(req.method==='GET' && files[url.pathname]) {
         const file=files[url.pathname];
