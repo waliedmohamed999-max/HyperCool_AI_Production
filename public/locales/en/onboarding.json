@@ -1,0 +1,96 @@
+{
+  "navLabel": "Guided Setup",
+  "title": "Guided Setup for this Workspace",
+  "subtitle": "Finish configuring this existing workspace step by step — this never creates a new workspace, and never depends on email anywhere.",
+  "loadFailed": "Failed to load onboarding status",
+  "resumeBanner": "This workspace's setup is not finished yet",
+  "resumeBannerHint": "Complete the remaining steps to run agents at full readiness.",
+  "resumeButton": "Resume setup",
+  "step": {
+    "company": "Company details",
+    "ai": "AI provider",
+    "commerce": "Commerce (Salla)",
+    "messaging": "Messaging channels",
+    "productivity": "Productivity (Microsoft 365)",
+    "agents": "Agent setup",
+    "safety": "Safety & permissions",
+    "systemCheck": "System check & finish"
+  },
+  "state": {
+    "READY": "Ready",
+    "NOT_STARTED": "Not started",
+    "SKIPPED": "Skipped"
+  },
+  "requiredBadge": "Required",
+  "optionalBadge": "Optional",
+  "backButton": "Back",
+  "nextButton": "Next",
+  "skipButton": "Skip this step for now",
+  "unskipButton": "Undo skip",
+  "finishButton": "Finish setup",
+  "finishBlockedHint": "Cannot finish yet — complete the required steps first.",
+  "reopenButton": "Reopen wizard",
+  "completedTitle": "This workspace's setup is complete",
+  "completedHint": "You can always review or change any setting later from Control Center, or reopen this wizard.",
+  "goToControlCenter": "Go to Control Center",
+  "companyStep": {
+    "name": "Workspace name",
+    "slug": "Slug",
+    "locale": "Default locale",
+    "timezone": "Timezone",
+    "role": "Your current role",
+    "note": "This is this workspace's real current data. Some fields can be changed later from Control Center."
+  },
+  "aiStep": {
+    "hint": "This is the only genuinely required step — every agent in this system needs a real AI provider to function.",
+    "connectedHint": "A real AI provider is configured for this workspace.",
+    "addConnection": "Add an AI connection",
+    "connectionNameLabel": "Connection name",
+    "apiKeyLabel": "API key",
+    "save": "Save",
+    "presetTitle": "Apply a recommended setup",
+    "presetHint": "Assigns this connection to every agent that has no AI connection override yet — never changes a prior choice, never changes autonomy level.",
+    "applyPreset": "Apply to all agents"
+  },
+  "commerceStep": {
+    "hint": "A Salla connection is optional at this stage and can be added later at any time.",
+    "connectedHint": "A Salla store is connected.",
+    "storeNamePlaceholder": "Store name",
+    "connectButton": "Connect a Salla store"
+  },
+  "messagingStep": {
+    "hint": "WhatsApp, Meta, X and LinkedIn are managed from Control Center — each currently supports one connection.",
+    "connectedHint": "A real messaging channel is already connected."
+  },
+  "productivityStep": {
+    "hint": "A Microsoft 365 connection is optional, managed from Control Center.",
+    "connectedHint": "Microsoft 365 is connected."
+  },
+  "agentsStep": {
+    "hint": "Once an AI provider is configured, each agent's readiness depends on its own settings — review and adjust them from Control Center.",
+    "readyCount": "{ready} of {total} agents ready now"
+  },
+  "safetyStep": {
+    "hint": "Every agent starts at level L0 (suggest-only, no automatic execution) — this is the safe default and is not changed from this wizard.",
+    "agentLevel": "Current level",
+    "safetyCeiling": "Workspace safety ceiling",
+    "noCeiling": "Not set",
+    "flags": "System-wide safety flags",
+    "flag": {
+      "externalMessaging": "External messaging",
+      "externalPublishing": "External publishing",
+      "automatedFollowups": "Automated follow-ups",
+      "scheduledPublishing": "Scheduled publishing",
+      "l2Autonomy": "L2 autonomy",
+      "l3Autonomy": "L3 autonomy"
+    },
+    "flagOn": "Enabled",
+    "flagOff": "Disabled"
+  },
+  "systemCheckStep": {
+    "hint": "A real, live summary of this workspace right now — no fake data.",
+    "requiredReady": "Required prerequisites are ready",
+    "requiredNotReady": "Some required prerequisites are not ready yet",
+    "summary": "{ready} of {total} agents ready · {healthy} healthy connections"
+  }
+}

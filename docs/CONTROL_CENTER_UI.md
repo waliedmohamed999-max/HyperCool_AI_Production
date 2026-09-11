@@ -141,7 +141,16 @@ painted over the current workspace's DOM (Part 55).
   not free to add safely in the remaining scope).
 - Workspace Invitations / Member Management: explicitly out of scope for this phase (Phase
   4C-3, per this phase's own instructions) — not built, not referenced.
-- Tenant creation / onboarding UI: not built (explicitly deferred).
+- Tenant creation / onboarding UI: not built in this phase — see Phase 4C-4 update below.
+
+## Phase 4C-4 update: Guided Workspace Onboarding attention item
+
+The Overview tab's "Needs Attention" list now includes one real row when this workspace's
+guided setup (`#onboarding`, `GET /api/onboarding`) is not yet `COMPLETED` — same pattern as
+every other attention item here (a real blocked agent, a real unhealthy connection), jumping
+straight to the wizard. See `docs/WORKSPACE_ONBOARDING.md` for the full wizard design; it is a
+separate page reusing this page's own summary endpoint and existing Add-Connection flows,
+adding no new business logic.
 
 ## A real, severe bug this phase's audit found and fixed (pre-existing, from Phase 4C-1)
 

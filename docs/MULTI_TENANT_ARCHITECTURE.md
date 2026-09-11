@@ -314,7 +314,17 @@ and stays the GLOBAL `AgentDefinition` (prompt, payload schema, id). Agent Tool 
 (`agent_tool_assignments`) and Agent Readiness are also now real — see
 `docs/AGENT_TOOL_MAPPING.md`, `docs/AGENT_READINESS.md`, and
 `docs/CONNECTION_AWARE_RUNTIME.md`. Still not built, unchanged from the list above: the
-Control Center UI, onboarding wizard, and generic multi-connection OAuth for
-WhatsApp/Meta/Microsoft/X/LinkedIn (Salla and the two AI providers are the ones proven
-end-to-end with real multiple simultaneous connections — see
+generic multi-connection OAuth for WhatsApp/Meta/Microsoft/X/LinkedIn (Salla and the two AI
+providers are the ones proven end-to-end with real multiple simultaneous connections — see
 `docs/CONNECTION_AWARE_RUNTIME.md`'s connection-mode matrix).
+
+## Phase 4C-1 → 4C-4 update: Workspace Selection, Control Center, Invitations, and Guided
+## Onboarding now all exist
+
+The "Control Center UI" and "onboarding wizard" gaps noted above are now closed, alongside
+active-workspace selection and invitation-based member management — see
+`docs/WORKSPACE_SELECTION.md`, `docs/CONTROL_CENTER_UI.md`, `docs/WORKSPACE_INVITATIONS.md`,
+and `docs/WORKSPACE_ONBOARDING.md`. All four configure an **existing** tenant only: none of
+them adds tenant creation, an email field, a real platform email service, or customer
+self-service signup — those remain explicitly out of scope, unchanged from this document's
+original list.

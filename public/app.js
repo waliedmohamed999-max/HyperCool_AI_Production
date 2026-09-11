@@ -15,6 +15,7 @@ import {renderIntegrations,installIntegrationInteractions,checkAllIntegrations} 
 import {renderTeam,installTeamInteractions,clickTeam} from './team.js';
 import {resolveActiveWorkspace,renderWorkspaceGate,hideWorkspaceGate,renderWorkspaceSwitcher} from './components/workspace-switcher.js';
 import {installControlCenter,renderControlCenter} from './pages/control-center.js';
+import {installOnboardingPage,renderOnboardingPage} from './pages/onboarding.js';
 import {isInviteRoute,renderInvitePage} from './pages/invite.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
@@ -26,6 +27,7 @@ installPlanningFields();
 installShell();
 installWorkspace();
 installControlCenter();
+installOnboardingPage();
 installCRMInteractions();
 installContentInteractions();
 installMemoryInteractions();
@@ -117,6 +119,7 @@ async function render(){
   await renderMemory({api,auth});
   await renderIntegrations({api});
   await renderControlCenter({api,auth});
+  await renderOnboardingPage({api,auth});
   $('#items').querySelectorAll(':scope > article').forEach((card,index)=>addContentActions(card,state.content[index],auth,escape));
   await renderPlanning({api,auth,state,escape});
   await renderCRM({api,auth,escape});

@@ -12,6 +12,7 @@
     "aiProviders": "مزودو ذكاء اصطناعي متصلون", "aiProvidersHint": "اتصالات Anthropic/OpenAI الفعّالة",
     "tools": "الأدوات المتاحة", "toolsHint": "من إجمالي الأدوات الحقيقية في النظام"
   },
+  "attentionOnboardingIncomplete": "لم يكتمل الإعداد الموجّه لهذه المنشأة بعد",
   "attentionAgentBlocked": "وكيل {agent} متوقف — {reason}",
   "attentionAgentPartial": "وكيل {agent}: أداة {tool} غير متاحة",
   "attentionConnection": "اتصال {name} ({provider}) بحالة {status}",

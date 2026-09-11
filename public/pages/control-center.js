@@ -9,7 +9,7 @@ import {escape,button,badge,empty,metric,skeleton,tabs,drawer,promptDrawer,table
 import {t,getLocale} from '../i18n.js';
 
 const $=s=>document.querySelector('#control-center '+s);
-let apiClient,currentAuth,summary=null,renderGeneration=0;
+let apiClient,currentAuth,summary=null,onboardingStatus=null,renderGeneration=0;
 let filters={status:'all',query:''};
 
 const AGENT_STATUS_VARIANT={READY:'CONNECTED',PARTIAL:'DEGRADED',BLOCKED:'ERROR',DISABLED:'DISCONNECTED'};
@@ -55,7 +55,7 @@ export async function renderControlCenter({api:client,auth}){
  const generation=++renderGeneration;
  $('#cc-summary').innerHTML=skeleton(t('common.loading'));
  let data;
- try{data=await api('/api/control-center/summary');}
+ try{[data,onboardingStatus]=await Promise.all([api('/api/control-center/summary'),api('/api/onboarding').catch(()=>null)]);}
  catch(error){
   if(staleGuard(generation))return;
   $('#cc-summary').innerHTML=empty(t('controlCenter.loadFailed'),error.message);
@@ -89,6 +89,7 @@ function renderKpis(){
 function renderAttention(){
  const section=$('#cc-attention'),list=$('#cc-attention-list');
  const items=[];
+ if(onboardingStatus && onboardingStatus.status!=='COMPLETED')items.push({text:t('controlCenter.attentionOnboardingIncomplete'),jump:()=>{location.hash='#onboarding';}});
  for(const agent of summary.agents.items){
   if(agent.status==='BLOCKED')items.push({text:t('controlCenter.attentionAgentBlocked',{agent:agent.name,reason:agent.blockers[0]||''}),jump:()=>openAgentDrawer(agent.id)});
   else if(agent.status==='PARTIAL')for(const slug of agent.optionalMissing)items.push({text:t('controlCenter.attentionAgentPartial',{agent:agent.name,tool:slug}),jump:()=>openAgentDrawer(agent.id)});

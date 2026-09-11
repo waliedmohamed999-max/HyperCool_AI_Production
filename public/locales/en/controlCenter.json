@@ -12,6 +12,7 @@
     "aiProviders": "AI Providers Connected", "aiProvidersHint": "Active Anthropic/OpenAI connections",
     "tools": "Tools Available", "toolsHint": "Out of the real tools in this system"
   },
+  "attentionOnboardingIncomplete": "This workspace's guided setup is not finished yet",
   "attentionAgentBlocked": "{agent} agent is blocked — {reason}",
   "attentionAgentPartial": "{agent} agent: {tool} is unavailable",
   "attentionConnection": "{name} ({provider}) connection is {status}",

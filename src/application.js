@@ -64,6 +64,7 @@ import {installToolDefinitions,listToolDefinitions,getToolDefinition} from './ru
 import {installAgentToolAssignments,listAssignmentsForAgent,upsertAssignment,deleteAssignment,findAssignmentsUsingConnection} from './runtime/tool-assignments.js';
 import {evaluateAgentReadiness,evaluateAllToolsReadiness} from './runtime/agent-readiness.js';
 import {buildControlCenterSummary} from './runtime/control-center.js';
+import {installOnboarding,getOnboardingState,updateOnboardingState,applyRecommendedPreset,safetySnapshot} from './onboarding.js';
 import {connectionGrantsCapability} from './runtime/capability-map.js';
 import {levels as autonomyLevels} from './autonomy.js';
 
@@ -109,6 +110,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installTenancy(store.db);
   ensureDefaultTenant(store.db); // real, lossless backfill — see docs/MULTI_TENANT_ARCHITECTURE.md
   installInvitations(store.db); // Multi-Tenant Phase 4C-3 — see docs/WORKSPACE_INVITATIONS.md
+  installOnboarding(store.db); // Multi-Tenant Phase 4C-4 — see docs/WORKSPACE_ONBOARDING.md
   installContent(store.db); // migrates legacy state.content into a real tenant-scoped table — see docs/CONTENT_MIGRATION.md
   installAuditLog(store.db); // migrates legacy state.audit into a real tenant-scoped table — see docs/AUDIT_MIGRATION.md
   installKnowledge(store.db);
@@ -680,6 +682,45 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='GET' && url.pathname==='/api/control-center/summary') {
         authorize(session,['owner','operator']);
         return send(200,buildControlCenterSummary(store.db,env,session.tenantId,session.user.role));
+      }
+      // Multi-Tenant Phase 4C-4 — Guided Workspace Onboarding. Configures the CURRENT,
+      // already-existing tenant only (session.tenantId) — never creates one. Every step's
+      // `state` is re-derived live on every GET (src/onboarding.js) — the frontend cannot mark
+      // a step done by asserting it; same owner/operator read bar as Control Center, but
+      // mutating (`PATCH`/preset) is owner-only, matching every other config-mutating route.
+      if(req.method==='GET' && url.pathname==='/api/onboarding') {
+        authorize(session,['owner','operator']);
+        return send(200,getOnboardingState(store.db,env,session.tenantId));
+      }
+      if(req.method==='PATCH' && url.pathname==='/api/onboarding') {
+        authorize(session,['owner']);
+        const input=await body(req);
+        const before=getOnboardingState(store.db,env,session.tenantId);
+        const updated=updateOnboardingState(store.db,env,session.tenantId,input);
+        const now=new Date().toISOString();
+        if(before.status==='NOT_STARTED')recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_ONBOARDING_STARTED',itemId:session.tenantId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+        if(input.complete===true)recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_ONBOARDING_COMPLETED',itemId:session.tenantId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+        else if(input.reopen===true)recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_ONBOARDING_REOPENED',itemId:session.tenantId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+        else if(input.skipStep!==undefined)recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_ONBOARDING_STEP_SKIPPED',itemId:input.skipStep,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+        // A step transition where the step being LEFT is genuinely READY counts as that step's
+        // completion (Part 60) — never logged on every render, only on an explicit advance.
+        else if(input.currentStep!==undefined) {
+         const leaving=before.steps.find(s=>s.id===before.currentStep);
+         if(leaving && leaving.state==='READY')recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_ONBOARDING_STEP_COMPLETED',itemId:leaving.id,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+        }
+        return send(200,updated);
+      }
+      if(req.method==='GET' && url.pathname==='/api/onboarding/safety') {
+        authorize(session,['owner','operator']);
+        return send(200,safetySnapshot(store.db,env,session.tenantId));
+      }
+      if(req.method==='POST' && url.pathname==='/api/onboarding/preset') {
+        authorize(session,['owner']);
+        const input=await body(req);
+        if(typeof input.aiConnectionId!=='string'||!input.aiConnectionId)fail(400,'aiConnectionId مطلوب');
+        const result=applyRecommendedPreset(store.db,session.tenantId,{aiConnectionId:input.aiConnectionId,agentIds:input.agentIds});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_ONBOARDING_PRESET_APPLIED',itemId:session.tenantId,detail:result.applied.join(','),actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,result);
       }
       if(req.method==='PATCH' && url.pathname==='/api/tenant/ai-default') {
         authorize(session,['owner']);
@@ -1271,8 +1312,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
       if(req.method==='GET' && files[url.pathname]) {
         const file=files[url.pathname];
