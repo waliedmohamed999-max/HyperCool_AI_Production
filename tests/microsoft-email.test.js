@@ -199,10 +199,10 @@ test('processMicrosoftNotifications verifies clientState per item, rejects misma
   {subscriptionId:'sub-1',clientState:'wh-secret',changeType:'created',resourceData:{id:'msg-1'}},
   {subscriptionId:'sub-1',clientState:'wrong-secret',changeType:'created',resourceData:{id:'msg-2'}}
  ]};
- const first=processMicrosoftNotifications(store.db,body,env);
+ const first=processMicrosoftNotifications(store.db,body,env,()=>'test-tenant');
  assert.equal(first.toFetch.length,1);assert.equal(first.toFetch[0].messageId,'msg-1');
  assert.equal(first.rejected,1);
- const replay=processMicrosoftNotifications(store.db,body,env);
+ const replay=processMicrosoftNotifications(store.db,body,env,()=>'test-tenant');
  assert.equal(replay.toFetch.length,0);assert.equal(replay.replayed,1); // msg-1 already recorded; msg-2 still rejected each time, not "replayed"
  }finally{store.close();}
 });

@@ -6,6 +6,7 @@ import {installCredentials,saveCredentials,getCredentials,getCredentialsMeta,cle
 import {installWebhookEvents,verifySallaWebhook,processSallaWebhook,listWebhookEvents} from '../src/runtime/salla-webhooks.js';
 import {installEvents,createEventBus} from '../src/runtime/events.js';
 import {resolveSallaAccessToken,oauthConfigured} from '../src/runtime/salla-oauth.js';
+import {resolveActiveTenantId} from '../src/tenancy.js';
 
 const user={id:'owner-1',name:'Owner',role:'owner'};
 const key32=randomBytes(32).toString('hex');
@@ -123,9 +124,9 @@ test('webhook processing is idempotent — the same delivery redelivered is neve
  const store=fixture();try{
  const eventBus=createEventBus(store.db);
  const body={event:'order.created',data:{id:'order-1'},created_at:'2030-01-01T00:00:00Z'};
- const first=processSallaWebhook({db:store.db,eventBus,body});
+ const first=processSallaWebhook({db:store.db,eventBus,body,tenantId:resolveActiveTenantId(store.db)});
  assert.equal(first.replayed,false);assert.equal(first.internalType,'ORDER_CREATED');
- const second=processSallaWebhook({db:store.db,eventBus,body});
+ const second=processSallaWebhook({db:store.db,eventBus,body,tenantId:resolveActiveTenantId(store.db)});
  assert.equal(second.replayed,true);
  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM webhook_events').get().n,1);
  assert.equal(eventBus.list({type:'ORDER_CREATED'}).length,1);
@@ -135,7 +136,7 @@ test('webhook processing is idempotent — the same delivery redelivered is neve
 test('an unmapped Salla event type is stored for observability but never fabricates an internal event',()=>{
  const store=fixture();try{
  const eventBus=createEventBus(store.db);
- const result=processSallaWebhook({db:store.db,eventBus,body:{event:'something.salla.added.later',data:{id:'x'}}});
+ const result=processSallaWebhook({db:store.db,eventBus,body:{event:'something.salla.added.later',data:{id:'x'}},tenantId:resolveActiveTenantId(store.db)});
  assert.equal(result.internalType,null);
  const stored=listWebhookEvents(store.db,{source:'salla'})[0];
  assert.equal(stored.status,'UNMAPPED');
@@ -146,8 +147,8 @@ test('an unmapped Salla event type is stored for observability but never fabrica
 test('product.updated and product.available map to the correct internal events',()=>{
  const store=fixture();try{
  const eventBus=createEventBus(store.db);
- assert.equal(processSallaWebhook({db:store.db,eventBus,body:{event:'product.updated',data:{id:'p1'}}}).internalType,'PRODUCT_UPDATED');
- assert.equal(processSallaWebhook({db:store.db,eventBus,body:{event:'product.available',data:{id:'p2'}}}).internalType,'PRODUCT_STOCK_UPDATED');
+ assert.equal(processSallaWebhook({db:store.db,eventBus,body:{event:'product.updated',data:{id:'p1'}},tenantId:resolveActiveTenantId(store.db)}).internalType,'PRODUCT_UPDATED');
+ assert.equal(processSallaWebhook({db:store.db,eventBus,body:{event:'product.available',data:{id:'p2'}},tenantId:resolveActiveTenantId(store.db)}).internalType,'PRODUCT_STOCK_UPDATED');
  }finally{store.close();}
 });
 

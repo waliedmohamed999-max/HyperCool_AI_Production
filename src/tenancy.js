@@ -73,11 +73,21 @@ export function resolveActiveTenantId(db) {
  * TenantContext.resolveTenant() will call once a session is available (spec Part 4). A user
  * with no membership row yet (created before this module existed, or any edge case) is
  * attached to the default tenant on first resolution rather than left tenant-less.
+ *
+ * Multi-Tenant Phase 3.5 (Part E): a user with exactly one membership resolves it safely, as
+ * always. A user with MORE than one membership (not reachable from any route today —
+ * createTenant() has no invite/onboarding flow yet — but the schema has always allowed it)
+ * now throws `TENANT_SELECTION_REQUIRED` instead of silently picking one via `LIMIT 1`,
+ * which used to return whichever row SQLite happened to return first — a real, if currently
+ * unreachable, fail-open gap. There is deliberately no "active tenant" selection endpoint or
+ * UI built yet (the spec explicitly scopes that out until a real multi-membership path
+ * exists to test it against) — this only closes the unsafe-guess side of the gap.
  */
 export function resolveTenantForUser(db,userId) {
  const tenantId=ensureDefaultTenant(db);
- const membership=db.prepare('SELECT tenant_id AS tenantId FROM tenant_memberships WHERE user_id=? LIMIT 1').get(userId);
- if(membership)return membership.tenantId;
+ const memberships=db.prepare('SELECT tenant_id AS tenantId FROM tenant_memberships WHERE user_id=?').all(userId);
+ if(memberships.length>1)throw Object.assign(new Error('TENANT_SELECTION_REQUIRED'),{code:'TENANT_SELECTION_REQUIRED',status:409});
+ if(memberships.length===1)return memberships[0].tenantId;
  const user=db.prepare('SELECT role FROM users WHERE id=?').get(userId);
  if(user)db.prepare('INSERT OR IGNORE INTO tenant_memberships (id,tenant_id,user_id,role,status,is_owner,created_at) VALUES (?,?,?,?,?,?,?)')
   .run(randomUUID(),tenantId,userId,user.role,'active',user.role==='owner'?1:0,new Date().toISOString());
@@ -104,4 +114,20 @@ export function createTenant(db,{name,slug},ownerUserId) {
  if(ownerUserId)db.prepare('INSERT INTO tenant_memberships (id,tenant_id,user_id,role,status,is_owner,created_at) VALUES (?,?,?,?,?,?,?)')
   .run(randomUUID(),id,ownerUserId,'owner','active',1,now);
  return id;
+}
+/**
+ * Multi-Tenant Phase 3.5 (Part A4) — the enumeration function the scheduler needs to loop
+ * "once per tenant" instead of once globally. Only ACTIVE and TRIAL tenants are eligible for
+ * automated background work by default — a TRIAL tenant is actively evaluating the product
+ * and its automation (daily brief, follow-up sweep, scheduled publishing) is exactly what it
+ * is here to try, so it is included, not excluded. SUSPENDED and ARCHIVED are deliberately
+ * never eligible: a suspended tenant's data must not be touched by any automated job while
+ * its access is revoked, and an archived tenant is closed. Callers that need every tenant
+ * regardless of status (an admin listing, a migration) pass an explicit `statuses` covering
+ * all four values rather than relying on this default.
+ */
+export function listTenants(db,{statuses=['ACTIVE','TRIAL']}={}) {
+ if(!statuses.length)return [];
+ const placeholders=statuses.map(()=>'?').join(',');
+ return db.prepare(`SELECT id,name,slug,status FROM tenants WHERE status IN (${placeholders}) ORDER BY created_at`).all(...statuses);
 }

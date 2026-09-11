@@ -129,14 +129,14 @@ test('verifyMetaSignature is a real HMAC-SHA256 (X-Hub-Signature-256) over the e
 test('normalizeWhatsAppWebhook parses a real text message payload and is idempotent on redelivery',()=>{
  const store=fixture();try{
  const payload={entry:[{changes:[{value:{contacts:[{profile:{name:'Khalid'}}],messages:[{id:'wamid.abc',from:'966500000009',type:'text',text:{body:'كم سعر جهاز الكرايو؟'}}]}}]}]};
- const first=normalizeWhatsAppWebhook(store.db,payload);
+ const first=normalizeWhatsAppWebhook(store.db,payload,()=>'test-tenant');
  assert.equal(first.messages.length,1);
  assert.equal(first.messages[0].replayed,false);
  assert.equal(first.messages[0].phone,'+966500000009');
  assert.equal(first.messages[0].name,'Khalid');
  assert.equal(first.messages[0].messageType,'text');
  assert.equal(first.messages[0].text,'كم سعر جهاز الكرايو؟');
- const redelivered=normalizeWhatsAppWebhook(store.db,payload);
+ const redelivered=normalizeWhatsAppWebhook(store.db,payload,()=>'test-tenant');
  assert.equal(redelivered.messages[0].replayed,true);
  }finally{store.close();}
 });
@@ -144,7 +144,7 @@ test('normalizeWhatsAppWebhook parses a real text message payload and is idempot
 test('normalizeWhatsAppWebhook records an unsupported message type honestly as metadata-only, never guesses its content',()=>{
  const store=fixture();try{
  const payload={entry:[{changes:[{value:{messages:[{id:'wamid.sticker.1',from:'966500000010',type:'sticker',sticker:{id:'s1'}}]}}]}]};
- const result=normalizeWhatsAppWebhook(store.db,payload);
+ const result=normalizeWhatsAppWebhook(store.db,payload,()=>'test-tenant');
  assert.equal(result.messages[0].messageType,'media');
  assert.equal(result.messages[0].media.kind,'sticker');
  assert.equal(result.messages[0].text,'');
@@ -154,7 +154,7 @@ test('normalizeWhatsAppWebhook records an unsupported message type honestly as m
 test('normalizeWhatsAppWebhook handles delivery-status updates separately from messages',()=>{
  const store=fixture();try{
  const payload={entry:[{changes:[{value:{statuses:[{id:'wamid.out.9',status:'delivered'}]}}]}]};
- const result=normalizeWhatsAppWebhook(store.db,payload);
+ const result=normalizeWhatsAppWebhook(store.db,payload,()=>'test-tenant');
  assert.equal(result.statuses.length,1);
  assert.equal(result.statuses[0].status,'DELIVERED');
  assert.equal(result.messages.length,0);

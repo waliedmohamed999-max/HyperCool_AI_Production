@@ -33,11 +33,12 @@ import {promotionEligibility} from './runtime/permissions.js';
 import {installGate,getGateStatus,setPaused,isPaused} from './runtime/gate.js';
 import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
-import {installTenancy,ensureDefaultTenant,resolveTenantForUser,resolveActiveTenantId} from './tenancy.js';
+import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants} from './tenancy.js';
 import {installContent,listContent,getContent,getContentOrNull,insertContent,writeContent} from './content.js';
 import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
 import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
+import {resolveTenantForWhatsAppPhoneNumberId,resolveTenantForMicrosoftSubscription,resolveTenantForSallaMerchant} from './runtime/webhook-tenant-resolver.js';
 import {verifySallaWebhook,processSallaWebhook} from './runtime/salla-webhooks.js';
 import {handleVerificationChallenge,verifyMetaSignature,normalizeWhatsAppWebhook} from './runtime/meta-webhooks.js';
 import {metaOAuthConfigured,createMetaAuthorizeUrl,consumeMetaState,exchangeCodeAndResolveAssets,saveMetaConnection,metaOAuthStatus,disconnectMeta,resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from './runtime/meta-oauth.js';
@@ -182,8 +183,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         // not just the scheduler's own tick(). Otherwise pausing from Frost Control Center
         // would silently fail to stop this path.
         if(req.method==='POST' && (url.pathname==='/api/automation/daily-brief'||url.pathname==='/api/automation/prepare-due') && isPaused(store.db))return send(200,{skipped:'PAUSED'});
-        if(req.method==='POST' && url.pathname==='/api/automation/daily-brief')return send(200,saveDailyBrief(store,riyadhDate(),actor));
-        if(req.method==='POST' && url.pathname==='/api/automation/prepare-due')return send(200,prepareDue(store,actor,Date.now(),eventBus,env));
+        // Multi-Tenant Phase 3.5: this external-trigger path calls the exact same tenant-aware
+        // job functions the internal scheduler's tick() does, so it must also loop over every
+        // eligible tenant (ACTIVE/TRIAL) rather than the single implicit tenant a bare
+        // `resolveActiveTenantId` default would throw TENANT_CONTEXT_REQUIRED on once a second
+        // tenant exists. Same per-tenant result shape as tick() for consistency.
+        if(req.method==='POST' && url.pathname==='/api/automation/daily-brief')return send(200,{tenants:Object.fromEntries(listTenants(store.db).map(tenant=>[tenant.id,saveDailyBrief(store,riyadhDate(),actor,tenant.id)]))});
+        if(req.method==='POST' && url.pathname==='/api/automation/prepare-due')return send(200,{tenants:Object.fromEntries(listTenants(store.db).map(tenant=>[tenant.id,prepareDue(store,actor,Date.now(),eventBus,env,tenant.id)]))});
         if(req.method==='GET' && url.pathname==='/api/automation/status')return send(200,{timezone:'Asia/Riyadh',externalPublishing:false});
         fail(404,'Unknown automation operation');
       }
@@ -195,7 +201,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const raw=await rawBody(req);
         verifySallaWebhook(req,raw,env);
         let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
-        return send(200,processSallaWebhook({db:store.db,eventBus,body:payload,paused:isPaused(store.db)}));
+        // Multi-Tenant Phase 3.5 (Part B): tenant is resolved from Salla's own verified
+        // `merchant` field — never trusted from anything the payload claims to be otherwise —
+        // see resolveTenantForSallaMerchant for the honest self-registration bootstrap this
+        // relies on today (no live Salla app to verify a real connect-time merchant fetch).
+        const resolvedTenantId=resolveTenantForSallaMerchant(store.db,payload?.merchant??null);
+        return send(200,processSallaWebhook({db:store.db,eventBus,body:payload,paused:isPaused(store.db),tenantId:resolvedTenantId}));
       }
       // Meta's verification handshake — GET with hub.challenge, no body, no signature (the
       // handshake IS the authentication: only someone holding META_VERIFY_TOKEN can pass it).
@@ -210,27 +221,25 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const raw=await rawBody(req);
         verifyMetaSignature(req,raw,env);
         let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
-        const normalized=normalizeWhatsAppWebhook(store.db,payload);
+        // Multi-Tenant Phase 3.5 (Part B10): tenant is resolved per delivery from Meta's own
+        // verified metadata.phone_number_id — never trusted from anything the payload claims
+        // to be otherwise. See webhook-tenant-resolver.js.
+        const normalized=normalizeWhatsAppWebhook(store.db,payload,phoneNumberId=>resolveTenantForWhatsAppPhoneNumberId(store.db,phoneNumberId));
         const paused=isPaused(store.db);
         const connectorActor={id:'connector:whatsapp',name:'موصل واتساب',role:'automation'};
-        // No per-tenant webhook routing exists yet (Multi-Tenant Phase 2/3 — see
-        // docs/MULTI_TENANT_ARCHITECTURE.md): every WhatsApp connection today belongs to
-        // the one active tenant, so resolving it once here and tagging both the lead and
-        // its events with it is correct today, not a fallback masking a real gap.
-        const webhookTenantId=resolveActiveTenantId(store.db);
         for(const item of normalized.messages) {
-          if(item.replayed||item.error||!item.phone)continue;
-          const {lead}=findOrCreateLeadFromChannel(store,{phone:item.phone,name:item.name,channel:'WhatsApp'},connectorActor,webhookTenantId);
-          const message=recordChannelMessage(store,{leadId:lead.id,channel:'WhatsApp',direction:'INBOUND',text:item.text,externalMessageId:item.externalMessageId,messageType:item.messageType,media:item.media||null},connectorActor,webhookTenantId);
+          if(item.replayed||item.error||item.unresolved||!item.phone)continue;
+          const {lead}=findOrCreateLeadFromChannel(store,{phone:item.phone,name:item.name,channel:'WhatsApp'},connectorActor,item.tenantId);
+          const message=recordChannelMessage(store,{leadId:lead.id,channel:'WhatsApp',direction:'INBOUND',text:item.text,externalMessageId:item.externalMessageId,messageType:item.messageType,media:item.media||null},connectorActor,item.tenantId);
           if(message.replayed)continue;
-          if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'WhatsApp',tenantId:webhookTenantId});
+          if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'WhatsApp',tenantId:item.tenantId});
           // The pause gate stops autonomous AGENT action, never the recording of the message
           // itself — a paused system must still capture what the customer said, exactly like
           // the internal scheduler's own tick() only skips its own triggered work, not intake.
-          if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'WhatsApp',text:item.text,tenantId:webhookTenantId});
+          if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'WhatsApp',text:item.text,tenantId:item.tenantId});
         }
         for(const item of normalized.statuses) {
-          if(item.replayed)continue;
+          if(item.replayed||item.unresolved)continue;
           updateMessageStatus(store,item.externalMessageId,item.status,{errorCode:item.errorCode});
         }
         return send(200,{received:normalized.messages.length,statuses:normalized.statuses.length,skipped:normalized.skipped});
@@ -246,26 +255,29 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(token!==null){res.writeHead(200,{'Content-Type':'text/plain'});return res.end(token);}
         const raw=await rawBody(req);
         let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
-        const result=processMicrosoftNotifications(store.db,payload,env);
+        // Multi-Tenant Phase 3.5 (Part B12): tenant is resolved per notification item from
+        // the real Graph subscriptionId — verified via clientState first, then matched
+        // against the subscription id recorded at real /api/integrations/microsoft/subscribe
+        // time. Never trusted from anything the payload claims to be otherwise.
+        const result=processMicrosoftNotifications(store.db,payload,env,subscriptionId=>resolveTenantForMicrosoftSubscription(store.db,subscriptionId));
         const paused=isPaused(store.db);
         const connectorActor={id:'connector:microsoft365',name:'موصل Microsoft 365',role:'automation'};
-        const webhookTenantId=resolveActiveTenantId(store.db); // see the WhatsApp webhook above for why this is correct today
-        for(const {messageId} of result.toFetch) {
+        for(const {messageId,tenantId:itemTenantId} of result.toFetch) {
           try {
            const graphMessage=await getMessage({store,env,fetcher},messageId);
            if(!graphMessage||graphMessage.isDraft)continue; // never ingest our own drafts as if a customer sent them
            const fromAddress=graphMessage.from?.emailAddress?.address||null;
            if(!fromAddress)continue;
-           const {lead}=findOrCreateLeadFromChannel(store,{email:fromAddress,name:graphMessage.from?.emailAddress?.name,channel:'Email'},connectorActor,webhookTenantId);
-           const message=recordChannelMessage(store,{leadId:lead.id,channel:'Email',direction:'INBOUND',text:graphMessage.bodyPreview||'',subject:graphMessage.subject||null,externalMessageId:graphMessage.id,internetMessageId:graphMessage.internetMessageId,externalThreadId:graphMessage.conversationId,messageType:'email'},connectorActor,webhookTenantId);
+           const {lead}=findOrCreateLeadFromChannel(store,{email:fromAddress,name:graphMessage.from?.emailAddress?.name,channel:'Email'},connectorActor,itemTenantId);
+           const message=recordChannelMessage(store,{leadId:lead.id,channel:'Email',direction:'INBOUND',text:graphMessage.bodyPreview||'',subject:graphMessage.subject||null,externalMessageId:graphMessage.id,internetMessageId:graphMessage.internetMessageId,externalThreadId:graphMessage.conversationId,messageType:'email'},connectorActor,itemTenantId);
            if(message.replayed)continue;
-           if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'Email',tenantId:webhookTenantId});
-           if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'Email',text:message.text,tenantId:webhookTenantId});
+           if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'Email',tenantId:itemTenantId});
+           if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:'Email',text:message.text,tenantId:itemTenantId});
           } catch(error) {
-           recordAudit(store.db,{id:crypto.randomUUID(),action:'EMAIL_INGEST_FAILED',itemId:messageId,errorCode:error.message,at:new Date().toISOString()},webhookTenantId);
+           recordAudit(store.db,{id:crypto.randomUUID(),action:'EMAIL_INGEST_FAILED',itemId:messageId,errorCode:error.message,at:new Date().toISOString()},itemTenantId);
           }
         }
-        return send(200,{toFetch:result.toFetch.length,rejected:result.rejected,replayed:result.replayed});
+        return send(200,{toFetch:result.toFetch.length,rejected:result.rejected,replayed:result.replayed,unresolved:result.unresolved});
       }
       // Unauthenticated on purpose — load balancers/uptime monitors never hold a session.
       // Still pass through the Host/Origin/Sec-Fetch checks above, same as everything else.

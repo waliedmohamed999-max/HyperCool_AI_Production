@@ -1,7 +1,7 @@
 # Tenant Security Model
 
-This document is the security reference for HyperCool's multi-tenant foundation (Phase 1 +
-2 + 3 — see `docs/MULTI_TENANT_ARCHITECTURE.md` for the narrative). It covers tenant
+This document is the security reference for HyperCool's multi-tenant foundation (Phase 1
+through 3.5 — see `docs/MULTI_TENANT_ARCHITECTURE.md` for the narrative). It covers tenant
 resolution, membership, IDOR protection, and isolation per subsystem, plus the full,
 factual classification of every table in the database.
 
@@ -45,34 +45,36 @@ simultaneously, with zero per-call-site changes. Proven directly in `tests/tenan
 `saveCredentials`/`getCredentials` called with no `tenantId` throw `TENANT_CONTEXT_REQUIRED`
 the moment a second tenant is created.
 
-**What this mechanism does NOT give you** — three real, distinct gaps, not one:
+**What this mechanism does NOT give you on its own** — and what Phase 3.5 closed:
 
 1. **HTTP routes bypass it entirely, safely.** A real request never reaches
    `resolveActiveTenantId`'s guess-or-throw logic at all — `session.tenantId` is set from
    `resolveTenantForUser(db, userId)` (a real membership-table lookup) right after login,
    at `application.js`'s auth block. This is correct by construction regardless of how many
-   tenants exist; it simply means the new guard is a safety net for code paths *other* than
-   HTTP requests, not proof that HTTP routes were individually audited.
-2. **Background work breaks instead of leaking.** The scheduler's `tick()`, the follow-up-gap
-   sweep, and webhook handlers (`/api/webhooks/whatsapp`, `/api/webhooks/microsoft/mail`)
-   have no session and still call functions with no explicit `tenantId`. The moment a second
-   tenant exists, every one of these calls throws `TENANT_CONTEXT_REQUIRED` — which means
-   scheduled jobs and webhook ingestion stop working *for every tenant, including the first*,
-   rather than silently mixing data. This is the correct failure mode for safety, but it is a
-   hard functional blocker: no `listTenants()`-style function exists yet to let these loops
-   run once per tenant instead of once globally.
+   tenants exist; it simply means the guard is a safety net for code paths *other* than
+   HTTP requests, not proof that HTTP routes were individually audited (they were, separately
+   — see the per-route `session.tenantId` threading across Phase 2/3).
+2. **Background work — fixed in Phase 3.5, not just made to fail loud.** The scheduler's
+   `tick()`, the follow-up-gap sweep, and every webhook handler used to have no session and
+   call functions with no explicit `tenantId` — meaning they would have hit
+   `resolveActiveTenantId`'s throw and stopped working *for every tenant, including the
+   first*, the instant a second tenant existed (safe, but not functional). Phase 3.5 added
+   `listTenants()` (`src/tenancy.js`) and rewrote the scheduler to loop over every eligible
+   tenant, and rewrote every webhook handler to resolve a real tenant from the provider's own
+   verified identity instead of relying on the default at all. See
+   `docs/TENANT_SCHEDULER.md` and `docs/WEBHOOK_TENANT_ROUTING.md`.
 3. **Two tables genuinely have no tenant concept to fail closed on**: `crm_messages`/
    `crm_followups` remain SHARED_SAFE-by-design (isolated transitively via `lead_id`, see
    below) — this is intentional, not a gap. Every other table in this codebase now has a real
    `tenant_id` column (see the classification table below) — there is no longer a table that
    would silently leak.
 
-**Net effect**: creating a real second tenant today would be *safe* (no cross-tenant data
-leak has been found or is expected — either a route resolves the correct tenant via session
-membership, or a non-HTTP call site fails loud) but *not yet functional* (the scheduler and
-webhooks would need the per-tenant loop described above before a second tenant's automation
-actually runs). This is the honest basis for this phase's GO/NO-GO decision — see the final
-report.
+**Net effect**: creating a real second tenant today is both *safe* (no cross-tenant data leak
+has been found or is expected — every route, the scheduler, and every webhook handler either
+resolves a real tenant or fails loud/unresolved) and, for everything built so far,
+*functional* (scheduled jobs and webhook ingestion now run correctly per tenant rather than
+assuming there is only one). This is the honest basis for this phase's GO/NO-GO decision —
+see the final report.
 
 ## IDOR protection — how it actually works
 
@@ -100,7 +102,7 @@ delete-bug fix.
 | Escalations (human handoff) | **Isolated** | Hot-lead and publish-reconciliation escalations both carry the real tenant. |
 | Approvals | **Isolated** | A decision on another tenant's approval id 404s. |
 | Weekly reports / daily briefs | **Isolated (Phase 3)** | The report row can't collide across tenants (Phase 2). As of Phase 3, both its content-derived numbers (drafts, published, pipeline — from `content_items`) and its audit-derived numbers (`auditByAction` — from `audit_logs`) are correctly scoped to that tenant, not just the row itself. |
-| Webhook events | **Column present, routing not implemented** | Every delivery resolves to the one active tenant; real per-delivery routing (via provider account id) needs the not-yet-built multi-connection model. |
+| Webhook events | **Isolated (Phase 3.5)** | Each delivery resolves to a real tenant via the provider's own verified identity (WhatsApp phone_number_id, Microsoft subscriptionId, Salla merchant id) — never a default guess. An identity matching no tenant is stored as a diagnostic `TENANT_UNRESOLVED` row (`tenant_id` NULL) and never turned into a business event. See `docs/WEBHOOK_TENANT_ROUTING.md`. |
 | Content (drafts/review/approval/publish state) | **Isolated (Phase 3)** | Migrated off the legacy `state.content` JSON array into a real `content_items` SQL table (`src/content.js`) — composite filtering via `tenant_id`, same indexed-columns+json-blob pattern as `crm_leads`/`agent_approvals`. See `docs/CONTENT_MIGRATION.md`. |
 | Content Calendar (`calendar_slots`) | **Isolated (Phase 3)** | Composite unique `(tenant_id, date, platform)` — table recreated (the old `UNIQUE(date,platform)` would have let a second tenant collide with the first's calendar). |
 | Content Scheduling (`schedule_jobs`) | **Isolated (Phase 3)** | Additive `tenant_id` column + index; the existing partial unique index on `content_id` alone stays correct because a `content_id` is already unique to one tenant. |
@@ -132,7 +134,7 @@ delete-bug fix.
 | `agent_events` | TENANT_OWNED | **Yes** (Phase 2) |
 | `agent_escalations` | TENANT_OWNED | **Yes** (Phase 2) |
 | `agent_approvals` | TENANT_OWNED | **Yes** (Phase 2) |
-| `webhook_events` | TENANT_OWNED | **Yes** (Phase 2, column only — routing deferred) |
+| `webhook_events` | TENANT_OWNED (nullable only for a diagnostic `TENANT_UNRESOLVED` row) | **Yes** (Phase 2 column; Phase 3.5 — real per-provider routing, see `docs/WEBHOOK_TENANT_ROUTING.md`) |
 | `agent_runs` | TENANT_OWNED | **Yes** (Phase 2) |
 | `agent_tool_calls` | SHARED_SAFE (transitive via `run_id`) | No (by design) |
 | `whatsapp_templates` | TENANT_OWNED | **Yes** (Phase 3 — composite unique `(tenant_id,name,language)`, table recreated) |

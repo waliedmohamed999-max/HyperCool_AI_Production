@@ -35,24 +35,43 @@ export function verifyMetaSignature(req,rawBody,env) {
  * individual message/status is deduped through the shared webhook_events ledger, so a
  * redelivered webhook (which can bundle already-seen items alongside new ones) never
  * double-processes just the ones it already saw.
+ *
+ * Multi-Tenant Phase 3.5 (Part B10): each `value` carries Meta's own `metadata.phone_number_id`
+ * — the real WhatsApp Business number the message was sent to — which `resolveTenant` (see
+ * webhook-tenant-resolver.js's resolveTenantForWhatsAppPhoneNumberId) maps to the tenant that
+ * actually connected that number. Resolved per `value`, not once for the whole delivery,
+ * since a single webhook POST can in principle batch entries for more than one connected
+ * number. A `value` whose phone_number_id resolves to no tenant is still recorded (never
+ * lost) but marked `unresolved: true` and never turned into a real CRM message.
  */
-export function normalizeWhatsAppWebhook(db,body) {
+export function normalizeWhatsAppWebhook(db,body,resolveTenant) {
  const results={messages:[],statuses:[],skipped:0};
  for(const entry of body?.entry||[]) {
   for(const change of entry.changes||[]) {
    const value=change.value||{};
    const contact=value.contacts?.[0];
+   const tenantId=resolveTenant(value.metadata?.phone_number_id||null);
    for(const msg of value.messages||[]) {
-    const {stored,id}=storeWebhookEvent(db,{source:'meta',externalEventId:msg.id,type:'whatsapp.message',payload:msg});
+    if(!tenantId) {
+     storeWebhookEvent(db,{source:'meta',externalEventId:msg.id,type:'whatsapp.message',payload:msg,unresolved:true});
+     results.messages.push({replayed:false,unresolved:true,externalMessageId:msg.id});
+     continue;
+    }
+    const {stored,id}=storeWebhookEvent(db,{source:'meta',externalEventId:msg.id,type:'whatsapp.message',payload:msg,tenantId});
     if(!stored){results.messages.push({replayed:true,externalMessageId:msg.id});continue;}
     try {
      const normalized=normalizeInboundMessage(msg,contact);
      markWebhookEventProcessed(db,id,'PROCESSED');
-     results.messages.push({replayed:false,...normalized});
+     results.messages.push({replayed:false,tenantId,...normalized});
     } catch(error) {markWebhookEventProcessed(db,id,'ERROR',error.message);results.messages.push({replayed:false,error:error.message,externalMessageId:msg.id});}
    }
    for(const status of value.statuses||[]) {
-    const {stored,id}=storeWebhookEvent(db,{source:'meta',externalEventId:status.id+':'+status.status,type:'whatsapp.status',payload:status});
+    if(!tenantId) {
+     storeWebhookEvent(db,{source:'meta',externalEventId:status.id+':'+status.status,type:'whatsapp.status',payload:status,unresolved:true});
+     results.statuses.push({replayed:false,unresolved:true});
+     continue;
+    }
+    const {stored,id}=storeWebhookEvent(db,{source:'meta',externalEventId:status.id+':'+status.status,type:'whatsapp.status',payload:status,tenantId});
     if(!stored){results.statuses.push({replayed:true});continue;}
     markWebhookEventProcessed(db,id,'PROCESSED');
     results.statuses.push({replayed:false,externalMessageId:status.id,status:status.status.toUpperCase(),errorCode:status.errors?.[0]?.title||null});

@@ -5,6 +5,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createApp} from '../src/application.js';
+import {resolveTenantForUser} from '../src/tenancy.js';
 
 const key32=randomBytes(32).toString('hex');
 
@@ -22,13 +23,27 @@ async function harness(env,fetcher){
 }
 
 test('Salla webhook endpoint: rejects a wrong token, accepts a correct one, and is idempotent across HTTP',async()=>{
- const {call,cleanup}=await harness({SALLA_WEBHOOK_SECRET:'a-real-webhook-secret'});
+ const {app,call,cleanup}=await harness({SALLA_WEBHOOK_SECRET:'a-real-webhook-secret'});
  try{
-  const badAuth=await call('/api/webhooks/salla','{"event":"order.created","data":{"id":"o1"}}',null,{headers:{authorization:'Bearer wrong'}});
+  const owner=await call('/api/setup',{username:'owner',name:'Owner',password:'a-long-test-password'});
+  // Simulate a real (but not-yet-merchant-identified) Salla connection — exactly the state
+  // right after a genuine OAuth connect, before this codebase's Salla callback has any way
+  // to know the merchant id yet (see resolveTenantForSallaMerchant's own doc comment).
+  const tenantId=resolveTenantForUser(app.store.db,owner.data.user.id);
+  const now=new Date().toISOString();
+  app.store.db.prepare('INSERT INTO integration_credentials (tenant_id,provider,access_token_enc,connected_at,updated_at) VALUES (?,?,?,?,?)').run(tenantId,'salla','placeholder',now,now);
+  const badAuth=await call('/api/webhooks/salla','{"event":"order.created","data":{"id":"o1"},"merchant":12345}',null,{headers:{authorization:'Bearer wrong'}});
   assert.equal(badAuth.status,401);
-  const good=await call('/api/webhooks/salla','{"event":"order.created","data":{"id":"o1"},"created_at":"2030-01-01T00:00:00Z"}',null,{headers:{authorization:'Bearer a-real-webhook-secret'}});
+  // Multi-Tenant Phase 3.5 (Part B9): a Salla webhook now only resolves to a tenant it can
+  // verify via `merchant` — this codebase's Salla OAuth callback never populates
+  // external_account_id at connect time (no live Salla app to verify the exact convention
+  // against), so the FIRST real webhook self-registers it, matching a real deployment's
+  // very first Salla webhook delivery (see resolveTenantForSallaMerchant).
+  const good=await call('/api/webhooks/salla','{"event":"order.created","data":{"id":"o1"},"created_at":"2030-01-01T00:00:00Z","merchant":12345}',null,{headers:{authorization:'Bearer a-real-webhook-secret'}});
   assert.equal(good.status,200);assert.equal(good.data.replayed,false);assert.equal(good.data.internalType,'ORDER_CREATED');
-  const replay=await call('/api/webhooks/salla','{"event":"order.created","data":{"id":"o1"},"created_at":"2030-01-01T00:00:00Z"}',null,{headers:{authorization:'Bearer a-real-webhook-secret'}});
+  const registered=app.store.db.prepare("SELECT external_account_id FROM integration_credentials WHERE provider='salla'").get();
+  assert.equal(registered.external_account_id,'12345');
+  const replay=await call('/api/webhooks/salla','{"event":"order.created","data":{"id":"o1"},"created_at":"2030-01-01T00:00:00Z","merchant":12345}',null,{headers:{authorization:'Bearer a-real-webhook-secret'}});
   assert.equal(replay.status,200);assert.equal(replay.data.replayed,true);
  }finally{await cleanup();}
 });

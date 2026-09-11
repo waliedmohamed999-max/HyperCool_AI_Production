@@ -51,15 +51,26 @@ function idempotencyKey(body) {
 // Microsoft webhook routes (see application.js) — the delivery is still stored/deduped
 // either way (never lose real provider data), only the downstream internal event (which
 // could route to an agent later) is suppressed while paused.
-export function processSallaWebhook({db,eventBus,body,paused=false}) {
+//
+// Multi-Tenant Phase 3.5 (Part B): `tenantId` is resolved by the caller BEFORE this function
+// ever runs (application.js, via resolveTenantForSallaMerchant — from Salla's own verified
+// `merchant` field, never from anything the payload claims to be). A `null` here means
+// genuinely unresolved, not "use the default" — this still records the delivery (never lose
+// real provider data) but as a diagnostic TENANT_UNRESOLVED row, and never emits a business
+// event for it.
+export function processSallaWebhook({db,eventBus,body,paused=false,tenantId=null}) {
  const type=typeof body?.event==='string'?body.event:'unknown';
  const externalId=idempotencyKey(body);
- const {stored,id}=storeWebhookEvent(db,{source:'salla',externalEventId:externalId,type,payload:body});
+ if(!tenantId) {
+  storeWebhookEvent(db,{source:'salla',externalEventId:externalId,type,payload:body,unresolved:true});
+  return {replayed:false,type,status:'WEBHOOK_TENANT_UNRESOLVED'};
+ }
+ const {stored,id}=storeWebhookEvent(db,{source:'salla',externalEventId:externalId,type,payload:body,tenantId});
  if(!stored)return {replayed:true,type};
  const internalType=EVENT_MAP[type];
  let emittedEventId=null;
  try {
-  if(internalType && eventBus && !paused)emittedEventId=eventBus.emit(internalType,{source:'salla',sallaEvent:type,data:body?.data??null});
+  if(internalType && eventBus && !paused)emittedEventId=eventBus.emit(internalType,{source:'salla',sallaEvent:type,data:body?.data??null,tenantId});
   markWebhookEventProcessed(db,id,internalType?'PROCESSED':'UNMAPPED');
  } catch(error) {
   markWebhookEventProcessed(db,id,'ERROR',error.message);

@@ -5,6 +5,8 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createApp} from '../src/application.js';
+import {saveCredentials} from '../src/runtime/credentials.js';
+import {resolveTenantForUser} from '../src/tenancy.js';
 
 const key32=randomBytes(32).toString('hex');
 const decision=(over={})=>({status:'OK',action:'REPLY',rationale:'Answered a B2B quote request',verification:[],risk_level:'LOW',escalation_required:false,missing_data:[],
@@ -36,16 +38,24 @@ test('BP — webhook validation handshake echoes the exact token as plain text',
 });
 
 test('BI — real inbound B2B quote-request email creates a lead, records the message, and triggers the sales agent',async()=>{
- const env={MICROSOFT_WEBHOOK_SECRET:'wh-secret',MICROSOFT_ACCESS_TOKEN:'ms-token',ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model'};
+ const env={MICROSOFT_WEBHOOK_SECRET:'wh-secret',MICROSOFT_ACCESS_TOKEN:'ms-token',ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',INTEGRATION_ENCRYPTION_KEY:key32};
  const graphMessage={id:'msg-1',internetMessageId:'<msg-1@mail>',conversationId:'thread-1',subject:'طلب عرض سعر',from:{emailAddress:{address:'club@example.com',name:'Riyadh Club'}},bodyPreview:'السلام عليكم، نحن نادي رياضي بالرياض ونحتاج 4 أجهزة ونرغب بعرض سعر.',isDraft:false};
  const fetcher=async(url)=>{
   if(url.includes('anthropic'))return anthropicResponse(decision());
   if(url.includes('/messages/msg-1'))return new Response(JSON.stringify(graphMessage),{status:200,headers:{'content-type':'application/json'}});
   throw new Error('unexpected '+url);
  };
- const {call,cleanup}=await harness(env,fetcher);
+ const {app,call,cleanup}=await harness(env,fetcher);
  try{
   const owner=await call('/api/setup',{username:'owner',name:'Owner',password:'a-long-test-password'});
+  // Multi-Tenant Phase 3.5 (Part B11): a Microsoft Graph notification can only ever be
+  // attributed to a tenant whose real subscription id it carries. Seeding the credential
+  // row directly (rather than driving /api/integrations/microsoft/subscribe over HTTP)
+  // avoids needing a real PUBLIC_ORIGIN host match in this test harness, which listens on
+  // 127.0.0.1 — the resulting metadata shape is identical to what a real subscribe call
+  // would store.
+  const tenantId=resolveTenantForUser(app.store.db,owner.data.user.id);
+  saveCredentials(app.store.db,env,'microsoft365',{accessToken:'ms-token',metadata:{mailSubscription:{id:'sub-1',expiresAt:new Date(Date.now()+3600000).toISOString()}}},owner.data.user,tenantId);
   const webhookRes=await call('/api/webhooks/microsoft/mail',graphNotification('msg-1'));
   assert.equal(webhookRes.status,200);assert.equal(webhookRes.data.toFetch,1);
   await new Promise(resolve=>setTimeout(resolve,120));

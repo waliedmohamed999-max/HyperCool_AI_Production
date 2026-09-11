@@ -130,11 +130,11 @@ test('processSallaWebhook records/dedupes normally but suppresses the internal e
  const store=fixture();try{
  const eventBus=createEventBus(store.db);
  let emitted=0;eventBus.on('PRODUCT_UPDATED',()=>{emitted++;});
- const result=processSallaWebhook({db:store.db,eventBus,body:{event:'product.updated',data:{id:'p1'}},paused:true});
+ const result=processSallaWebhook({db:store.db,eventBus,body:{event:'product.updated',data:{id:'p1'}},paused:true,tenantId:'test-tenant'});
  assert.equal(result.replayed,false);
  assert.equal(result.internalType,'PRODUCT_UPDATED');
  assert.equal(emitted,0);
- const replay=processSallaWebhook({db:store.db,eventBus,body:{event:'product.updated',data:{id:'p1'}},paused:true});
+ const replay=processSallaWebhook({db:store.db,eventBus,body:{event:'product.updated',data:{id:'p1'}},paused:true,tenantId:'test-tenant'});
  assert.equal(replay.replayed,true);
  }finally{store.close();}
 });

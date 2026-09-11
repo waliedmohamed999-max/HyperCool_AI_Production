@@ -1,4 +1,4 @@
-# Multi-Tenant Architecture — Phase 1 + 2 + 3 (Foundation, Data Isolation, Content Normalization)
+# Multi-Tenant Architecture — Phase 1–3.5 (Foundation, Data Isolation, Content/Audit Normalization, Tenant-Aware Scheduler + Webhooks)
 
 This document describes exactly what exists today after the first multi-tenant pass, and —
 just as importantly — what deliberately does **not** exist yet. Before this pass, HyperCool
@@ -197,40 +197,74 @@ the whole codebase that omits an explicit `tenantId` from fail-open to fail-clos
 with no per-call-site change needed, tested directly in `tests/tenancy.test.js`. See
 "Fail-closed tenant resolution" below for what this does and does not cover.
 
+## Phase 3.5 — the scheduler and webhooks became genuinely tenant-aware
+
+Phase 3 closed the data-model gaps and added the central `resolveActiveTenantId`
+fail-closed guard, but honestly flagged that the guard was a blanket safety net, not proof
+that every code path was correct: HTTP routes never exercised it (they resolve via
+`resolveTenantForUser` instead), and background work with no session — the scheduler and
+every webhook handler — would have hit the guard's default and started throwing
+`TENANT_CONTEXT_REQUIRED` on every run the instant a second tenant existed, stopping
+automation entirely for every tenant, including the first.
+
+Phase 3.5 closed that gap on both sides:
+
+- **Scheduler** (`src/runtime/scheduler.js`): `listTenants(db)` (new function,
+  `src/tenancy.js`) enumerates every `ACTIVE`/`TRIAL` tenant; every TENANT_JOB (daily brief,
+  weekly report, follow-up sweep, scheduled publishing) now runs once per eligible tenant,
+  sequentially, with one tenant's failure isolated from the rest. The Microsoft subscription
+  renewal (a CONNECTION_JOB) loops over whichever tenants actually hold that connection. See
+  `docs/TENANT_SCHEDULER.md` for the full job audit and architecture.
+- **Webhooks** (Salla, WhatsApp/Meta, Microsoft 365): tenant is now resolved from each
+  provider's own verified identity (a WhatsApp `phone_number_id`, a Microsoft
+  `subscriptionId`, a Salla `merchant` id) — never from anything a payload claims to be. An
+  identity that resolves to no tenant is recorded as a diagnostic
+  `WEBHOOK_TENANT_UNRESOLVED` event and never turned into a business event; no new schema was
+  needed since the mapping data already existed in `integration_credentials`. See
+  `docs/WEBHOOK_TENANT_ROUTING.md` for the full resolution flow per provider and the honest
+  Salla self-registration bootstrap it relies on.
+- **A real cross-tenant test matrix caught six genuine bugs while writing it**: building
+  `tests/tenancy-phase3.test.js` earlier surfaced that `contactControl`, `recordMessage`,
+  `recordChannelMessage`, `cancelFollowups`, `approveFollowup`, and `prepareFollowups` in
+  `src/crm.js` all omitted `tenantId` entirely — not leaks, but hard failures waiting to
+  happen the moment a second tenant existed. All are now fixed.
+- A minor, currently-unreachable fail-open gap in `resolveTenantForUser` was also closed: a
+  user with more than one tenant membership (not possible via any route today) used to
+  silently pick one via `LIMIT 1`; it now throws `TENANT_SELECTION_REQUIRED` instead of
+  guessing. No selection UI or endpoint was built (see "What is deliberately NOT built yet").
+
+With this, every automated code path in the codebase — HTTP routes, the scheduler, and every
+webhook handler — either resolves a real, verified tenant or fails loud. Full suite: 297/297.
+
 ## What is deliberately NOT built yet
 
 This was an explicit, informed scoping decision (the owner chose "start with the safe
 foundation only," then "data isolation + Control Center foundation" for Phase 2, then
-"fail-closed + Content/Audit normalization" for Phase 3, each time explicitly deferring the
-UI and the next-hardest piece) — these are real, substantial next-phase items, not
-oversights:
+"fail-closed + Content/Audit normalization" for Phase 3, then "tenant-aware scheduler +
+webhook routing" for Phase 3.5, each time explicitly deferring the UI and the next-hardest
+piece) — these are real, substantial next-phase items, not oversights:
 
-- **Fail-closed tenant resolution — real, but a blanket safety net, not a per-route
-  guarantee.** `resolveActiveTenantId(db)` now throws `TENANT_CONTEXT_REQUIRED` once a
-  second tenant exists (see above), so every call site across the codebase that omits an
-  explicit `tenantId` fails LOUD instead of leaking data cross-tenant. What this does NOT
-  give you: (1) HTTP routes never call `resolveActiveTenantId` in the first place — they get
-  `session.tenantId` from `resolveTenantForUser` (a real per-user membership lookup), so they
-  are correct by construction today but are not exercising this guard at all; (2) background
-  work with no session (the scheduler's `tick()`, follow-up-gap sweep, webhook handlers) DOES
-  hit the default and would start throwing `TENANT_CONTEXT_REQUIRED` on every run the moment
-  a second tenant is created — safe (no leak) but means those jobs stop working entirely for
-  every tenant until they are rewritten to loop per-tenant (no `listTenants()`-style function
-  exists yet to make that loop possible). See `docs/TENANT_SECURITY_MODEL.md`'s "Fail-open
-  vs. fail-closed" section for the full picture.
+- **Active Tenant Selection UI/endpoint** — the unsafe *guessing* behavior for a
+  multi-membership user is fixed (see above), but there is still no `POST
+  /api/tenants/active` route, no `TENANT_SELECTION_REQUIRED` HTTP response handling, and no
+  UI to pick a tenant. Deliberately not built: no route in this codebase can give an existing
+  user a second membership yet (no invite/onboarding flow), so there is no real path to
+  exercise such a UI against — building one now would be speculative, not scoped to an actual
+  need.
 - **Conversations/Messages/Quotes/Follow-ups** — already effectively isolated: these live
   inside `crm_leads`/`crm_messages`/`crm_followups`, reached only via a `lead_id` whose
   owning lead is tenant-checked (Phase 1). "Quotes" specifically are fields on the lead
   object itself (`quoteIntake`), not a separate entity.
 - **Notifications** — no dedicated notifications table exists in this codebase at all
   (confirmed by the Phase 2 audit); real-time handoff/alerting is done via
-  `agent_escalations` (now tenant-scoped) and Operations Log (not yet, see above).
+  `agent_escalations` (tenant-scoped) and the Operations Log (also tenant-scoped, Phase 3).
 - **Multiple named connections per integration** (spec Part 9: "2 Salla stores, 3 Meta
-  Pages"). Today a tenant can have exactly one connection per provider.
+  Pages"). Today a tenant can have exactly one connection per provider — this is also why
+  webhook routing resolves to "the one connection this tenant has," not "which of several."
 - **The Integration & Agent Control Center UI** — no dashboard page exists yet for an owner
   to create a second tenant, connect its integrations, or configure its agents without
   directly touching the database. Deliberately deferred again this pass, per the explicit
-  instruction to finish data isolation before building UI.
+  instruction to finish data isolation and fail-closed routing before building UI.
 - **Onboarding wizard, config export/import, company templates/cloning** — `createTenant()`
   exists and is tested (creates an empty tenant + owner membership, copies zero business
   data) but is not reachable from any route yet.
@@ -238,7 +272,8 @@ oversights:
   autonomy level and one provider/model override per agent, system-wide). A second tenant
   would currently share the first tenant's agent enable/model/autonomy settings. This is a
   genuine design decision, not a mechanical fix (see `docs/TENANT_SECURITY_MODEL.md`).
-- **Webhook tenant routing**, **scheduler/queue tenant loop**, **cache/storage isolation**,
-  **Platform Super Admin role** — unchanged from Phase 1's assessment; still not built.
+- **Cache/storage isolation**, **Platform Super Admin role**, **populating Salla's
+  `external_account_id` at real connect time** (blocked on a live Salla app to verify the
+  exact API call against) — unchanged; still not built.
 
 None of the above were silently skipped — each is a real, scoped, buildable next phase.

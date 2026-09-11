@@ -20,17 +20,32 @@ export function handleValidationHandshake(url) {
  * changed," never the content, so this returns the list of Graph message ids that still
  * need an actual GET to fetch (the caller does that via microsoft-graph.js getMessage).
  * An item whose clientState doesn't match is dropped and logged, never trusted.
+ *
+ * Multi-Tenant Phase 3.5 (Part B12): `clientState` is one shared secret (MICROSOFT_WEBHOOK_
+ * SECRET) across every tenant's subscription — it proves the notification really came from
+ * Graph, but it cannot by itself say WHICH tenant's mailbox changed. That's what
+ * `resolveTenant(item.subscriptionId)` is for (see webhook-tenant-resolver.js's
+ * resolveTenantForMicrosoftSubscription, matched against the subscription id recorded at
+ * real `/api/integrations/microsoft/subscribe` time) — called only AFTER the clientState
+ * check passes, never before. An item whose subscriptionId resolves to no tenant is still
+ * recorded (never lost) but marked unresolved and never queued for `getMessage`.
  */
-export function processMicrosoftNotifications(db,body,env) {
+export function processMicrosoftNotifications(db,body,env,resolveTenant) {
  const expected=env.MICROSOFT_WEBHOOK_SECRET;
- const results={toFetch:[],rejected:0,replayed:0};
+ const results={toFetch:[],rejected:0,replayed:0,unresolved:0};
  for(const item of body?.value||[]) {
   if(!expected||!safeEqual(item.clientState||'',expected)){results.rejected++;continue;}
+  const tenantId=resolveTenant(item.subscriptionId);
   const externalId=`${item.subscriptionId}:${item.resourceData?.id}:${item.changeType}`;
-  const {stored,id}=storeWebhookEvent(db,{source:'microsoft365',externalEventId:externalId,type:'mail.'+item.changeType,payload:item});
+  if(!tenantId) {
+   storeWebhookEvent(db,{source:'microsoft365',externalEventId:externalId,type:'mail.'+item.changeType,payload:item,unresolved:true});
+   results.unresolved++;
+   continue;
+  }
+  const {stored,id}=storeWebhookEvent(db,{source:'microsoft365',externalEventId:externalId,type:'mail.'+item.changeType,payload:item,tenantId});
   if(!stored){results.replayed++;continue;}
   markWebhookEventProcessed(db,id,'PROCESSED');
-  if(item.changeType==='created' && item.resourceData?.id)results.toFetch.push({messageId:item.resourceData.id,subscriptionId:item.subscriptionId});
+  if(item.changeType==='created' && item.resourceData?.id)results.toFetch.push({messageId:item.resourceData.id,subscriptionId:item.subscriptionId,tenantId});
  }
  return results;
 }

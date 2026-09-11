@@ -38,8 +38,9 @@ test('API revisions revoke schedules, retain history and automation cannot imper
   assert.equal(state.content.find(item=>item.id===draft.id).status,'SUPERSEDED');
   assert.equal((await call(`/api/content/${revised.data.id}/reject`,{reason:'Needs work'},owner)).data.status,'REJECTED');
   const first=await call('/api/automation/daily-brief',{},null,{'x-hypercool-token':token});
-  assert.equal(first.status,200);assert.equal(first.data.deliveryStatus,'LOCAL_ONLY');
-  assert.equal((await call('/api/automation/daily-brief',{},null,{'x-hypercool-token':token})).data.replayed,true);
+  assert.equal(first.status,200);assert.equal(Object.values(first.data.tenants)[0].deliveryStatus,'LOCAL_ONLY');
+  const second=await call('/api/automation/daily-brief',{},null,{'x-hypercool-token':token});
+  assert.equal(Object.values(second.data.tenants)[0].replayed,true);
   // "Pause all autonomous actions" must also stop the external-trigger path, not just the
   // in-process scheduler — otherwise pausing from Frost Control Center would be a lie.
   assert.equal((await call('/api/frost/pause',{reason:'test'},owner)).status,200);
