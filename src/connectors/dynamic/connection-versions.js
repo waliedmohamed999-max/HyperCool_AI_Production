@@ -58,17 +58,17 @@ export function previewVersionMigration(db,tenantId,connectionId,targetVersion) 
   capabilityImpacted,toolAssignmentsAffected:capabilityImpacted.length
  };
 }
-async function runTargetHealthCheck({db,env,fetcher,connection,targetManifest}) {
+async function runTargetHealthCheck({db,env,fetcher,connection,targetManifest,resolver,transport}) {
  let credential=null;
  try{credential=getCredentialForRuntime(db,env,connection.id,connection.tenantId);}catch{credential=null;}
- try{return await genericRestAdapter.healthCheck({env,db,fetcher,credential,manifest:targetManifest,connection});}
+ try{return await genericRestAdapter.healthCheck({env,db,fetcher,credential,manifest:targetManifest,connection,resolver,transport});}
  catch(error){return {status:'ERROR',errorCode:error?.code||'REMOTE_SERVER_ERROR'};}
 }
 /** Part 6 — Safe Migration: validate target version exists -> validate capability compatibility
  * (hard gate) -> run a REAL health check against the CANDIDATE version -> only then update the
  * pin. Any failure throws BEFORE any write happens, so "remain on old version" (Part 6) is
  * automatic — there is no partial-write state to roll back from. */
-export async function migrateConnectionVersion({db,env,fetcher=fetch,tenantId,connectionId,targetVersion}) {
+export async function migrateConnectionVersion({db,env,fetcher=fetch,tenantId,connectionId,targetVersion,resolver,transport}) {
  const {connection,definition}=requireVersionedConnection(db,tenantId,connectionId);
  if(definition.status==='DISABLED')fail(400,'CONNECTOR_DISABLED','هذا الموصل معطَّل من قِبل مسؤول المنصة');
  const target=Number(targetVersion);
@@ -77,7 +77,7 @@ export async function migrateConnectionVersion({db,env,fetcher=fetch,tenantId,co
  const capabilityImpacted=capabilityImpact(db,tenantId,connection,targetManifest);
  if(capabilityImpacted.length)
   fail(409,'CAPABILITY_REGRESSION',`الإصدار ${target} يفقد قدرة يعتمد عليها ${capabilityImpacted.length} ربط أداة/وكيل فعّال — الترقية مرفوضة لحماية الأتمتة القائمة`);
- const health=await runTargetHealthCheck({db,env,fetcher,connection,targetManifest});
+ const health=await runTargetHealthCheck({db,env,fetcher,connection,targetManifest,resolver,transport});
  if(health.status!=='OK')
   fail(422,'TARGET_VERSION_UNHEALTHY',`فحص الصحة على الإصدار ${target} فشل (${health.errorCode||health.status}) — سيبقى الاتصال على إصداره الحالي دون أي تغيير`);
  const now=new Date().toISOString();
@@ -87,11 +87,11 @@ export async function migrateConnectionVersion({db,env,fetcher=fetch,tenantId,co
 /** Part 7 — Rollback: the nearest LOWER version that still has a real, retained snapshot (never
  * assumes N-1 exists), through the exact same safe-migration gate above — "only if still
  * compatible", never a destructive blind revert. */
-export async function rollbackConnectionVersion({db,env,fetcher=fetch,tenantId,connectionId}) {
+export async function rollbackConnectionVersion({db,env,fetcher=fetch,tenantId,connectionId,resolver,transport}) {
  const {connection,definition}=requireVersionedConnection(db,tenantId,connectionId);
  if(connection.connectorVersion==null||connection.connectorVersion<=1)fail(400,'NO_PREVIOUS_VERSION','لا يوجد إصدار سابق للتراجع إليه');
  let target=connection.connectorVersion-1;
  while(target>=1 && !getVersionSnapshot(db,definition.id,target))target--;
  if(target<1)fail(400,'NO_PREVIOUS_VERSION','لا يوجد إصدار سابق صالح للتراجع إليه');
- return migrateConnectionVersion({db,env,fetcher,tenantId,connectionId,targetVersion:target});
+ return migrateConnectionVersion({db,env,fetcher,tenantId,connectionId,targetVersion:target,resolver,transport});
 }

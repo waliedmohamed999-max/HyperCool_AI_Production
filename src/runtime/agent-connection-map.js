@@ -25,7 +25,12 @@ export function buildAgentConnectionMap(db,env,tenantId,{agentId=null,connectorS
    if(!tool)continue;
    let connectionId=null,connectionName=null,connectorVersion=null,rawStatus=null,slug=tool.integrationSlug||null;
    const resolution=resolveToolConnection(db,{tenantId,agentId:agent.id,toolSlug:readiness.toolSlug});
-   if(!resolution.blocked && resolution.connectionId) {
+   // Several BLOCKED reasons (CONNECTION_CAPABILITY_MISSING, CONNECTION_PROVIDER_MISMATCH,
+   // CONNECTION_UNHEALTHY) still carry a real `connectionId` — look it up regardless of
+   // `blocked` so the REAUTH_REQUIRED enrichment below actually fires for the common real
+   // case (a pinned connection whose token expired, which resolveToolConnection reports as a
+   // BLOCKED capability/health problem, not as an unblocked resolution).
+   if(resolution.connectionId) {
     const connection=getConnectionOrNull(db,resolution.connectionId,tenantId);
     if(connection) {
      connectionId=connection.id;connectionName=connection.name;connectorVersion=connection.connectorVersion??null;
