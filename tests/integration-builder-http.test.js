@@ -242,3 +242,73 @@ test('HTTP: /api/integrations/catalog and Control Center summary never leak a cr
   assert.equal(acmeProvider.status,'PUBLISHED');
  }finally{await cleanup();}
 });
+
+test('HTTP: POST /api/platform/mapping-preview runs the real canonical mapper (Platform Admin only, never persists or calls out)',async()=>{
+ const {call,admin,owner,cleanup}=await harness();
+ try{
+  const denied=await call('/api/platform/mapping-preview',{mapping:{array:{from:'items',item:{id:'id'}}},samplePayload:{items:[{id:1}]}},owner);
+  assert.equal(denied.status,403);
+
+  const ok=await call('/api/platform/mapping-preview',{mapping:{array:{from:'invoices',item:{id:'id',total:'total'}}},samplePayload:{invoices:[{id:'inv1',total:250}]}},admin);
+  assert.equal(ok.status,200);
+  assert.equal(ok.data.ok,true);
+  assert.deepEqual(ok.data.result,[{id:'inv1',total:250}]);
+
+  // A prototype-pollution attempt must still fail through the exact same real protection —
+  // built as a raw JSON STRING (not a JS object literal, which special-cases `__proto__` as
+  // setting the prototype rather than an enumerable own key, defeating the very attack this
+  // is meant to prove is blocked — the same real lesson from the 6C mapping engine tests).
+  const evilBody='{"mapping":{"object":{"__proto__":{"path":"x"}}},"samplePayload":{"x":1}}';
+  const evil=await call('/api/platform/mapping-preview',evilBody,admin);
+  assert.equal(evil.status,200);
+  assert.equal(evil.data.ok,false);
+ }finally{await cleanup();}
+});
+
+test('HTTP: GET /api/integrations/connections/:id/actions lists the real, dynamic connector actions; POST action-history shows a safe record after execution',async()=>{
+ const {app,call,admin,owner,tenantId,cleanup}=await harness();
+ try{
+  const created=await call('/api/platform/connectors',ACME_ERP_INPUT,admin);
+  await call(`/api/platform/connectors/${created.data.id}/actions`,invoicesAction(),admin);
+  await call(`/api/platform/connectors/${created.data.id}/publish`,{},admin);
+  const connection=await call('/api/integrations/connections',{integrationDefinitionId:'acme_erp_http',name:'My Acme ERP'},owner);
+  const {updateConnection}=await import('../src/integrations/connections.js');
+  updateConnection(app.store.db,connection.data.id,{status:'CONNECTED'},tenantId);
+
+  const actionsList=await call(`/api/integrations/connections/${connection.data.id}/actions`,null,owner,{method:'GET'});
+  assert.equal(actionsList.status,200);
+  assert.equal(actionsList.data.length,1);
+  assert.equal(actionsList.data[0].slug,'get_invoices');
+  assert.equal(actionsList.data[0].method,'GET');
+
+  // A real execution attempt (fails honestly — no live acme-erp-http.test host — but that IS
+  // the point: it must be recorded in the safe history either way).
+  await call(`/api/integrations/connections/${connection.data.id}/actions/get_invoices`,{},owner);
+  const history=await call(`/api/integrations/connections/${connection.data.id}/action-history`,null,owner,{method:'GET'});
+  assert.equal(history.status,200);
+  assert.equal(history.data.length,1);
+  assert.equal(history.data[0].actionSlug,'get_invoices');
+  assert.ok(history.data[0].at);
+  const raw=JSON.stringify(history.data);
+  assert.equal(raw.includes('apiKey')||raw.toLowerCase().includes('secret'),false);
+ }finally{await cleanup();}
+});
+
+test('HTTP: GET /api/tools/:slug/connections — real bug fix — a generic capability-only tool (get_invoices) now lists its compatible connection instead of always returning empty',async()=>{
+ const {app,call,admin,owner,tenantId,cleanup}=await harness();
+ try{
+  const created=await call('/api/platform/connectors',ACME_ERP_INPUT,admin);
+  await call(`/api/platform/connectors/${created.data.id}/actions`,invoicesAction(),admin);
+  await call(`/api/platform/connectors/${created.data.id}/publish`,{},admin);
+  const connection=await call('/api/integrations/connections',{integrationDefinitionId:'acme_erp_http',name:'My Acme ERP'},owner);
+  const {updateConnection}=await import('../src/integrations/connections.js');
+  updateConnection(app.store.db,connection.data.id,{status:'CONNECTED'},tenantId);
+
+  const result=await call('/api/tools/get_invoices/connections',null,owner,{method:'GET'});
+  assert.equal(result.status,200);
+  assert.ok(Array.isArray(result.data));
+  const match=result.data.find(c=>c.id===connection.data.id);
+  assert.ok(match,'the real compatible connection must be listed — this route used to always return [] for any generic capability-only tool');
+  assert.equal(match.capabilityGranted,true);
+ }finally{await cleanup();}
+});

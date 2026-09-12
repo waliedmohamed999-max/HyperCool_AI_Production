@@ -17,7 +17,8 @@ import {getIntegrationDefinition} from '../src/integrations/definitions.js';
 import {
  createDraftConnector,updateDraftConnector,upsertActionForConnector,upsertTriggerForConnector,
  validateConnectorDraft,publishConnector,disableConnector,reactivateConnector,
- getConnectorDependencies,listConnectorsForBuilder,getConnectorForBuilder,getTenantCatalog
+ getConnectorDependencies,listConnectorsForBuilder,getConnectorForBuilder,getTenantCatalog,
+ cloneConnectorDefinition,exportConnectorDefinition,importConnectorDefinition
 } from '../src/connectors/dynamic/builder.js';
 import {getVersionSnapshot} from '../src/connectors/dynamic/store.js';
 
@@ -411,6 +412,65 @@ test('listConnectorsForBuilder includes both system (built-in) and dynamic conne
   assert.equal(salla.actionsCount,0,'a system connector has zero rows in connector_actions by design — its actions live in code');
   assert.equal(acme.actionsCount,1);
   assert.equal(acme.triggersCount,1);
+ }finally{await cleanup();}
+});
+
+// --- Clone / Export / Import (Phase 6F, Part 7/8/9/22/23/24) --------------------------------------
+
+test('cloneConnectorDefinition: copies the declarative shape (auth/capabilities/actions/triggers) into a new DRAFT — never a system connector, never a credential',async()=>{
+ const {db,env,admin,tenantId,cleanup}=await harness();
+ try{
+  const {definition}=await publishAndConnect(db,env,admin,tenantId);
+  throwsWithCode(()=>cloneConnectorDefinition(db,env,admin,listConnectorsForBuilder(db,env,admin).find(c=>c.slug==='salla').id,'salla_copy'),'SYSTEM_CONNECTOR_READONLY');
+
+  const cloned=cloneConnectorDefinition(db,env,admin,definition.id,'acme_erp_clone');
+  assert.equal(cloned.status,'DRAFT');
+  assert.equal(cloned.slug,'acme_erp_clone');
+  assert.deepEqual(cloned.capabilities,definition.capabilities);
+  assert.equal(cloned.restConfig.baseUrl,definition.restConfig.baseUrl);
+  const clonedActions=getConnectorForBuilder(db,env,admin,cloned.id).actions;
+  assert.equal(clonedActions.length,1);
+  assert.equal(clonedActions[0].pathTemplate,'/invoices');
+  const clonedTriggers=getConnectorForBuilder(db,env,admin,cloned.id).triggers;
+  assert.equal(clonedTriggers.length,1);
+  assert.equal(clonedTriggers[0].normalizedEventType,'INVOICE_CREATED');
+  // The clone is a genuinely independent definition — editing the source's action must never
+  // touch the clone's own copy.
+  upsertActionForConnector(db,env,admin,definition.id,invoicesAction('/v2/invoices'));
+  const clonedActionsAfter=getConnectorForBuilder(db,env,admin,cloned.id).actions;
+  assert.equal(clonedActionsAfter[0].pathTemplate,'/invoices','the clone must stay exactly as it was when cloned');
+ }finally{await cleanup();}
+});
+
+test('exportConnectorDefinition never includes a credential, and importConnectorDefinition re-validates every field through the real Builder checks rather than trusting the file',async()=>{
+ const {db,env,admin,cleanup}=await harness();
+ try{
+  const definition=buildAcmeErpDraft(db,env,admin);
+  publishConnector(db,env,admin,definition.id);
+  const exported=exportConnectorDefinition(db,env,admin,definition.id);
+  assert.equal(exported.slug,'acme_erp');
+  assert.equal(exported.actions.length,1);
+  assert.equal(exported.triggers.length,1);
+  // Note: 'API_KEY' is a legitimate, non-secret AUTH TYPE CLASSIFICATION (auth.type), not a
+  // secret value — checking for it here would be a false positive (the exact same lesson
+  // learned in Phase 6D's control-center leak test). What must never appear is an actual
+  // secret VALUE — this connector's real credential (apiKey) lives only in the Vault, never in
+  // integration_definitions, so it can never reach exportConnectorDefinition's output at all.
+  const raw=JSON.stringify(exported).toLowerCase();
+  for(const forbidden of ['secret','password','bearer '])assert.equal(raw.includes(forbidden),false,`export must never include ${forbidden}`);
+
+  // Re-import under a new slug — must succeed and re-create the exact same real shape.
+  const imported=importConnectorDefinition(db,env,admin,exported,{slug:'acme_erp_imported'});
+  assert.equal(imported.status,'DRAFT');
+  const importedDetail=getConnectorForBuilder(db,env,admin,imported.id);
+  assert.equal(importedDetail.actions.length,1);
+  assert.equal(importedDetail.actions[0].pathTemplate,'/invoices');
+  assert.equal(importedDetail.triggers.length,1);
+
+  // A tampered import (an unsafe base URL, or an unknown capability) must still be rejected by
+  // the SAME real validators — importing is never a way to bypass them.
+  throwsWithCode(()=>importConnectorDefinition(db,env,admin,{...exported,rest:{baseUrl:'http://127.0.0.1/'}},{slug:'acme_erp_evil'}),'UNSAFE_BASE_URL');
+  throwsWithCode(()=>importConnectorDefinition(db,env,admin,{...exported,capabilities:['system.admin']},{slug:'acme_erp_evil2'}),'UNKNOWN_CAPABILITY');
  }finally{await cleanup();}
 });
 

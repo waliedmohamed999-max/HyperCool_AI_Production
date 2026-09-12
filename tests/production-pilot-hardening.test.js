@@ -176,6 +176,10 @@ test('Platform routes: a real allowlisted admin sees real, live data across tena
   const overview=await call('/api/platform/overview',null,adminSession,{method:'GET'});
   assert.equal(overview.status,200);
   assert.ok(overview.data.tenants.total>=1);
+  // Phase 6F, Part 2 — the Integration Platform dashboard card's real, platform-wide numbers.
+  assert.equal(typeof overview.data.healthyConnections,'number');
+  assert.equal(typeof overview.data.failedWebhooks,'number');
+  assert.equal(overview.data.failedWebhooks,0,'no webhook has failed in this fresh test database');
 
   const directory=await call('/api/platform/tenants',null,adminSession,{method:'GET'});
   assert.equal(directory.status,200);
