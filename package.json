@@ -12,7 +12,9 @@
     "ui:screenshots": "node scripts/ui-baseline.mjs",
     "agents:extract": "node scripts/extract-agents.js",
     "backup": "node scripts/backup.mjs",
-    "restore": "node scripts/restore.mjs"
+    "restore": "node scripts/restore.mjs",
+    "production:check": "node scripts/production-check.mjs",
+    "load:workspace-creation": "node scripts/load-workspace-creation.mjs"
   },
   "engines": {
     "node": ">=24.11.0"

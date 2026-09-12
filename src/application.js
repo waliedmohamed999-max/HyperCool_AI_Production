@@ -344,6 +344,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         dependencies.llm=providerStatus(env).configured?'configured':'not_configured';
         const integrations=integrationStatus(env,store.db);
         for(const [name,status] of Object.entries(integrations))dependencies['integration_'+name]=status.configured?'configured':'not_configured';
+        // Multi-Tenant Phase 4C-7 (Part 32) — mail/CAPTCHA are genuinely OPTIONAL subsystems
+        // (the app boots and every write path already handles either being unconfigured
+        // safely, Part 15/PLATFORM_EMAIL.md); their real state is reported here for
+        // observability, but neither can ever fail overall readiness by itself.
+        dependencies.platform_mail=platformMailStatus(env).status.toLowerCase();
+        dependencies.bot_protection=botProtectionStatus(env).status.toLowerCase();
         const coreOk=dependencies.database==='ok';
         return send(coreOk?200:503,{status:coreOk?'ready':'not_ready',core_status:coreOk?'ok':'degraded',dependencies,timestamp:new Date().toISOString(),version:packageVersion});
       }
@@ -1526,8 +1532,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
       if(req.method==='GET' && files[url.pathname]) {
         const file=files[url.pathname];

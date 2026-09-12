@@ -24,7 +24,10 @@ export async function renderPlatformPage({api:client,auth}){
  const navLink=document.querySelector('#nav-platform');
  const visible=!!auth.isPlatformAdmin;
  navLink.hidden=!visible;
- if(!visible)return;
+ // Someone navigating straight to #platform's URL without the nav link (never authorized
+ // either way — every real route this page calls is independently gated server-side, Part
+ // 58) still sees a clear, honest message instead of a blank page.
+ if(!visible){$('#pf-overview').innerHTML='';$('#pf-directory').innerHTML=empty(t('platform.notPlatformAdmin'));return;}
  const generation=++renderGeneration;
  $('#pf-overview').innerHTML=skeleton(t('common.loading'));
  let overview,directory;
