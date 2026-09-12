@@ -235,8 +235,13 @@ test('HTTP: /api/integrations/catalog and Control Center summary never leak a cr
 
   const summary=await call('/api/control-center/summary',null,owner,{method:'GET'});
   assert.equal(summary.status,200);
-  const raw=JSON.stringify(summary.data).toLowerCase();
-  for(const forbidden of ['apikey','api_key','secret','password'])assert.equal(raw.includes(forbidden),false,`must never include ${forbidden}`);
+  const rawExact=JSON.stringify(summary.data);
+  // Phase 6G added a real `authType` field (e.g. `"API_KEY"` for this connector's own auth
+  // config) — its classification VALUE legitimately contains "api_key" lowercased, which is
+  // not a leak; checked as a real JSON key-holding-a-value shape instead of a blanket substring.
+  for(const forbidden of ['"apiKey":','"api_key":'])assert.equal(rawExact.includes(forbidden),false,`must never include a real ${forbidden} field`);
+  const raw=rawExact.toLowerCase();
+  for(const forbidden of ['secret','password'])assert.equal(raw.includes(forbidden),false,`must never include ${forbidden}`);
   const acmeProvider=summary.data.integrations.providers.find(p=>p.slug==='acme_erp_http');
   assert.ok(acmeProvider,'a connected dynamic provider must appear in the Control Center summary exactly like a built-in one');
   assert.equal(acmeProvider.status,'PUBLISHED');

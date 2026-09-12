@@ -10,6 +10,7 @@ import {evaluateAgentReadiness,evaluateAllToolsReadiness} from './agent-readines
 import {listToolDefinitions} from './tool-definitions.js';
 import {listIntegrationDefinitions} from '../integrations/definitions.js';
 import {listConnections} from '../integrations/connections.js';
+import {buildConnectionHealthView} from '../integrations/connection-health-view.js';
 
 const AI_PROVIDERS=['anthropic','openai'];
 const HEALTHY_STATUSES=new Set(['CONNECTED','DEGRADED']);
@@ -52,13 +53,24 @@ function buildToolsSummary(db,env,tenantId) {
  * existing connection must remain manageable/visible in Health) but carries its real `status`
  * so the frontend can honestly grey out "add a new connection" without a second isAvailable
  * concept drifting from it. */
-function buildIntegrationsSummary(db,tenantId) {
+function buildIntegrationsSummary(db,env,tenantId) {
  const definitions=listIntegrationDefinitions(db).filter(d=>d.status!=='DRAFT');
  const providers=definitions.map(def=>{
   const connections=listConnections(db,{integrationDefinitionId:def.slug},tenantId);
   return {slug:def.slug,nameAr:def.nameAr,nameEn:def.nameEn,category:def.category,isAvailable:def.isAvailable,connectionMode:def.connectionMode,
    status:def.status,capabilities:def.capabilities,isSystem:def.isSystem,
-   connections:connections.map(c=>({id:c.id,name:c.name,status:c.status,isDefault:c.isDefault,externalAccountName:c.externalAccountName,lastHealthCheck:c.lastHealthCheck,lastSuccessAt:c.lastSuccessAt,lastErrorAt:c.lastErrorAt,lastErrorCode:c.lastErrorCode,lastErrorMessageSafe:c.lastErrorMessageSafe,scopes:c.scopes}))};
+   // Phase 6G — the real authType, so the frontend never has to guess. `supportsGenericOAuth`
+   // is real too: true for any GENERIC_REST connector declaring OAUTH2 (the new Generic OAuth2
+   // Framework, docs/GENERIC_OAUTH2.md — needs ZERO addition here for a NEW such connector) plus
+   // exactly the two existing hand-built exceptions (Salla/Zid) that already share the same
+   // generic multi-connection OAuth routes in application.js. Every OTHER OAuth2 BUILT_IN
+   // provider (WhatsApp/Meta/Microsoft 365/X/LinkedIn) keeps its own separate, dedicated OAuth
+   // routes under a different URL prefix — offering the generic "Add Store" flow for those would
+   // 501 at runtime, so this must stay false for them.
+   authType:def.authConfig?.type||def.authType,
+   supportsGenericOAuth:(def.authConfig?.type||def.authType)==='OAUTH2' && (def.adapterType==='GENERIC_REST'||['salla','zid'].includes(def.slug)),
+   connections:connections.map(c=>({id:c.id,name:c.name,status:c.status,isDefault:c.isDefault,externalAccountName:c.externalAccountName,lastHealthCheck:c.lastHealthCheck,lastSuccessAt:c.lastSuccessAt,lastErrorAt:c.lastErrorAt,lastErrorCode:c.lastErrorCode,lastErrorMessageSafe:c.lastErrorMessageSafe,scopes:c.scopes,connectorVersion:c.connectorVersion,
+    healthView:buildConnectionHealthView(db,env,c,def)}))};
  });
  const allConnections=providers.flatMap(p=>p.connections);
  return {configuredProviders:providers.filter(p=>p.connections.length>0).length,healthyConnections:allConnections.filter(c=>HEALTHY_STATUSES.has(c.status)).length,unhealthyConnections:allConnections.filter(c=>!HEALTHY_STATUSES.has(c.status)).length,providers};
@@ -85,7 +97,7 @@ export function buildControlCenterSummary(db,env,tenantId,role) {
    trial:tenant.trialExpiresAt?{active:isTrialActive(tenant),daysRemaining:getTrialDaysRemaining(tenant),expiresAt:tenant.trialExpiresAt}:null},
   agents:buildAgentsSummary(db,env,tenantId),
   tools:buildToolsSummary(db,env,tenantId),
-  integrations:buildIntegrationsSummary(db,tenantId),
+  integrations:buildIntegrationsSummary(db,env,tenantId),
   aiProviders:buildAiProvidersSummary(db,tenantId)
  };
 }

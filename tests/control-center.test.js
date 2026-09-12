@@ -134,8 +134,16 @@ test('Control Center summary: never exposes a credential, access token, or vault
   const ai=createConnection(app.store.db,{integrationDefinitionId:'anthropic',name:'Anthropic Main'},tenantA);
   updateConnection(app.store.db,ai.id,{status:'CONNECTED'},tenantA);
   const raw=JSON.stringify((await call('/api/control-center/summary',null,ownerA,{method:'GET'})).data);
-  for(const forbidden of ['accessToken','access_token','refreshToken','refresh_token','apiKey','api_key','secret','password'])
-   assert.equal(raw.toLowerCase().includes(forbidden.toLowerCase()),false,`must never include ${forbidden}`);
+  // Phase 6G added a real, honest `authType` field to each provider (e.g. `"API_KEY"` for
+  // Anthropic) — its classification VALUE legitimately contains the substring "api_key" once
+  // lowercased, which is not a leak. Checked as a real JSON key-holding-a-value shape instead
+  // of a blanket substring, exactly like `secret`/`password` (which have no such collision here).
+  for(const forbidden of ['accessToken":','access_token":','refreshToken":','refresh_token":'])
+   assert.equal(raw.includes(forbidden),false,`must never include a real ${forbidden} field`);
+  for(const forbidden of ['"apiKey":','"api_key":'])
+   assert.equal(raw.includes(forbidden),false,`must never include a real ${forbidden} field`);
+  for(const forbidden of ['secret','password'])
+   assert.equal(raw.toLowerCase().includes(forbidden),false,`must never include ${forbidden}`);
  }finally{await cleanup();}
 });
 

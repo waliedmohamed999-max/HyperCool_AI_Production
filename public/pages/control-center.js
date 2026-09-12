@@ -16,10 +16,12 @@ let filters={status:'all',query:''};
 const AGENT_STATUS_VARIANT={READY:'CONNECTED',PARTIAL:'DEGRADED',BLOCKED:'ERROR',DISABLED:'DISCONNECTED'};
 const CONNECTION_MODE_LABEL=mode=>t('controlCenter.connectionMode.'+(mode||'SINGLE'));
 const TOOL_STATUS_LABEL=status=>t('controlCenter.toolStatus.'+status)||status;
-// Phase 6E — every real, approved, platform-managed OAuth2 provider sharing the generic
-// multi-connection OAuth flow (application.js's GENERIC_OAUTH_PROVIDERS allowlist). Adding a
-// future approved OAuth2 connector means adding its slug here, never a new branch shape.
-const GENERIC_OAUTH_SLUGS=new Set(['salla','zid']);
+// Phase 6G — driven by the connector's REAL authType (control-center.js's own
+// buildIntegrationsSummary now reports it), never a hardcoded slug allowlist: ANY OAuth2
+// connector — a hand-built one (Salla/Zid) or a brand-new one defined entirely through the
+// Generic OAuth2 Framework (docs/GENERIC_OAUTH2.md) — uses the exact same "Add Store"/OAuth-
+// start UI with zero frontend change per future provider.
+const isOAuth2Provider=provider=>!!provider.supportsGenericOAuth;
 
 function statusBadge(status,map=AGENT_STATUS_VARIANT){return badge(t('controlCenter.status.'+status)||status,map[status]||status);}
 
@@ -170,7 +172,7 @@ function renderIntegrationsTab(){
    actions.append(manage);
   }
   if(canAddConnection(provider)){
-   const add=button(GENERIC_OAUTH_SLUGS.has(provider.slug)?t('controlCenter.addStore'):t('controlCenter.addConnection'),{variant:'primary',iconName:'plus'});
+   const add=button(isOAuth2Provider(provider)?t('controlCenter.addStore'):t('controlCenter.addConnection'),{variant:'primary',iconName:'plus'});
    add.onclick=()=>startAddConnection(provider);
    actions.append(add);
   } else if(disabledByPlatform){
@@ -198,7 +200,7 @@ function renderIntegrationsTab(){
  * either. */
 function canAddConnection(provider){
  if(!provider.isAvailable||provider.status==='DISABLED')return false;
- if(GENERIC_OAUTH_SLUGS.has(provider.slug))return true; // real MULTI-store OAuth providers (Salla, Zid) — always offer "add another store"
+ if(isOAuth2Provider(provider))return true; // real MULTI-store OAuth providers (Salla, Zid) — always offer "add another store"
  if(['anthropic','openai'].includes(provider.slug))return true;
  return provider.connections.length===0 && provider.connectionMode!=='UNAVAILABLE';
 }
@@ -247,7 +249,7 @@ function startGenericConnect(provider){
  });
 }
 function startAddConnection(provider){
- if(GENERIC_OAUTH_SLUGS.has(provider.slug)){
+ if(isOAuth2Provider(provider)){
   promptDrawer(t('controlCenter.addStore'),node=>{
    const input=document.createElement('input');input.name='name';input.required=true;input.maxLength=100;input.placeholder=t('controlCenter.storeNamePlaceholder');
    const label=document.createElement('label');label.textContent=t('controlCenter.connectionNameLabel');label.append(input);node.append(label);
@@ -553,9 +555,23 @@ function openInviteDrawer(refreshHost){
 
 function openProviderDrawer(provider){
  const node=document.createElement('div');
- node.innerHTML=provider.connections.map(c=>`<div class="card" data-connection="${escape(c.id)}"><div class="row-between"><strong>${escape(c.name)}</strong>${c.isDefault?badge(t('controlCenter.default'),'CONNECTED'):''}</div>${statusBadge(c.status,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',PERMISSION_MISSING:'ERROR',DISCONNECTED:'DISCONNECTED',CONNECTING:'PENDING',NOT_CONFIGURED:'PENDING'})}<p>${escape(c.externalAccountName||'—')}</p><p class="kpi-context">${escape(t('controlCenter.lastChecked'))}: ${escape(c.lastHealthCheck||'—')}</p><div class="report-actions"></div></div>`).join('');
+ node.innerHTML=provider.connections.map(c=>`<div class="card" data-connection="${escape(c.id)}"><div class="row-between"><strong>${escape(c.name)}</strong>${c.isDefault?badge(t('controlCenter.default'),'CONNECTED'):''}</div>${statusBadge(c.status,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',PERMISSION_MISSING:'ERROR',DISCONNECTED:'DISCONNECTED',CONNECTING:'PENDING',NOT_CONFIGURED:'PENDING'})}<p>${escape(c.externalAccountName||'—')}</p><p class="kpi-context">${escape(t('controlCenter.lastChecked'))}: ${escape(c.lastHealthCheck||'—')}</p><div data-reauth></div><div class="report-actions"></div></div>`).join('');
  for(const c of provider.connections){
   const card=node.querySelector(`[data-connection="${CSS.escape(c.id)}"]`),actions=card.querySelector('.report-actions');
+  // Phase 6G, Part 25/26 — Reauth UX: an honest, additive signal (never replacing the real
+  // status badge above) shown ONLY when the connection's own OAuth2 refresh has genuinely
+  // failed or has no refresh token — a direct one-click path to reconnect the SAME logical
+  // connection (never a silent duplicate — Part 26).
+  if(c.healthView && ['AUTH_FAILED','REAUTH_REQUIRED'].includes(c.healthView.displayStatus)){
+   const reauthHost=card.querySelector('[data-reauth]');
+   reauthHost.innerHTML=`<p class="notice trial-banner-warning">${escape(t('controlCenter.reauth.'+c.healthView.displayStatus))}</p>`;
+   const reconnect=button(t('controlCenter.reauth.reconnectButton'),{variant:'primary'});
+   reconnect.onclick=async()=>{
+    try{const {reauthorizeUrl}=await api(`/api/integrations/connections/${c.id}/reconnect`,{});window.location.href=reauthorizeUrl;}
+    catch(error){toastError(error.message);}
+   };
+   reauthHost.append(reconnect);
+  }
   const test=button(t('controlCenter.testConnection'),{variant:'secondary'});
   test.onclick=async()=>{test.disabled=true;try{const result=await api(`/api/integrations/connections/${c.id}/test`,{});toast(t('controlCenter.testResult',{result:result.status}));card.querySelector('.pill').outerHTML=statusBadge(result.status,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',PERMISSION_MISSING:'ERROR',DISCONNECTED:'DISCONNECTED'});}catch(error){toastError(error.message);}finally{test.disabled=false;}};
   actions.append(test);
@@ -577,6 +593,12 @@ function openProviderDrawer(provider){
   const runAction=button(t('controlCenter.runAction'),{variant:'ghost'});
   runAction.onclick=()=>openActionRunner(c);
   actions.append(runAction);
+  // Phase 6G — Versioning/Webhook Console/Usage, consolidated into one "Advanced" drawer
+  // rather than three more buttons crowding every card; each of its tabs honestly reports
+  // "not applicable" for a connector that doesn't support that particular feature.
+  const advanced=button(t('controlCenter.advanced.button'),{variant:'ghost'});
+  advanced.onclick=()=>openConnectionAdvancedDrawer(c);
+  actions.append(advanced);
  }
  drawer(getLocale()==='en'?provider.nameEn:provider.nameAr,node);
 }
@@ -611,6 +633,139 @@ async function openActionRunner(connection){
   finally{runButton.disabled=false;}
  };
  node.querySelector('#runner-actions').append(runButton);
+}
+
+// --- Phase 6G: Version / Webhook Console / Usage (consolidated "Advanced" drawer) ----------
+
+async function openConnectionAdvancedDrawer(connection){
+ const node=document.createElement('div');
+ const versionPanel=document.createElement('div'),webhookPanel=document.createElement('div'),usagePanel=document.createElement('div');
+ node.append(versionPanel,webhookPanel,usagePanel);
+ tabs(node,[[t('controlCenter.advanced.tabVersion'),versionPanel],[t('controlCenter.advanced.tabWebhook'),webhookPanel],[t('controlCenter.advanced.tabUsage'),usagePanel]]);
+ drawer(t('controlCenter.advanced.button')+' — '+connection.name,node);
+ paintVersionPanel(versionPanel,connection);
+ paintWebhookPanel(webhookPanel,connection);
+ paintUsagePanel(usagePanel,connection);
+}
+async function paintVersionPanel(panel,connection){
+ panel.innerHTML=skeleton(t('common.loading'));
+ let info;
+ try{info=await api(`/api/integrations/connections/${connection.id}/version`);}
+ catch(error){panel.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+ if(!info.supportsVersioning){panel.innerHTML=empty(t('controlCenter.advanced.versionNotApplicable'));return;}
+ panel.innerHTML=`<p><strong>${escape(t('controlCenter.advanced.currentVersion'))}:</strong> ${escape(info.currentVersion??'—')}</p>
+  <p><strong>${escape(t('controlCenter.advanced.availableVersion'))}:</strong> ${escape(info.availableVersion??'—')}</p>
+  <div id="version-preview"></div>
+  <div class="report-actions" id="version-actions"></div>`;
+ const actionsHost=panel.querySelector('#version-actions');
+ if(info.migrationAvailable){
+  const migrateButton=button(t('controlCenter.advanced.migrateToVersion',{version:info.availableVersion}),{variant:'primary'});
+  migrateButton.onclick=async()=>{
+   const previewHost=panel.querySelector('#version-preview');
+   previewHost.innerHTML=skeleton(t('common.loading'));
+   let preview;
+   try{preview=await api(`/api/integrations/connections/${connection.id}/version/preview?target=${info.availableVersion}`);}
+   catch(error){previewHost.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+   previewHost.innerHTML=`<p>${escape(t('controlCenter.advanced.toolAssignmentsAffected',{count:preview.toolAssignmentsAffected}))}</p>`;
+   const confirmed=await promptDrawer(t('controlCenter.advanced.migrateToVersion',{version:info.availableVersion}),n=>{
+    n.innerHTML=`<p>${escape(t('controlCenter.advanced.migrateConfirm'))}</p>${preview.toolAssignmentsAffected?`<p class="notice trial-banner-warning">${escape(t('controlCenter.advanced.toolAssignmentsAffected',{count:preview.toolAssignmentsAffected}))}</p>`:''}`;
+   },{confirmLabel:t('controlCenter.advanced.migrateToVersion',{version:info.availableVersion})});
+   if(!confirmed)return;
+   try{await api(`/api/integrations/connections/${connection.id}/version/migrate`,{targetVersion:info.availableVersion});toast(t('common.savedSuccessfully'));paintVersionPanel(panel,connection);}
+   catch(error){toastError(error.message);}
+  };
+  actionsHost.append(migrateButton);
+ }
+ if(info.rollbackAvailable){
+  const rollbackButton=button(t('controlCenter.advanced.rollback'),{variant:'secondary'});
+  rollbackButton.onclick=async()=>{
+   const confirmed=await promptDrawer(t('controlCenter.advanced.rollback'),n=>{n.innerHTML=`<p>${escape(t('controlCenter.advanced.rollbackConfirm'))}</p>`;},{confirmLabel:t('controlCenter.advanced.rollback')});
+   if(!confirmed)return;
+   try{await api(`/api/integrations/connections/${connection.id}/version/rollback`,{});toast(t('common.savedSuccessfully'));paintVersionPanel(panel,connection);}
+   catch(error){toastError(error.message);}
+  };
+  actionsHost.append(rollbackButton);
+ }
+}
+async function paintWebhookPanel(panel,connection){
+ panel.innerHTML=skeleton(t('common.loading'));
+ let view;
+ try{view=await api(`/api/integrations/connections/${connection.id}/webhook-console`);}
+ catch(error){panel.innerHTML=empty(t('controlCenter.advanced.webhookNotApplicable'));return;}
+ panel.innerHTML=`<label>${escape(t('controlCenter.webhookUrlLabel'))}<input dir="ltr" readonly value="${escape(view.url)}"></label>
+  <p>${escape(t('controlCenter.advanced.failedCount',{count:view.failedCount}))}</p>
+  <div class="report-actions" id="webhook-actions"></div>
+  <div id="webhook-test"></div>
+  <div id="webhook-failed"></div>`;
+ const rotateUrl=button(t('controlCenter.advanced.rotateUrl'),{variant:'secondary'});
+ rotateUrl.onclick=async()=>{
+  const confirmed=await promptDrawer(t('controlCenter.advanced.rotateUrl'),n=>{n.innerHTML=`<p>${escape(t('controlCenter.advanced.rotateUrlConfirm'))}</p>`;},{confirmLabel:t('controlCenter.advanced.rotateUrl')});
+  if(!confirmed)return;
+  try{await api(`/api/integrations/connections/${connection.id}/webhook/rotate-url`,{},'POST');toast(t('common.savedSuccessfully'));paintWebhookPanel(panel,connection);}
+  catch(error){toastError(error.message);}
+ };
+ const rotateSecret=button(t('controlCenter.advanced.rotateSecret'),{variant:'secondary'});
+ rotateSecret.onclick=async()=>{
+  const confirmed=await promptDrawer(t('controlCenter.advanced.rotateSecret'),n=>{n.innerHTML=`<p>${escape(t('controlCenter.advanced.rotateSecretConfirm'))}</p>`;},{confirmLabel:t('controlCenter.advanced.rotateSecret')});
+  if(!confirmed)return;
+  try{
+   const {webhookSecret}=await api(`/api/integrations/connections/${connection.id}/webhook/rotate-secret`,{},'POST');
+   // Part 12 — shown exactly once, in a plain readonly field the operator can select/copy;
+   // this drawer never re-fetches or re-displays it again after it closes.
+   await promptDrawer(t('controlCenter.advanced.newSecretTitle'),n=>{
+    n.innerHTML=`<p>${escape(t('controlCenter.advanced.newSecretShowOnce'))}</p><label>${escape(t('controlCenter.advanced.newSecretLabel'))}<input dir="ltr" readonly value="${escape(webhookSecret)}" onfocus="this.select()"></label>`;
+   },{confirmLabel:t('common.close')});
+  }catch(error){toastError(error.message);}
+ };
+ const testButton=button(t('controlCenter.advanced.sendTestEvent'),{variant:'ghost'});
+ testButton.onclick=async()=>{
+  const testHost=panel.querySelector('#webhook-test');
+  try{
+   const result=await api(`/api/integrations/connections/${connection.id}/webhook/test`,{triggerSlug:view.triggers[0]?.slug,samplePayload:{}});
+   testHost.innerHTML=`<p class="notice">${escape(t('controlCenter.advanced.testEventResult',{status:result.status}))}</p>`;
+  }catch(error){testHost.innerHTML=`<p class="notice trial-banner-warning">${escape(error.message)}</p>`;}
+ };
+ panel.querySelector('#webhook-actions').append(rotateUrl,rotateSecret,testButton);
+ if(view.failedCount){
+  const failedHost=panel.querySelector('#webhook-failed');
+  const showFailed=button(t('controlCenter.advanced.viewFailedEvents'),{variant:'ghost'});
+  showFailed.onclick=async()=>{
+   let failed;
+   try{failed=await api(`/api/integrations/connections/${connection.id}/webhook/failed`);}catch(error){toastError(error.message);return;}
+   failedHost.innerHTML=failed.length?table([t('controlCenter.advanced.receivedAt'),t('controlCenter.advanced.trigger'),t('controlCenter.statusLabel'),'errorCode',t('controlCenter.advanced.reprocess')],
+    failed.map(f=>[new Date(f.receivedAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA'),escape(f.triggerSlug),escape(f.status),escape(f.errorCode||'—'),`<span data-reprocess="${escape(f.id)}"></span>`])
+   ):empty(t('common.noResults'));
+   for(const f of failed){
+    const cell=failedHost.querySelector(`[data-reprocess="${CSS.escape(f.id)}"]`);
+    if(!cell)continue;
+    const reprocessButton=button(t('controlCenter.advanced.reprocess'),{variant:'ghost'});
+    reprocessButton.disabled=!f.hasRawPayload;
+    reprocessButton.onclick=async()=>{
+     const confirmed=await promptDrawer(t('controlCenter.advanced.reprocess'),n=>{n.innerHTML=`<p>${escape(t('controlCenter.advanced.reprocessConfirm'))}</p>`;},{confirmLabel:t('controlCenter.advanced.reprocess')});
+     if(!confirmed)return;
+     try{await api(`/api/integrations/connections/${connection.id}/webhook/failed/${f.id}/reprocess`,{},'POST');toast(t('common.savedSuccessfully'));showFailed.onclick();paintWebhookPanel(panel,connection);}
+     catch(error){toastError(error.message);}
+    };
+    cell.append(reprocessButton);
+   }
+  };
+  failedHost.append(showFailed);
+ }
+}
+async function paintUsagePanel(panel,connection){
+ panel.innerHTML=skeleton(t('common.loading'));
+ let usage;
+ try{usage=await api(`/api/integrations/connections/${connection.id}/usage?window=7d`);}
+ catch(error){panel.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+ panel.innerHTML=`<div class="kpi-grid">
+  ${metric(t('controlCenter.advanced.usageCalls'),usage.actionCalls)}
+  ${metric(t('controlCenter.advanced.usageSuccess'),usage.success)}
+  ${metric(t('controlCenter.advanced.usageFailure'),usage.failure)}
+  ${metric(t('controlCenter.advanced.usageAvgLatency'),usage.averageLatencyMs!=null?usage.averageLatencyMs+' ms':'—')}
+  ${metric(t('controlCenter.advanced.usageWebhookReceived'),usage.webhookReceived)}
+  ${metric(t('controlCenter.advanced.usageWebhookFailed'),usage.webhookFailed)}
+ </div>
+ <p class="kpi-context">${escape(t('controlCenter.advanced.usageLastUsed',{when:usage.lastUsedAt?new Date(usage.lastUsedAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA'):'—'}))}</p>`;
 }
 
 // --- System check (Part 51/79 — safe, read-only aggregation only) -------------------------
