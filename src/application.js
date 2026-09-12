@@ -9,6 +9,8 @@ import {createAuth,authorize,fail} from './auth.js';
 import {agentDefinitions} from './agents.js';
 import {installKnowledge,listMemory,saveMemory,proposeMemoryUpdate,listProducts,replaceProducts} from './knowledge.js';
 import {connectionStatus,importSalla,ConnectorError,testAnthropicConnection,testOpenAIConnection,testSallaConnection} from './connectors.js';
+import {processGenericWebhook} from './connectors/generic-webhook/webhook.js';
+import {getConnectorManifest} from './connectors/registry.js';
 import {createGenerator,listAiRuns} from './generation.js';
 import {loadEnvFile} from 'node:process';
 import {installPlanning,listSlots,listJobs,createCalendar,scheduleContent,cancelJobs,prepareDue,buildBrief,saveDailyBrief,riyadhDate,authorizeAutomation} from './planning.js';
@@ -48,7 +50,7 @@ import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,d
 import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
 import {resolveTenantForWhatsAppPhoneNumberId,resolveTenantForMicrosoftSubscription,resolveTenantForSallaMerchant} from './runtime/webhook-tenant-resolver.js';
 import {installIntegrationDefinitions,listIntegrationDefinitions,getIntegrationDefinition} from './integrations/definitions.js';
-import {installIntegrationConnections,createConnection,listConnections,getConnection,getConnectionOrNull,updateConnection,setDefaultConnection,getDefaultConnection,resolveProviderAccount,disconnectConnection,deleteConnection} from './integrations/connections.js';
+import {installIntegrationConnections,createConnection,listConnections,getConnection,getConnectionOrNull,updateConnection,setDefaultConnection,getDefaultConnection,resolveProviderAccount,disconnectConnection,deleteConnection,getOrCreateWebhookPublicId} from './integrations/connections.js';
 import {installCredentialsVault,storeCredential,getCredentialMeta,removeCredential} from './integrations/vault.js';
 import {installOAuthStates,createOAuthState,consumeOAuthState} from './integrations/oauth-state.js';
 import {migrateLegacyIntegrationCredentials} from './integrations/migration.js';
@@ -331,6 +333,19 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           }
         }
         return send(200,{toFetch:result.toFetch.length,rejected:result.rejected,replayed:result.replayed,unresolved:result.unresolved});
+      }
+      // Universal Integration Platform (Phase 6C, Part 3) — the ONE generic inbound webhook
+      // route every future declarative connector uses, so adding a new connector never again
+      // means writing a brand-new route here. Unauthenticated on purpose (an external
+      // platform, not a browser with a session) — authenticity comes entirely from
+      // processGenericWebhook()'s own per-trigger verification (HMAC/header-token/shared-
+      // secret against the connection's real Vault secret), never a session/CSRF check. The
+      // three existing provider routes above are completely unchanged and untouched.
+      const genericWebhook=url.pathname.match(/^\/api\/webhooks\/connectors\/([\w-]+)$/);
+      if(req.method==='POST' && genericWebhook) {
+        const raw=await rawBody(req);
+        const result=await processGenericWebhook({db:store.db,env,eventBus,publicId:genericWebhook[1],rawBody:raw,headers:req.headers});
+        return send(200,result);
       }
       // Unauthenticated on purpose — load balancers/uptime monitors never hold a session.
       // Still pass through the Host/Origin/Sec-Fetch checks above, same as everything else.
@@ -1297,6 +1312,24 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const connection=setDefaultConnection(store.db,connectionSetDefault[1],session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'INTEGRATION_CONNECTION_SET_DEFAULT',itemId:connection.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,connection);
+      }
+      // Universal Integration Platform (Phase 6C, Part 81) — a safe way for the tenant owner
+      // to retrieve their own connection's real webhook URL. The public id GRANTS ROUTING,
+      // never authentication (Part 83) — real security still depends on the trigger's own
+      // HMAC/header-token verification once configured. Never returns a secret.
+      const connectionWebhook=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/webhook$/);
+      if(req.method==='GET' && connectionWebhook) {
+        authorize(session,['owner','operator']);
+        const connection=getConnection(store.db,connectionWebhook[1],session.tenantId);
+        const manifest=getConnectorManifest(connection.integrationDefinitionId);
+        const triggers=manifest?.triggers||[];
+        if(!triggers.length)return send(200,{url:null,status:'NOT_APPLICABLE',triggers:[]});
+        const publicId=getOrCreateWebhookPublicId(store.db,connection.id,session.tenantId);
+        return send(200,{
+         url:`${baseUrl}/api/webhooks/connectors/${publicId}`,
+         status:connection.status,
+         triggers:triggers.map(t=>({slug:t.slug,name:t.name,authType:t.authentication.type}))
+        });
       }
       const connectionTest=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/test$/);
       if(req.method==='POST' && connectionTest) {

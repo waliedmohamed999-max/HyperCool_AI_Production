@@ -48,15 +48,28 @@ None of these exist yet — Phase 6A only proves the SDK layer itself is sound.
 contract.** A connector with no verified documentation is built as `DEFINITION_ONLY` or
 `NOT_IMPLEMENTED` (Part 5's honest availability states) — never a fake `AVAILABLE`/`CONNECTED`.
 
+## Phase 6C update: adding a webhook trigger to a connector
+
+For a connector that also receives inbound events, build the manifest with
+`validateWebhookManifest()` (`src/connectors/generic-webhook/manifest.js`) instead of
+`validateManifest`/`validateRestManifest` directly (it calls through to whichever applies) and
+add a `triggers` array — see `src/connectors/acme/manifest.js`'s real `order_created` trigger and
+`docs/GENERIC_WEBHOOK_FRAMEWORK.md`. No new webhook route is needed: the generic
+`POST /api/webhooks/connectors/:publicId` route already dispatches to any registered connector's
+declared triggers.
+
 ## Conceptual future example: Zid (Phase 6, Part 105) — illustration only, not implemented
 
-*Illustration only — no Zid endpoint, scope, or URL below has been verified against Zid's own
-documentation, and none is implemented anywhere in this codebase.* If Zid's real, documented
-REST API is confirmed at implementation time, a real Zid connector would likely look like a
-Generic REST manifest (`docs/GENERIC_REST_CONNECTOR.md`) declaring the same canonical
-capabilities Salla already proves out — `commerce.products.read`, `commerce.orders.read`,
-`commerce.inventory.read` — so that an existing generic commerce Tool could resolve to either
-Salla or Zid per tenant, with no Agent Runtime change. **Actual endpoints, auth flow, and scopes
+*Illustration only — no Zid endpoint, scope, URL, webhook header, or payload field below has
+been verified against Zid's own documentation, and none is implemented anywhere in this
+codebase.* If Zid's real, documented REST API is confirmed at implementation time, a real Zid
+connector would likely look like a Generic REST manifest (`docs/GENERIC_REST_CONNECTOR.md`)
+declaring the same canonical capabilities Salla already proves out — `commerce.products.read`,
+`commerce.orders.read`, `commerce.inventory.read` — so that an existing generic commerce Tool
+could resolve to either Salla or Zid per tenant, with no Agent Runtime change. If Zid also sends
+real webhooks, its trigger(s) would map to the same real `ORDER_CREATED` Event Bus type Acme's
+own test trigger already proves reaches (`docs/EVENT_NORMALIZATION.md`) — never a fabricated
+HMAC header name or payload shape. **Actual endpoints, auth flow, scopes, and webhook contract
 must come from Zid's official documentation** at that time, never guessed from this example.
 
 ## Conceptual future example: accounting providers (Part 106) — illustration only

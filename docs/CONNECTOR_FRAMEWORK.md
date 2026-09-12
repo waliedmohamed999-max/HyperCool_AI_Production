@@ -10,6 +10,14 @@
 > `'connector_action'`, was already present in `approvals.js`'s `ACTION_TYPES` from 6A and is
 > reused unchanged. Everything else below is exactly as Phase 6A left it.
 
+> **Phase 6C update**: the Generic Webhook Framework (`src/connectors/generic-webhook/`) —
+> see `docs/GENERIC_WEBHOOK_FRAMEWORK.md`, `docs/DATA_MAPPING_ENGINE.md`,
+> `docs/EVENT_NORMALIZATION.md`. New: `integration_connections.webhook_public_id` (additive
+> column, migration verified safe against a real production DB copy), a real
+> `POST /api/webhooks/connectors/:publicId` route and `GET .../connections/:id/webhook` route in
+> `application.js`, and the canonical mapping engine promoted to `core/mapping.js` (6B's mapper
+> now delegates to it). Existing Salla/Meta/Microsoft webhook routes are completely unchanged.
+
 ## What this phase actually built
 
 A real, additive Connector SDK under `src/connectors/` that can represent an existing

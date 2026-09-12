@@ -5,6 +5,12 @@
 > `rest.httpMethod`/`rest.pathTemplate`/mappings) — see `docs/GENERIC_REST_CONNECTOR.md`. No
 > change was made to `validateManifest`/`validateAdapter` themselves.
 
+> **Phase 6C update**: `src/connectors/generic-webhook/manifest.js`'s `validateWebhookManifest()`
+> extends whichever base validation already applies (`validateManifest` or `validateRestManifest`)
+> with webhook-specific trigger fields (`authentication`, `normalizedEventType`, `eventIdPolicy`,
+> discriminator fields) — see `docs/GENERIC_WEBHOOK_FRAMEWORK.md`. Same "re-attach by index"
+> extension technique as 6B; still no change to `core/manifest.js` itself.
+
 
 
 ## Manifest schema (`src/connectors/core/manifest.js`)

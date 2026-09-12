@@ -1,10 +1,10 @@
-// Universal Integration Platform (Phase 6B, Part 18/19) — the minimal declarative mapping
-// engine a REST action needs. Deliberately NOT the full Phase 6C Data Mapping Engine (no
-// arrays-of-transforms, no cross-provider event normalization) — just enough to build a query
-// string / request body from `input`, and to extract a normalized result from a real response.
-// NO eval, NO `new Function`, NO template engine capable of executing code (Part 19) — every
-// operation here is a plain, enumerable, reviewable case in a switch statement.
+// Universal Integration Platform (Phase 6B) — request-side helpers (query/body/path
+// construction from `input`) specific to outbound REST calls. Response EXTRACTION now
+// delegates to the Phase 6C canonical engine (`../core/mapping.js`'s `applyMapping`) — see that
+// file for the full mapping language; `applyResponseMapping` below is kept as this module's own
+// export name for backward compatibility with existing Phase 6B call sites (adapter.js).
 import {resolveTemplate} from './headers.js';
+import {applyMapping} from '../core/mapping.js';
 
 export function buildQueryMapping(queryMapping={},input={}) {
  const params=new URLSearchParams();
@@ -39,39 +39,7 @@ export function fillPathTemplate(pathTemplate,input={}) {
  });
 }
 
-/**
- * Response mapping (Part 18) — one declarative node type per real, safe primitive:
- * {path:"a.b.c"}          -> nested lookup on the parsed JSON response
- * {const:value}           -> a literal constant
- * {rename:"a.b", as:...}  -> same as path (kept for manifest authors' clarity)
- * {string:node}/{number:node}/{boolean:node} -> coerce a resolved sub-mapping
- * {array:node}            -> maps `node` over each element of an array found by an inner path
- * {fallback:[a,b,...]}    -> first non-null/non-undefined result among the listed mappings
- * A plain string shorthand is treated as {path:"..."}.
- */
+/** Response mapping — thin alias over the canonical engine (see `../core/mapping.js`). */
 export function applyResponseMapping(mapping,data) {
- if(mapping===null||mapping===undefined)return data;
- if(typeof mapping==='string')return lookupPath(data,mapping);
- if(typeof mapping!=='object')return mapping;
- if('const' in mapping)return mapping.const;
- if('path' in mapping)return lookupPath(data,mapping.path);
- if('rename' in mapping)return lookupPath(data,mapping.rename);
- if('string' in mapping){const v=applyResponseMapping(mapping.string,data);return v===undefined||v===null?v:String(v);}
- if('number' in mapping){const v=applyResponseMapping(mapping.number,data);return v===undefined||v===null?v:Number(v);}
- if('boolean' in mapping){const v=applyResponseMapping(mapping.boolean,data);return v===undefined||v===null?v:Boolean(v);}
- if('fallback' in mapping){for(const option of mapping.fallback){const v=applyResponseMapping(option,data);if(v!==undefined&&v!==null)return v;}return null;}
- if('array' in mapping){
-  const source=lookupPath(data,mapping.array.from);
-  if(!Array.isArray(source))return [];
-  return source.map(item=>applyMappingObject(mapping.array.item,item));
- }
- if('object' in mapping)return applyMappingObject(mapping.object,data);
- return null;
-}
-function applyMappingObject(shape,data) {
- return Object.fromEntries(Object.entries(shape).map(([key,sub])=>[key,applyResponseMapping(sub,data)]));
-}
-function lookupPath(data,path) {
- if(!path)return data;
- return path.split('.').reduce((acc,key)=>acc==null?undefined:acc[key],data);
+ return applyMapping(mapping,data);
 }

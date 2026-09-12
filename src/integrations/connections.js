@@ -43,6 +43,13 @@ export function installIntegrationConnections(db) {
  CREATE INDEX IF NOT EXISTS idx_integration_connections_tenant_def ON integration_connections(tenant_id,integration_definition_id);
  CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_connections_external_account ON integration_connections(integration_definition_id,external_account_id) WHERE external_account_id IS NOT NULL;
  CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_connections_one_default ON integration_connections(tenant_id,integration_definition_id) WHERE is_default=1;`);
+ // Phase 6C (Part 4) — an unguessable, non-sequential public identifier a webhook-capable
+ // connection can be reached by, so /api/webhooks/connectors/:publicId never exposes this
+ // table's real (sequential-feeling, cross-referenceable) primary key. Nullable and generated
+ // lazily (getOrCreateWebhookPublicId, webhook.js) — most connections never need one.
+ const columns=db.prepare('PRAGMA table_info(integration_connections)').all().map(c=>c.name);
+ if(!columns.includes('webhook_public_id'))db.exec('ALTER TABLE integration_connections ADD COLUMN webhook_public_id TEXT');
+ db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_connections_webhook_public_id ON integration_connections(webhook_public_id) WHERE webhook_public_id IS NOT NULL;');
 }
 function hydrate(row) {
  return {
@@ -52,7 +59,8 @@ function hydrate(row) {
   scopes:row.scopes?JSON.parse(row.scopes):[],connectedBy:row.connected_by,connectedAt:row.connected_at,
   lastHealthCheck:row.last_health_check,lastSuccessAt:row.last_success_at,lastErrorAt:row.last_error_at,
   lastErrorCode:row.last_error_code,lastErrorMessageSafe:row.last_error_message_safe,
-  isDefault:!!row.is_default,createdAt:row.created_at,updatedAt:row.updated_at
+  isDefault:!!row.is_default,createdAt:row.created_at,updatedAt:row.updated_at,
+  webhookPublicId:row.webhook_public_id||null
  };
 }
 /** Creates a new, empty (NOT_CONFIGURED) connection — never with a credential attached; that's the Vault's job. */
@@ -83,6 +91,27 @@ export function getConnection(db,id,tenantId=null) {
 export function getConnectionOrNull(db,id,tenantId=null) {
  const row=db.prepare('SELECT * FROM integration_connections WHERE id=? AND tenant_id=?').get(id,tenantId||resolveActiveTenantId(db));
  return row?hydrate(row):null;
+}
+/**
+ * Phase 6C (Part 5) — the ONE lookup a generic inbound webhook route is allowed to use: no
+ * tenant filter, because the whole point of a public webhook id is that the caller (an
+ * external platform) has no session/tenant context at all — the tenant is resolved FROM this
+ * row, never supplied by the caller. Never trust a tenant_id/tenantId the request itself claims.
+ */
+export function getConnectionByPublicId(db,publicId) {
+ if(!publicId)return null;
+ const row=db.prepare('SELECT * FROM integration_connections WHERE webhook_public_id=?').get(publicId);
+ return row?hydrate(row):null;
+}
+/** Lazily assigns a real, cryptographically random public id the first time one is needed —
+ * most connections never call this. Idempotent: returns the existing one if already set. */
+export function getOrCreateWebhookPublicId(db,id,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const current=getConnection(db,id,resolvedTenantId);
+ if(current.webhookPublicId)return current.webhookPublicId;
+ const publicId=randomUUID().replace(/-/g,'');
+ db.prepare('UPDATE integration_connections SET webhook_public_id=?,updated_at=? WHERE id=? AND tenant_id=?').run(publicId,new Date().toISOString(),id,resolvedTenantId);
+ return publicId;
 }
 export function updateConnection(db,id,patch,tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);

@@ -1,5 +1,12 @@
 # Generic REST Connector (Phase 6B)
 
+> **Phase 6C update**: response mapping now delegates to the canonical engine promoted to
+> `src/connectors/core/mapping.js` (`docs/DATA_MAPPING_ENGINE.md`) — same behavior, same
+> `applyResponseMapping()` export, now with real prototype-pollution/depth/array limits it did
+> not have in 6B. A REST-and-webhook connector (like Acme) validates through
+> `validateWebhookManifest()` instead of `validateRestManifest()` directly — it calls through to
+> the REST validation first, then layers webhook trigger validation on top.
+
 `src/connectors/generic-rest/`. A single, shared `genericRestAdapter` (`adapter.js`) that
 executes ANY REST connector's declarative manifest — no per-provider code. See
 `docs/CONNECTOR_SSRF_SECURITY.md` for the security layer every request goes through, and

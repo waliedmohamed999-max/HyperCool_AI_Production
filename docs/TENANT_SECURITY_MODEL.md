@@ -15,6 +15,15 @@ test, which also asserts the mock transport was never called at all. See
 `docs/GENERIC_REST_CONNECTOR.md` and `docs/CONNECTOR_SSRF_SECURITY.md` for the rest of the
 Generic REST Connector's security model (SSRF protection, header/secret handling).
 
+**Phase 6C addition**: the Generic Webhook Framework (`docs/GENERIC_WEBHOOK_FRAMEWORK.md`)
+resolves tenant identity ONLY from `integration_connections.webhook_public_id` — an unguessable,
+random identifier — never from any tenant-claiming field in the request body/query/headers.
+Proven by a real test that submits a correctly-signed webhook carrying a spoofed `tenant_id`
+field naming a different, real tenant, and confirms the event only ever reaches the tenant the
+public id actually belongs to. A repeated invalid signature against any given webhook endpoint
+also never degrades that connection's own health/status — an anonymous internet caller cannot
+trivially poison a real tenant's connection state (Part 111).
+
 ## Tenant resolution
 
 `src/tenancy.js` is the single source of truth. `resolveTenantForUser(db, userId)` is what
