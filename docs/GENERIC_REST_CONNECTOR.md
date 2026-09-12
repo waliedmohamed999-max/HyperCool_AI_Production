@@ -7,6 +7,15 @@
 > `validateWebhookManifest()` instead of `validateRestManifest()` directly — it calls through to
 > the REST validation first, then layers webhook trigger validation on top.
 
+> **Phase 6D update**: this module is now reachable two ways — a code-defined manifest (Acme
+> Commerce, this doc's own test fixture, still never registered in the real registry) or a
+> Platform-Admin-authored, DB-backed definition published through the Integration Builder. Either
+> way, `genericRestAdapter` and `validateRestManifest()` themselves are completely unchanged —
+> the ONE new gap this phase found and fixed here was `validateOutboundUrl()` not catching a
+> literal IP hostname (e.g. `127.0.0.1`, `169.254.169.254`) at synchronous, save-time validation
+> (only the async, request-time `safeFetch` path caught it before) — see
+> `docs/CONNECTOR_SSRF_SECURITY.md` and `docs/DYNAMIC_CONNECTOR_DEFINITIONS.md`.
+
 `src/connectors/generic-rest/`. A single, shared `genericRestAdapter` (`adapter.js`) that
 executes ANY REST connector's declarative manifest — no per-provider code. See
 `docs/CONNECTOR_SSRF_SECURITY.md` for the security layer every request goes through, and

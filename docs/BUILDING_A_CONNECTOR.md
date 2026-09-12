@@ -1,4 +1,17 @@
-# Building a New Connector (Phase 6A baseline; Phase 6D will add a no-code Builder UI on top)
+# Building a New Connector (Phase 6A baseline; Phase 6D added a no-code Builder UI on top)
+
+> **Phase 6D update**: for a plain REST/HTTP API with NONE/API_KEY/BEARER_TOKEN/BASIC auth, you
+> no longer need to write ANY file at all — a Platform Admin can create, configure, test, and
+> publish the connector entirely through the Integration Builder UI (`#platform`,
+> `docs/INTEGRATION_BUILDER.md`). This doc's file-based pattern (below, and the 6B "write a
+> manifest, reuse `genericRestAdapter`" shortcut) remains the right choice for: a provider needing
+> a real custom adapter (OAuth2, token refresh, non-REST behavior), a `BUILT_IN`/`AI_PROVIDER`
+> connector (reserved for real, code-reviewed implementations — the Builder can only create
+> `GENERIC_REST` ones), or simply a connector a developer wants under source control /
+> code review before it ever reaches a Platform Admin's hands. Both paths converge on the exact
+> same validator (`validateManifest`/`validateRestManifest`/`validateWebhookManifest`) and the
+> exact same `ConnectorRuntime.execute()` pipeline — neither is a "lesser" connector. See
+> `docs/DYNAMIC_CONNECTOR_DEFINITIONS.md`.
 
 > **Phase 6B update**: for a plain REST/HTTP API (no special OAuth needs), you no longer need to
 > write a custom adapter at all — write a manifest using `validateRestManifest()`

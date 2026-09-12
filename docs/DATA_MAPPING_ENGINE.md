@@ -1,5 +1,11 @@
 # Declarative Data Mapping Engine (Phase 6C)
 
+> **Phase 6D update**: no change to the engine itself. A Builder-authored action's
+> `responseMapping` (Actions tab) and a Builder-authored trigger's `mappingDefinition` (Webhooks
+> tab) are stored as plain JSON in `connector_actions`/`connector_triggers` and run through this
+> exact same `applyMapping()` — never a UI-specific mapper, never relaxed limits for a Builder-
+> authored connector versus a code-defined one.
+
 `src/connectors/core/mapping.js` — `applyMapping()`. The ONE canonical mapper: Phase 6B's
 Generic REST response mapping (`generic-rest/mapping.js`'s `applyResponseMapping`) now delegates
 here unchanged; the Generic Webhook Framework uses it for exactly the same purpose (extracting a

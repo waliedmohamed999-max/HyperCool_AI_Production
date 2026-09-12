@@ -18,6 +18,18 @@
 > `application.js`, and the canonical mapping engine promoted to `core/mapping.js` (6B's mapper
 > now delegates to it). Existing Salla/Meta/Microsoft webhook routes are completely unchanged.
 
+> **Phase 6D update**: `registry.js` (the static, code-defined registry described below) is now
+> only ONE of two resolution paths — `src/connectors/dynamic/registry.js`'s
+> `resolveConnectorDynamic()` is the new default `resolveConnector` for both
+> `executeConnectorAction` and `checkConnectorHealth`, and delegates straight back to this exact
+> static registry for `BUILT_IN`/`AI_PROVIDER` connectors (Salla/Anthropic/OpenAI are completely
+> unaffected — same manifest, same adapter, same behavior). A `GENERIC_REST` connector, published
+> through the new Integration Builder, resolves from the database instead. See
+> `docs/DYNAMIC_CONNECTOR_DEFINITIONS.md` and `docs/CONNECTOR_VERSIONING.md`. The 13-step
+> pipeline below is otherwise unchanged; the only functional addition is that a connection is now
+> fetched one step earlier so its pinned `connector_version` (if any) can be passed into
+> `resolveConnector`.
+
 ## What this phase actually built
 
 A real, additive Connector SDK under `src/connectors/` that can represent an existing

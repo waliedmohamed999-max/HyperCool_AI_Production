@@ -1,5 +1,15 @@
 # Control Center UI (Multi-Tenant Phase 4C-2)
 
+> **Phase 6D update**: the Integrations tab is now explicitly catalog-driven — it groups provider
+> cards by their real, live `category` (from `GET /api/control-center/summary`'s
+> `integrations.providers`, itself sourced from `listIntegrationDefinitions(db)`, never a
+> hardcoded per-provider list) and shows each provider's real capabilities/status. A `DRAFT`
+> dynamic connector is filtered out server-side before it ever reaches this page; a `DISABLED`
+> one shows an honest badge instead of vanishing. "Add Connection" for any connector outside the
+> existing Salla/Anthropic/OpenAI flows now opens a real, working Generic Connection UI keyed off
+> the connector's actual auth type, instead of the previous silent no-op. See
+> `docs/INTEGRATION_MARKETPLACE.md`.
+
 A real, tenant-scoped dashboard over the Phase 4B/4B.1/4C-1 backend — never a redesign or a
 duplicate of it. No new business logic exists in the frontend; every number, badge, and status
 shown here is read verbatim from real APIs.

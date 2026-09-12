@@ -1,5 +1,14 @@
 # Generic Webhook Framework (Phase 6C)
 
+> **Phase 6D update**: `processGenericWebhook()`'s default `resolveConnector` now points at
+> `src/connectors/dynamic/registry.js`'s `resolveConnectorDynamic()` instead of the old static-
+> only registry — a real bug this phase fixed (a DB-only, Builder-published connector's webhook
+> could never resolve under the old default). A Builder-published connector's real trigger
+> (auth type, mapping, normalized event type) is authored entirely through the Integration
+> Builder's Webhooks tab and stored in `connector_triggers` — resolved and validated exactly like
+> a code-defined trigger, with zero change to the pipeline described below. See
+> `docs/DYNAMIC_CONNECTOR_DEFINITIONS.md`.
+
 `src/connectors/generic-webhook/`. Reuses Phase 6A/6B's SDK and the platform's EXISTING
 idempotency ledger (`webhook_events`) and Event Bus (`runtime/events.js`) — no second copy of
 either was built.

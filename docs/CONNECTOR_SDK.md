@@ -11,6 +11,12 @@
 > discriminator fields) — see `docs/GENERIC_WEBHOOK_FRAMEWORK.md`. Same "re-attach by index"
 > extension technique as 6B; still no change to `core/manifest.js` itself.
 
+> **Phase 6D update**: a manifest can now be assembled from `integration_definitions` +
+> `connector_actions`/`connector_triggers` DB rows instead of a code-defined object literal
+> (`src/connectors/dynamic/hydrate.js`'s `buildRawManifest`), then run through the exact same
+> `validateManifest`/`validateRestManifest`/`validateWebhookManifest` chain described here — no
+> change to any validator itself. See `docs/DYNAMIC_CONNECTOR_DEFINITIONS.md`.
+
 
 
 ## Manifest schema (`src/connectors/core/manifest.js`)

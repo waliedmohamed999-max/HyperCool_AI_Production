@@ -1,5 +1,12 @@
 # Platform Operations (Multi-Tenant Phase 4C-7)
 
+> **Phase 6D update**: the Platform page gained an Integration Builder section
+> (`docs/INTEGRATION_BUILDER.md`), reusing this EXACT SAME `PLATFORM_ADMIN_USERNAMES` allowlist
+> mechanism — never a second admin concept. Every Builder mutation route is gated by the same
+> `requirePlatformAdmin`-style check described below (applied inside
+> `src/connectors/dynamic/builder.js` itself, since Builder functions are called both from HTTP
+> routes and, in principle, future non-HTTP callers).
+
 A minimal Platform Admin foundation for running a small production pilot — explicitly **not**
 a Super Admin SaaS product (Part 19). Everything here reuses real, already-tested data sources
 (`buildControlCenterSummary`, `getOnboardingState`, `listActiveMembers`, `listAuditLog`) —

@@ -24,6 +24,17 @@ public id actually belongs to. A repeated invalid signature against any given we
 also never degrades that connection's own health/status — an anonymous internet caller cannot
 trivially poison a real tenant's connection state (Part 111).
 
+**Phase 6D addition**: a dynamic (Builder-published) connector never widens the attack surface
+described above. Every dynamic definition still resolves to the SAME fixed, code-reviewed
+`genericRestAdapter` (`src/connectors/dynamic/registry.js` — never a DB-controlled `require()` or
+module path), still runs its outbound calls through the identical SSRF-hardened `safeFetch`, and
+still enforces the identical tenant-scoped `getConnectionOrNull` cross-tenant check (proven again,
+freshly, by `tests/integration-builder.test.js`'s own cross-tenant test against a dynamic
+connector). Authoring a NEW connector is now data, gated by a real, independent
+`PLATFORM_ADMIN_USERNAMES` check (`docs/PLATFORM_OPERATIONS.md`) on every mutation — a tenant
+owner, however senior in their own workspace, cannot create, edit, or publish ANY connector
+definition (`PLATFORM_ADMIN_REQUIRED`, verified by both a direct-function and a real-HTTP test).
+
 ## Tenant resolution
 
 `src/tenancy.js` is the single source of truth. `resolveTenantForUser(db, userId)` is what
