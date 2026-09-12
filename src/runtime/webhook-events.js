@@ -37,6 +37,13 @@ export function installWebhookEvents(db) {
   );`);
  }
  db.exec('CREATE INDEX IF NOT EXISTS idx_webhook_events_tenant ON webhook_events(tenant_id);');
+ // Phase 6G, Part 16 — Safe Reprocess needs the ORIGINAL raw body to re-run mapping/dispatch
+ // against. The happy path (PROCESSED/DUPLICATE) still never persists it — Part 76/77 of
+ // Phase 6C's own design note stands unchanged for the 99% success case; this column is only
+ // ever populated when a delivery genuinely FAILS mapping (see generic-webhook/webhook.js),
+ // specifically so that one delivery — and only that one — becomes safely reprocessable.
+ const columns=db.prepare('PRAGMA table_info(webhook_events)').all().map(c=>c.name);
+ if(!columns.includes('raw_payload'))db.exec('ALTER TABLE webhook_events ADD COLUMN raw_payload TEXT');
 }
 export function listWebhookEvents(db,{source,limit=50}={},tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
@@ -61,8 +68,30 @@ export function storeWebhookEvent(db,{source,externalEventId,type,payload,tenant
   .run(row.id,row.tenantId,row.source,row.externalEventId,row.type,row.payload,row.status,row.receivedAt);
  return {stored:result.changes>0,id:row.id};
 }
-export function markWebhookEventProcessed(db,id,status,error=null) {
- db.prepare('UPDATE webhook_events SET status=?,processed_at=?,error=? WHERE id=?').run(status,new Date().toISOString(),error,id);
+export function markWebhookEventProcessed(db,id,status,error=null,rawPayload=undefined) {
+ if(rawPayload!==undefined)
+  db.prepare('UPDATE webhook_events SET status=?,processed_at=?,error=?,raw_payload=? WHERE id=?').run(status,new Date().toISOString(),error,rawPayload===null?null:JSON.stringify(rawPayload),id);
+ else
+  db.prepare('UPDATE webhook_events SET status=?,processed_at=?,error=? WHERE id=?').run(status,new Date().toISOString(),error,id);
+}
+export function getWebhookEventById(db,id,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ return db.prepare('SELECT * FROM webhook_events WHERE id=? AND tenant_id=?').get(id,resolvedTenantId)||null;
+}
+export function listFailedWebhookEvents(db,tenantId,{source=null,limit=50}={}) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ return source
+  ?db.prepare("SELECT * FROM webhook_events WHERE tenant_id=? AND source=? AND status='FAILED' ORDER BY received_at DESC LIMIT ?").all(resolvedTenantId,source,limit)
+  :db.prepare("SELECT * FROM webhook_events WHERE tenant_id=? AND status='FAILED' ORDER BY received_at DESC LIMIT ?").all(resolvedTenantId,limit);
+}
+/** Part 16 — atomic, CAS-guarded status transition (`WHERE status=fromStatus`): two concurrent
+ * "Reprocess" clicks can never both report success, and a row that already moved on (e.g.
+ * another operator's click landed first) is honestly reported as such rather than silently
+ * double-processed. Returns true only if THIS call actually performed the transition. */
+export function transitionWebhookEventStatus(db,id,tenantId,{fromStatus,toStatus,error=null}) {
+ const result=db.prepare('UPDATE webhook_events SET status=?,processed_at=?,error=? WHERE id=? AND tenant_id=? AND status=?')
+  .run(toStatus,new Date().toISOString(),error,id,tenantId,fromStatus);
+ return result.changes>0;
 }
 // A stable fallback identifier for providers whose payload has no natural event id — hashes
 // the payload itself, so an exact-duplicate redelivery (the case idempotency protects

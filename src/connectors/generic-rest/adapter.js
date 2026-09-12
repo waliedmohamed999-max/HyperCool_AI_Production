@@ -7,6 +7,7 @@ import {safeFetch,CONNECTOR_HTTP_ERROR_CODE} from '../core/ssrf.js';
 import {CONNECTOR_ERROR_CODE} from '../core/enums.js';
 import {buildQueryMapping,buildBodyMapping,fillPathTemplate,applyResponseMapping} from './mapping.js';
 import {buildSafeHeaders} from './headers.js';
+import {resolveGenericOAuth2Credential} from '../../runtime/generic-oauth2.js';
 
 class AuthConfigError extends Error {constructor(message){super(message);this.code=CONNECTOR_ERROR_CODE.CAPABILITY_MISSING;}}
 
@@ -27,7 +28,23 @@ function buildAuthHeaders(auth,credential) {
   if(!username)throw new AuthConfigError('missing basic auth credential');
   return {authorization:'Basic '+Buffer.from(`${username}:${password||''}`).toString('base64')};
  }
+ // Phase 6G, Part 18-24 — a Platform-Admin-defined Generic OAuth2 connector (see
+ // src/runtime/generic-oauth2.js). The credential passed in here has ALREADY been through
+ // `resolveOAuth2Credential` below (refreshed-if-needed, persisted) by the time this runs.
+ if(auth.type==='OAUTH2') {
+  const accessToken=credential?.payload?.accessToken;
+  if(!accessToken)throw new AuthConfigError('missing OAuth2 credential');
+  return {authorization:`Bearer ${accessToken}`};
+ }
  throw new AuthConfigError(`unsupported auth type: ${auth.type}`);
+}
+/** Refreshes-then-persists an OAUTH2 credential on demand (Part 24 — exact connection, Vault
+ * credential, no cross-connection fallback) before every real call; every other auth type
+ * passes its credential through unchanged. */
+async function resolveOAuth2Credential({auth,env,db,connection,credential,fetcher}) {
+ if(auth.type!=='OAUTH2'||!connection||!db)return credential;
+ try{return await resolveGenericOAuth2Credential({auth,env,db,connection,credential,fetcher:fetcher||fetch});}
+ catch{return credential;} // a failed refresh surfaces as a normal auth failure below, not a crash
 }
 
 function mapHttpError(code) {
@@ -50,9 +67,10 @@ function mapHttpStatus(status) {
  return null;
 }
 
-async function performRequest({manifest,action,input,credential,resolver,transport}) {
+async function performRequest({manifest,action,input,credential,resolver,transport,env,db,connection,fetcher}) {
  const auth=manifest.auth;
- const authHeaders=buildAuthHeaders(auth,credential);
+ const resolvedCredential=await resolveOAuth2Credential({auth,env,db,connection,credential,fetcher});
+ const authHeaders=buildAuthHeaders(auth,resolvedCredential);
  const rest=action.rest;
  const path=fillPathTemplate(rest.pathTemplate,input);
  const query=buildQueryMapping(rest.queryMapping,input);
@@ -86,12 +104,13 @@ async function performRequest({manifest,action,input,credential,resolver,transpo
 }
 
 export const genericRestAdapter={
- async healthCheck({credential,manifest,resolver,transport}) {
+ async healthCheck({credential,manifest,resolver,transport,env,db,connection,fetcher}) {
   const health=manifest.rest.health;
   if(!health)return {status:'OK'}; // no declared health check — nothing to verify beyond auth presence
   if(!['GET','HEAD'].includes((health.method||'GET').toUpperCase()))
    return {status:'ERROR',errorCode:'CONNECTOR_INVALID_RESPONSE'}; // Part 47 — health is read-only, never POST
-  const authHeaders=(()=>{try{return buildAuthHeaders(manifest.auth,credential);}catch{return null;}})();
+  const resolvedCredential=await resolveOAuth2Credential({auth:manifest.auth,env,db,connection,credential,fetcher});
+  const authHeaders=(()=>{try{return buildAuthHeaders(manifest.auth,resolvedCredential);}catch{return null;}})();
   if(authHeaders===null)return {status:'NOT_CONFIGURED',errorCode:CONNECTOR_ERROR_CODE.CAPABILITY_MISSING};
   const url=new URL(health.path,manifest.rest.baseUrl).href;
   try {
@@ -102,7 +121,7 @@ export const genericRestAdapter={
    return {status:'ERROR',errorCode:mapHttpError(error.code)};
   }
  },
- async executeAction({action,input,credential,manifest,resolver,transport}) {
-  return performRequest({manifest,action,input,credential,resolver,transport});
+ async executeAction({action,input,credential,manifest,resolver,transport,env,db,connection,fetcher}) {
+  return performRequest({manifest,action,input,credential,resolver,transport,env,db,connection,fetcher});
  }
 };

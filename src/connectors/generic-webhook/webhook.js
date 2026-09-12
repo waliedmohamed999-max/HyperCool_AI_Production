@@ -153,7 +153,10 @@ export async function processGenericWebhook({db,env,eventBus,publicId,rawBody,he
  try {
   normalizedData=applyMapping(trigger.mappingDefinition,{payload:parsedBody,headers,connection:{externalAccountId:connection.externalAccountId}});
  } catch(error) {
-  markWebhookEventProcessed(db,stored.id,'FAILED',error instanceof MappingError?error.code:'WEBHOOK_MAPPING_FAILED');
+  // Phase 6G, Part 16 — the raw parsed body is persisted ONLY on this failure path (never on
+  // PROCESSED/DUPLICATE — see webhook-events.js's own note) specifically so a Platform Admin/
+  // tenant owner can later run a real, safe "Reprocess" against the SAME original event.
+  markWebhookEventProcessed(db,stored.id,'FAILED',error instanceof MappingError?error.code:'WEBHOOK_MAPPING_FAILED',parsedBody);
   recordAudit(db,{id:randomUUID(),action:'CONNECTOR_WEBHOOK_FAILED',itemId:connection.id,connectorSlug:manifest.slug,triggerSlug:trigger.slug,errorCode:'WEBHOOK_MAPPING_FAILED',at:new Date().toISOString()},connection.tenantId);
   throw new WebhookError(422,'WEBHOOK_MAPPING_FAILED','mapping failed for this event');
  }

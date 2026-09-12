@@ -18,8 +18,23 @@ import {
  upsertTriggerForConnector,deleteTriggerForConnector,validateConnectorDraft,publishConnector,
  disableConnector,reactivateConnector,getConnectorDependencies,listConnectorsForBuilder,
  getConnectorForBuilder,getTenantCatalog,cloneConnectorDefinition,exportConnectorDefinition,
- importConnectorDefinition
+ importConnectorDefinition,listConnectorVersions,getVersionDiff,createDraftVersion
 } from './connectors/dynamic/builder.js';
+import {getConnectionVersionInfo,previewVersionMigration,migrateConnectionVersion,rollbackConnectionVersion} from './connectors/dynamic/connection-versions.js';
+import {
+ tenantCustomConnectorsEnabled,createTenantConnectorDraft,updateTenantConnectorDraft,
+ upsertTenantConnectorAction,deleteTenantConnectorAction,listTenantConnectorActions,
+ submitTenantConnectorForReview,listOwnTenantConnectors,listPendingTenantConnectors,reviewTenantConnector
+} from './connectors/dynamic/tenant-custom.js';
+import {
+ getWebhookConsoleView,rotateWebhookUrl,rotateWebhookSecret,sendTestWebhookEvent,
+ listFailedWebhookEventsForConnection,getFailedWebhookEventDetail,reprocessFailedWebhookEvent
+} from './connectors/generic-webhook/operations.js';
+import {buildConnectionHealthView} from './integrations/connection-health-view.js';
+import {getConnectionUsage,getConnectorAnalytics} from './runtime/usage-analytics.js';
+import {buildAgentConnectionMap,buildToolCompatibilityView} from './runtime/agent-connection-map.js';
+import {createGenericAuthorizeUrl,exchangeGenericCodeForTokens,resolveGenericIdentity,genericOAuth2Configured} from './runtime/generic-oauth2.js';
+import {randomBytes as cryptoRandomBytes} from 'node:crypto';
 import {executeConnectorAction,checkConnectorHealth} from './connectors/core/runtime.js';
 import {CANONICAL_CAPABILITIES} from './connectors/core/capability-registry.js';
 import {applyMapping,MappingError} from './connectors/core/mapping.js';
@@ -745,7 +760,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const platformConnectorPublish=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/publish$/);
       if(platformConnectorPublish && req.method==='POST') {
         const published=publishConnector(store.db,env,session.user,platformConnectorPublish[1]);
-        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_PUBLISHED',itemId:published.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        const now=new Date().toISOString();
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_PUBLISHED',itemId:published.id,actorId:session.user.id,actorName:session.user.name,at:now});
+        // Phase 6G, Part 8 — a distinct, versioning-specific audit event alongside the general
+        // one above (every publish, including the first, creates a real new version snapshot).
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_VERSION_PUBLISHED',itemId:published.id,detail:String(published.version),actorId:session.user.id,actorName:session.user.name,at:now});
         return send(200,published);
       }
       const platformConnectorDisable=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/disable$/);
@@ -807,6 +826,39 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const imported=importConnectorDefinition(store.db,env,session.user,input.definition,{slug:input.slug});
         recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_IMPORTED',itemId:imported.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
         return send(201,imported);
+      }
+      // Phase 6G, Part 2/3/4 — Versioning UI backend surface.
+      const platformConnectorVersions=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/versions$/);
+      if(platformConnectorVersions && req.method==='GET') {
+        return send(200,listConnectorVersions(store.db,env,session.user,platformConnectorVersions[1]));
+      }
+      const platformConnectorVersionDiff=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/versions\/diff$/);
+      if(platformConnectorVersionDiff && req.method==='GET') {
+        return send(200,getVersionDiff(store.db,env,session.user,platformConnectorVersionDiff[1],url.searchParams.get('from'),url.searchParams.get('to')));
+      }
+      const platformConnectorVersionDraft=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/versions\/draft$/);
+      if(platformConnectorVersionDraft && req.method==='POST') {
+        const drafted=createDraftVersion(store.db,env,session.user,platformConnectorVersionDraft[1]);
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_VERSION_CREATED',itemId:drafted.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,drafted);
+      }
+      // Phase 6G, Part 41 — Connector Analytics (Platform Admin, cross-tenant).
+      const platformConnectorAnalytics=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/analytics$/);
+      if(platformConnectorAnalytics && req.method==='GET') {
+        requirePlatformAdmin(env,session);
+        const definition=getConnectorForBuilder(store.db,env,session.user,platformConnectorAnalytics[1]);
+        return send(200,getConnectorAnalytics(store.db,definition.slug,url.searchParams.get('window')||'7d'));
+      }
+      // Phase 6G, Part 28-38 — Tenant Custom Connector Governance: Platform Admin's review queue.
+      if(url.pathname==='/api/platform/custom-connectors/pending' && req.method==='GET') {
+        return send(200,listPendingTenantConnectors(store.db,env,session.user));
+      }
+      const platformCustomConnectorReview=url.pathname.match(/^\/api\/platform\/custom-connectors\/([\w-]+)\/review$/);
+      if(platformCustomConnectorReview && req.method==='POST') {
+        const input=await body(req);
+        const reviewed=reviewTenantConnector(store.db,env,session.user,platformCustomConnectorReview[1],{decision:input.decision,notes:input.notes});
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'TENANT_CONNECTOR_REVIEWED',itemId:reviewed.id,detail:input.decision,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,reviewed);
       }
       // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only
@@ -1442,11 +1494,67 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // frontend code change to appear here.
       if(req.method==='GET' && url.pathname==='/api/integrations/catalog') {
         authorize(session,['owner','operator']);
-        return send(200,getTenantCatalog(store.db));
+        return send(200,getTenantCatalog(store.db,session.tenantId));
+      }
+      // Phase 6G, Part 28-38 — Tenant Custom Connector Governance (tenant-facing half; the
+      // Platform Admin review-queue routes live earlier, alongside the other Platform Admin
+      // routes, since they are deliberately tenant-independent).
+      if(req.method==='GET' && url.pathname==='/api/integrations/custom-connectors') {
+        authorize(session,['owner']);
+        return send(200,{enabled:tenantCustomConnectorsEnabled(env),connectors:listOwnTenantConnectors(store.db,session.tenantId)});
+      }
+      if(req.method==='POST' && url.pathname==='/api/integrations/custom-connectors') {
+        authorize(session,['owner']);
+        const created=createTenantConnectorDraft(store.db,env,session.user,session.tenantId,await body(req));
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'TENANT_CONNECTOR_DRAFT_CREATED',itemId:created.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(201,created);
+      }
+      const customConnectorItem=url.pathname.match(/^\/api\/integrations\/custom-connectors\/([\w-]+)$/);
+      if(req.method==='PATCH' && customConnectorItem) {
+        authorize(session,['owner']);
+        return send(200,updateTenantConnectorDraft(store.db,env,session.tenantId,customConnectorItem[1],await body(req)));
+      }
+      const customConnectorActions=url.pathname.match(/^\/api\/integrations\/custom-connectors\/([\w-]+)\/actions$/);
+      if(req.method==='GET' && customConnectorActions) {
+        authorize(session,['owner']);
+        return send(200,listTenantConnectorActions(store.db,session.tenantId,customConnectorActions[1]));
+      }
+      if(req.method==='POST' && customConnectorActions) {
+        authorize(session,['owner']);
+        return send(201,upsertTenantConnectorAction(store.db,env,session.tenantId,customConnectorActions[1],await body(req)));
+      }
+      const customConnectorActionItem=url.pathname.match(/^\/api\/integrations\/custom-connectors\/([\w-]+)\/actions\/([\w-]+)$/);
+      if(req.method==='DELETE' && customConnectorActionItem) {
+        authorize(session,['owner']);
+        deleteTenantConnectorAction(store.db,env,session.tenantId,customConnectorActionItem[1],customConnectorActionItem[2]);
+        return send(200,{ok:true});
+      }
+      const customConnectorSubmit=url.pathname.match(/^\/api\/integrations\/custom-connectors\/([\w-]+)\/submit$/);
+      if(req.method==='POST' && customConnectorSubmit) {
+        authorize(session,['owner']);
+        const submitted=submitTenantConnectorForReview(store.db,env,session.tenantId,customConnectorSubmit[1]);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'TENANT_CONNECTOR_SUBMITTED',itemId:submitted.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,submitted);
+      }
+      // Phase 6G, Part 43-47 — Agent Connection Map + Tool Compatibility View.
+      if(req.method==='GET' && url.pathname==='/api/agent-connection-map') {
+        authorize(session,['owner','operator']);
+        return send(200,buildAgentConnectionMap(store.db,env,session.tenantId,{
+         agentId:url.searchParams.get('agentId')||null,connectorSlug:url.searchParams.get('connectorSlug')||null,
+         status:url.searchParams.get('status')||null,capability:url.searchParams.get('capability')||null
+        }));
+      }
+      if(req.method==='GET' && url.pathname==='/api/tool-compatibility') {
+        authorize(session,['owner','operator']);
+        return send(200,buildToolCompatibilityView(store.db,env,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/connections') {
         authorize(session,['owner','operator']);
-        return send(200,listConnections(store.db,{integrationDefinitionId:url.searchParams.get('provider')||undefined},session.tenantId));
+        const connections=listConnections(store.db,{integrationDefinitionId:url.searchParams.get('provider')||undefined},session.tenantId);
+        // Phase 6G, Part 25-27 — Reauth UX: an additive, computed `healthView` field
+        // (displayStatus/tokenExpiry) alongside the real, unchanged `status` column — never a
+        // replacement for it.
+        return send(200,connections.map(c=>({...c,healthView:buildConnectionHealthView(store.db,env,c,getIntegrationDefinition(store.db,c.integrationDefinitionId))})));
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/connections') {
         authorize(session,['owner']);
@@ -1459,7 +1567,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const connectionItem=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)$/);
       if(req.method==='GET' && connectionItem) {
         authorize(session,['owner','operator']);
-        return send(200,getConnection(store.db,connectionItem[1],session.tenantId));
+        const connection=getConnection(store.db,connectionItem[1],session.tenantId);
+        return send(200,{...connection,healthView:buildConnectionHealthView(store.db,env,connection,getIntegrationDefinition(store.db,connection.integrationDefinitionId))});
       }
       if(req.method==='PATCH' && connectionItem) {
         authorize(session,['owner']);
@@ -1488,6 +1597,88 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const connection=setDefaultConnection(store.db,connectionSetDefault[1],session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'INTEGRATION_CONNECTION_SET_DEFAULT',itemId:connection.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,connection);
+      }
+      // Phase 6G, Part 5-7 — Connection Version Migration/Rollback.
+      const connectionVersionInfo=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/version$/);
+      if(req.method==='GET' && connectionVersionInfo) {
+        authorize(session,['owner','operator']);
+        getConnection(store.db,connectionVersionInfo[1],session.tenantId); // 404s if wrong tenant
+        return send(200,getConnectionVersionInfo(store.db,connectionVersionInfo[1],session.tenantId));
+      }
+      const connectionVersionPreview=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/version\/preview$/);
+      if(req.method==='GET' && connectionVersionPreview) {
+        authorize(session,['owner','operator']);
+        return send(200,previewVersionMigration(store.db,session.tenantId,connectionVersionPreview[1],url.searchParams.get('target')));
+      }
+      const connectionVersionMigrate=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/version\/migrate$/);
+      if(req.method==='POST' && connectionVersionMigrate) {
+        authorize(session,['owner']);
+        const input=await body(req);
+        const result=await migrateConnectionVersion({db:store.db,env,fetcher,tenantId:session.tenantId,connectionId:connectionVersionMigrate[1],targetVersion:input.targetVersion});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTION_VERSION_MIGRATED',itemId:result.connection.id,fromVersion:result.fromVersion,toVersion:result.toVersion,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,result);
+      }
+      const connectionVersionRollback=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/version\/rollback$/);
+      if(req.method==='POST' && connectionVersionRollback) {
+        authorize(session,['owner']);
+        const result=await rollbackConnectionVersion({db:store.db,env,fetcher,tenantId:session.tenantId,connectionId:connectionVersionRollback[1]});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTION_VERSION_ROLLED_BACK',itemId:result.connection.id,fromVersion:result.fromVersion,toVersion:result.toVersion,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,result);
+      }
+      // Phase 6G, Part 39/40 — per-connection Usage view.
+      const connectionUsage=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/usage$/);
+      if(req.method==='GET' && connectionUsage) {
+        authorize(session,['owner','operator']);
+        return send(200,getConnectionUsage(store.db,session.tenantId,connectionUsage[1],url.searchParams.get('window')||'7d'));
+      }
+      // Phase 6G, Part 9-17 — Webhook Console.
+      const webhookConsole=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/webhook-console$/);
+      if(req.method==='GET' && webhookConsole) {
+        authorize(session,['owner','operator']);
+        return send(200,getWebhookConsoleView(store.db,webhookConsole[1],session.tenantId,{baseUrl}));
+      }
+      const webhookRotateUrl=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/webhook\/rotate-url$/);
+      if(req.method==='POST' && webhookRotateUrl) {
+        authorize(session,['owner']);
+        const newPublicId=rotateWebhookUrl(store.db,webhookRotateUrl[1],session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_WEBHOOK_URL_ROTATED',itemId:webhookRotateUrl[1],actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,{url:`${baseUrl}/api/webhooks/connectors/${newPublicId}`});
+      }
+      const webhookRotateSecret=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/webhook\/rotate-secret$/);
+      if(req.method==='POST' && webhookRotateSecret) {
+        authorize(session,['owner']);
+        const {webhookSecret}=rotateWebhookSecret(store.db,env,webhookRotateSecret[1],session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_WEBHOOK_SECRET_ROTATED',itemId:webhookRotateSecret[1],actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        // Part 12 — shown to the operator exactly once; no route ever returns it again afterward.
+        return send(200,{webhookSecret});
+      }
+      const webhookTest=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/webhook\/test$/);
+      if(req.method==='POST' && webhookTest) {
+        authorize(session,['owner','operator']);
+        const input=await body(req);
+        const result=await sendTestWebhookEvent({db:store.db,env,eventBus,connectionId:webhookTest[1],tenantId:session.tenantId,triggerSlug:input.triggerSlug,samplePayload:input.samplePayload});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_WEBHOOK_TEST_SENT',itemId:webhookTest[1],detail:result.status,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,result);
+      }
+      const webhookFailedList=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/webhook\/failed$/);
+      if(req.method==='GET' && webhookFailedList) {
+        authorize(session,['owner','operator']);
+        return send(200,listFailedWebhookEventsForConnection(store.db,webhookFailedList[1],session.tenantId));
+      }
+      const webhookFailedDetail=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/webhook\/failed\/([\w-]+)$/);
+      if(req.method==='GET' && webhookFailedDetail) {
+        // Part 15 — Platform Admin OR the tenant owner of this exact connection; never any
+        // other tenant's operator, and never a bare "operator" role (raw payload can carry
+        // real customer data — owner-only, one notch stricter than the console's own GET/list).
+        if(!isPlatformAdmin(env,session.user))authorize(session,['owner']);
+        return send(200,getFailedWebhookEventDetail(store.db,webhookFailedDetail[1],session.tenantId,webhookFailedDetail[2]));
+      }
+      const webhookReprocess=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/webhook\/failed\/([\w-]+)\/reprocess$/);
+      if(req.method==='POST' && webhookReprocess) {
+        authorize(session,['owner']);
+        const result=reprocessFailedWebhookEvent({db:store.db,eventBus,connectionId:webhookReprocess[1],tenantId:session.tenantId,eventId:webhookReprocess[2]});
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_WEBHOOK_REPROCESSED',itemId:webhookReprocess[2],actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,result);
       }
       // Universal Integration Platform (Phase 6C, Part 81) — a safe way for the tenant owner
       // to retrieve their own connection's real webhook URL. The public id GRANTS ROUTING,
@@ -1564,13 +1755,37 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         recordAudit(store.db,{id:crypto.randomUUID(),action:'INTEGRATION_CONNECTION_TESTED',itemId:connection.id,result:result.status,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
         return send(200,{...result,connection:updated});
       }
+      // Phase 6G, Part 18-26 — the ONE resolver every OAuth-flow route (reconnect/start/
+      // callback) shares: a slug is OAuth-reconnectable exactly when it is either a fixed,
+      // code-reviewed GENERIC_OAUTH_PROVIDERS entry (Salla/Zid) OR a real, PUBLISHED,
+      // Platform-Admin-authored GENERIC_REST connector declaring `auth.type==='OAUTH2'` (Part
+      // 23 — never a tenant-supplied URL; its authorizeUrl/tokenUrl were already SSRF/HTTPS-
+      // validated at save time by validateOAuth2Config).
+      const resolveOAuthProvider=(slug)=>{
+       const builtIn=GENERIC_OAUTH_PROVIDERS[slug];
+       if(builtIn)return builtIn;
+       const definition=getIntegrationDefinition(store.db,slug);
+       if(!definition||definition.adapterType!=='GENERIC_REST'||definition.status!=='PUBLISHED'||definition.authConfig?.type!=='OAUTH2')return null;
+       const auth=definition.authConfig;
+       const redirectUri=`${baseUrl}/api/integrations/oauth/${slug}/callback`;
+       return {
+        defaultConnectionName:definition.nameAr,isGenericDynamic:true,pkce:!!auth.pkce,
+        createAuthorizeUrl:(env2,_userId,state,codeVerifier)=>createGenericAuthorizeUrl(auth,env2,state,{redirectUri,codeVerifier}),
+        exchangeCodeForTokens:({env:env2,fetcher:f,code,codeVerifier})=>exchangeGenericCodeForTokens(auth,env2,f,{code,redirectUri,codeVerifier}),
+        resolveIdentity:auth.identityEndpoint?({env:env2,fetcher:f,accessToken})=>resolveGenericIdentity(auth,env2,f,accessToken):null
+       };
+      };
       const connectionReconnect=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/reconnect$/);
       if(req.method==='POST' && connectionReconnect) {
         authorize(session,['owner']);
         const connection=getConnection(store.db,connectionReconnect[1],session.tenantId);
         const definition=getIntegrationDefinition(store.db,connection.integrationDefinitionId);
         if(definition?.authType==='API_KEY')fail(400,'أعد الربط عبر مسار بيانات الاعتماد (credential) لا عبر reconnect');
-        if(connection.integrationDefinitionId!=='salla')fail(501,'إعادة الربط العامة غير متاحة بعد لهذا المزوّد — استخدم مسار الربط الحالي لهذا التكامل');
+        // Phase 6G fix — this used to hardcode `!=='salla'`, silently refusing reconnect for
+        // EVERY other OAuth2 connector (Zid included, and now any Generic OAuth2 connector) even
+        // though the underlying `/oauth/:slug/start?connectionId=` flow already fully supports
+        // reconnecting an existing connection (Part 26 — same logical connection, no duplicate).
+        if(!resolveOAuthProvider(connection.integrationDefinitionId))fail(501,'إعادة الربط العامة غير متاحة بعد لهذا المزوّد — استخدم مسار الربط الحالي لهذا التكامل');
         return send(200,{reauthorizeUrl:`/api/integrations/oauth/${connection.integrationDefinitionId}/start?connectionId=${connection.id}`});
       }
       // API_KEY connect flow (Anthropic/OpenAI, Phase 26): backend tests the submitted key
@@ -1644,7 +1859,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
          recordAudit(store.db,{id:crypto.randomUUID(),action:'CREDENTIAL_TEST_FAILED',itemId:connection.id,errorCode:health.errorCode||health.status,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
          fail(422,`فشل اختبار الاتصال: ${health.errorCode||health.status}`);
         }
-        updateConnection(store.db,connection.id,{status:'CONNECTED',connectedBy:session.user.id,connectedAt:connection.connectedAt||now,lastHealthCheck:now,lastSuccessAt:now,lastErrorAt:null,lastErrorCode:null,lastErrorMessageSafe:null},session.tenantId);
+        // Phase 6G — pin this connection to the connector's current PUBLISHED version at the
+        // exact moment it first becomes CONNECTED (see the matching note on the generic OAuth
+        // callback route; same real gap, same fix, same rationale — nothing before this phase
+        // ever actually wrote this pin at connect time for ANY connection).
+        updateConnection(store.db,connection.id,{status:'CONNECTED',connectedBy:session.user.id,connectedAt:connection.connectedAt||now,lastHealthCheck:now,lastSuccessAt:now,lastErrorAt:null,lastErrorCode:null,lastErrorMessageSafe:null,connectorVersion:definition.status==='PUBLISHED'?definition.version:connection.connectorVersion},session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'CREDENTIAL_CREATED',itemId:connection.id,provider:connection.integrationDefinitionId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
         return send(200,getCredentialMeta(store.db,connection.id,session.tenantId));
       }
@@ -1656,26 +1875,33 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // (Phase 54's multi-store proof). Every provider here is a fixed, code-reviewed entry in
       // GENERIC_OAUTH_PROVIDERS below — a tenant never supplies its own authorize/token URL
       // (Part 3 of Phase 6E: "No Generic Unsafe OAuth").
+      // Phase 6G, Part 18-24 — `resolveOAuthProvider` (defined once above, near the reconnect
+      // route) already covers a Generic OAuth2 connector too — a brand-new one never needs a
+      // code change here.
       const genericOAuthStart=url.pathname.match(/^\/api\/integrations\/oauth\/([\w-]+)\/start$/);
       if(req.method==='GET' && genericOAuthStart) {
         authorize(session,['owner']);
         const slug=genericOAuthStart[1];
-        const provider=GENERIC_OAUTH_PROVIDERS[slug];
+        const provider=resolveOAuthProvider(slug);
         if(!provider)fail(501,'تدفق الربط العام (متعدد الاتصالات) غير متاح بعد لهذا التكامل — استخدم مسار الربط الحالي');
         if(!getIntegrationDefinition(store.db,slug))fail(400,'تكامل غير معروف');
         const existingId=url.searchParams.get('connectionId')||null;
         const connection=existingId
          ?getConnection(store.db,existingId,session.tenantId)
          :createConnection(store.db,{integrationDefinitionId:slug,name:url.searchParams.get('name')||provider.defaultConnectionName,connectedBy:session.user.id},session.tenantId);
-        const stateToken=createOAuthState(store.db,{tenantId:session.tenantId,userId:session.user.id,integrationDefinitionId:slug,connectionId:connection.id},env);
+        // Part 22 — PKCE verifier generated once here and bound to the state row itself
+        // (oauth-state.js already supports this — encrypted at rest, single-use, tenant/user-
+        // bound); only a connector that actually declared `auth.pkce:true` ever uses this path.
+        const codeVerifier=provider.pkce?cryptoRandomBytes(32).toString('base64url'):null;
+        const stateToken=createOAuthState(store.db,{tenantId:session.tenantId,userId:session.user.id,integrationDefinitionId:slug,connectionId:connection.id,pkceVerifier:codeVerifier},env);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'OAUTH_STARTED',itemId:connection.id,provider:slug,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-        res.writeHead(302,{Location:provider.createAuthorizeUrl(env,session.user.id,stateToken)});return res.end();
+        res.writeHead(302,{Location:provider.createAuthorizeUrl(env,session.user.id,stateToken,codeVerifier)});return res.end();
       }
       const genericOAuthCallback=url.pathname.match(/^\/api\/integrations\/oauth\/([\w-]+)\/callback$/);
       if(req.method==='GET' && genericOAuthCallback) {
         authorize(session,['owner']);
         const slug=genericOAuthCallback[1];
-        const provider=GENERIC_OAUTH_PROVIDERS[slug];
+        const provider=resolveOAuthProvider(slug);
         if(!provider)fail(501,'تدفق الربط العام (متعدد الاتصالات) غير متاح بعد لهذا التكامل');
         const code=url.searchParams.get('code'),state=url.searchParams.get('state');
         if(!code||!state)fail(400,'استجابة ربط ناقصة (code/state)');
@@ -1686,8 +1912,14 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
          throw error;
         }
         if(consumed.tenantId!==session.tenantId)fail(403,'طلب الربط لا يخص هذه المنشأة');
-        const tokens=await provider.exchangeCodeForTokens({env,fetcher,code});
+        const tokens=await provider.exchangeCodeForTokens({env,fetcher,code,codeVerifier:consumed.pkceVerifier});
         storeCredential(store.db,env,{connectionId:consumed.connectionId,credentialType:'oauth_tokens',payload:{accessToken:tokens.accessToken,refreshToken:tokens.refreshToken,expiresAt:tokens.expiresAt}},session.tenantId);
+        // Phase 6G — a GENERIC_REST OAUTH2 connection is pinned to the connector's current
+        // PUBLISHED version at the exact moment it first becomes connected (Part 42/108/109 of
+        // Phase 6D's own versioning policy — nothing before this phase ever actually wrote this
+        // pin at connect time, see the `updateConnection` fix in integrations/connections.js).
+        const connectDefinition=getIntegrationDefinition(store.db,slug);
+        const connectorVersionPin=connectDefinition?.adapterType==='GENERIC_REST'?connectDefinition.version:undefined;
         // Phase 6E, Part 21 — Zid's real, documented, read-only identity endpoint
         // (GET /v1/managers/account/profile) is called right after a successful token
         // exchange so `externalAccountId`/`externalAccountName` are resolved honestly instead
@@ -1704,6 +1936,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
          status:'CONNECTED',externalAccountType:slug,scopes:tokens.scopes,
          ...(identity.externalAccountId?{externalAccountId:identity.externalAccountId}:{}),
          ...(identity.externalAccountName?{externalAccountName:identity.externalAccountName}:{}),
+         ...(connectorVersionPin!==undefined?{connectorVersion:connectorVersionPin}:{}),
          connectedBy:session.user.id,connectedAt:now,lastSuccessAt:now,lastErrorAt:null,lastErrorCode:null,lastErrorMessageSafe:null
         },session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'OAUTH_COMPLETED',itemId:connection.id,provider:slug,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);

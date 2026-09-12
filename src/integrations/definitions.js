@@ -39,7 +39,16 @@ export function installIntegrationDefinitions(db) {
   ['created_by_user_id',"TEXT"],
   ['published_at',"TEXT"],
   ['rest_config',"TEXT"], // JSON: {baseUrl, allowHttp, allowedHosts, tenantConfigurableHost, health}
-  ['auth_config',"TEXT"] // JSON: real auth type + non-secret config (headerName, credentialSchema, ...) — Part 12/13
+  ['auth_config',"TEXT"], // JSON: real auth type + non-secret config (headerName, credentialSchema, ...) — Part 12/13
+  // Phase 6G — Tenant Custom Connector governance (docs/TENANT_CUSTOM_CONNECTORS.md). NULL on
+  // every platform-authored/built-in row (unchanged, globally visible exactly as before) —
+  // only set on a tenant-submitted draft, which getTenantCatalog/listConnectorsForBuilder must
+  // then scope to its owning tenant (+ platform admins) instead of ever listing it globally.
+  ['owner_tenant_id',"TEXT"],
+  ['review_status',"TEXT"], // NULL (platform-authored) | PENDING | CHANGES_REQUESTED | APPROVED | REJECTED
+  ['review_notes',"TEXT"],
+  ['reviewed_by_user_id',"TEXT"],
+  ['reviewed_at',"TEXT"]
  ];
  for(const [name,def] of additions)
   if(!columns.includes(name))db.exec(`ALTER TABLE integration_definitions ADD COLUMN ${name} ${def}`);
@@ -105,12 +114,18 @@ function hydrate(row) {
  return {id:row.id,slug:row.slug,nameAr:row.name_ar,nameEn:row.name_en,category:row.category,descriptionAr:row.description_ar,descriptionEn:row.description_en,authType:row.auth_type,iconKey:row.icon_key,capabilities:JSON.parse(row.capabilities),isAvailable:!!row.is_available,connectionMode:row.connection_mode_override||connectionModeFor(row.slug),createdAt:row.created_at,updatedAt:row.updated_at,
   status:row.status||'PUBLISHED',version:row.version||1,adapterType:row.adapter_type||'BUILT_IN',adapterKey:row.adapter_key||row.slug,
   isSystem:!!row.is_system,createdByUserId:row.created_by_user_id||null,publishedAt:row.published_at||null,
-  restConfig:row.rest_config?JSON.parse(row.rest_config):null,authConfig:row.auth_config?JSON.parse(row.auth_config):null};
+  restConfig:row.rest_config?JSON.parse(row.rest_config):null,authConfig:row.auth_config?JSON.parse(row.auth_config):null,
+  ownerTenantId:row.owner_tenant_id||null,reviewStatus:row.review_status||null,reviewNotes:row.review_notes||null,
+  reviewedByUserId:row.reviewed_by_user_id||null,reviewedAt:row.reviewed_at||null};
 }
 export function listIntegrationDefinitions(db) {
  return db.prepare('SELECT * FROM integration_definitions ORDER BY category,slug').all().map(hydrate);
 }
 export function getIntegrationDefinition(db,slug) {
  const row=db.prepare('SELECT * FROM integration_definitions WHERE slug=?').get(slug);
+ return row?hydrate(row):null;
+}
+export function getIntegrationDefinitionById(db,id) {
+ const row=db.prepare('SELECT * FROM integration_definitions WHERE id=?').get(id);
  return row?hydrate(row):null;
 }

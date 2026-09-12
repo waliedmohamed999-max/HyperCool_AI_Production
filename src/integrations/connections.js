@@ -50,6 +50,10 @@ export function installIntegrationConnections(db) {
  const columns=db.prepare('PRAGMA table_info(integration_connections)').all().map(c=>c.name);
  if(!columns.includes('webhook_public_id'))db.exec('ALTER TABLE integration_connections ADD COLUMN webhook_public_id TEXT');
  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_connections_webhook_public_id ON integration_connections(webhook_public_id) WHERE webhook_public_id IS NOT NULL;');
+ // Phase 6D originally added this column from installDynamicConnectorTables (store.js) — moved
+ // here too (Phase 6G) so it exists for ANY test/bootstrap path that installs this table without
+ // also installing the dynamic-connector tables; `updateConnection` below always writes it.
+ if(!columns.includes('connector_version'))db.exec('ALTER TABLE integration_connections ADD COLUMN connector_version INTEGER');
 }
 function hydrate(row) {
  return {
@@ -120,15 +124,31 @@ export function getOrCreateWebhookPublicId(db,id,tenantId=null) {
  db.prepare('UPDATE integration_connections SET webhook_public_id=?,updated_at=? WHERE id=? AND tenant_id=?').run(publicId,new Date().toISOString(),id,resolvedTenantId);
  return publicId;
 }
+/** Phase 6G, Part 10 — Webhook Console "Rotate URL": UNCONDITIONALLY replaces the public id
+ * (unlike the lazy get-or-create above) so the OLD url stops resolving to anything immediately —
+ * `getConnectionByPublicId` looks up by exact value, so once this row's column changes, the old
+ * value simply matches no connection at all, the same "not found" a webhook route already gives
+ * an unknown id. */
+export function rotateWebhookPublicId(db,id,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ getConnection(db,id,resolvedTenantId); // 404s if wrong tenant
+ const publicId=randomUUID().replace(/-/g,'');
+ db.prepare('UPDATE integration_connections SET webhook_public_id=?,updated_at=? WHERE id=? AND tenant_id=?').run(publicId,new Date().toISOString(),id,resolvedTenantId);
+ return publicId;
+}
 export function updateConnection(db,id,patch,tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
  const current=getConnection(db,id,resolvedTenantId);
  const merged={...current,...patch};
- db.prepare(`UPDATE integration_connections SET name=?,status=?,external_account_id=?,external_account_type=?,external_account_name=?,external_account_metadata=?,scopes=?,connected_by=?,connected_at=?,last_health_check=?,last_success_at=?,last_error_at=?,last_error_code=?,last_error_message_safe=?,updated_at=? WHERE id=? AND tenant_id=?`)
+ // Phase 6G fix: `connectorVersion` (the Versioning UI's pin — Part 42/108/109) was hydrated
+ // on read but never actually written here, so nothing that ever called updateConnection could
+ // pin/migrate/roll back a connection's version despite the column and read path both existing
+ // since Phase 6D — a real, silent gap, not by design (see docs/CONNECTOR_VERSION_MANAGEMENT.md).
+ db.prepare(`UPDATE integration_connections SET name=?,status=?,external_account_id=?,external_account_type=?,external_account_name=?,external_account_metadata=?,scopes=?,connected_by=?,connected_at=?,last_health_check=?,last_success_at=?,last_error_at=?,last_error_code=?,last_error_message_safe=?,connector_version=?,updated_at=? WHERE id=? AND tenant_id=?`)
   .run(merged.name,merged.status,merged.externalAccountId,merged.externalAccountType,merged.externalAccountName,
    merged.externalAccountMetadata?JSON.stringify(merged.externalAccountMetadata):null,
    merged.scopes?JSON.stringify(merged.scopes):null,merged.connectedBy,merged.connectedAt,merged.lastHealthCheck,
-   merged.lastSuccessAt,merged.lastErrorAt,merged.lastErrorCode,merged.lastErrorMessageSafe,new Date().toISOString(),id,resolvedTenantId);
+   merged.lastSuccessAt,merged.lastErrorAt,merged.lastErrorCode,merged.lastErrorMessageSafe,merged.connectorVersion??null,new Date().toISOString(),id,resolvedTenantId);
  return getConnection(db,id,resolvedTenantId);
 }
 /** Phase 29: exactly one default per (tenant, provider) — enforced by the partial unique index above; this clears any prior default first so the swap is atomic. */

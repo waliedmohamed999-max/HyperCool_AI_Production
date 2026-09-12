@@ -165,3 +165,10 @@ export function getVersionSnapshot(db,connectorDefinitionId,version) {
  const row=db.prepare('SELECT manifest_snapshot FROM connector_definition_versions WHERE connector_definition_id=? AND version=?').get(connectorDefinitionId,version);
  return row?JSON.parse(row.manifest_snapshot):null;
 }
+// Phase 6G, Part 2 — every past publish snapshot for the Versioning UI's list, oldest first
+// (the Builder itself always cares about "history in order", never a single latest lookup).
+export function listVersionSnapshotsForDefinition(db,connectorDefinitionId) {
+ return db.prepare('SELECT version,manifest_snapshot,published_at,published_by_user_id FROM connector_definition_versions WHERE connector_definition_id=? ORDER BY version')
+  .all(connectorDefinitionId)
+  .map(row=>({version:row.version,manifest:JSON.parse(row.manifest_snapshot),publishedAt:row.published_at,publishedByUserId:row.published_by_user_id}));
+}

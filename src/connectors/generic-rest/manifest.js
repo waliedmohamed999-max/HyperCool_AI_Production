@@ -10,7 +10,10 @@ import {AUTH_TYPE,RISK_LEVEL,ACTION_TYPE} from '../core/enums.js';
 import {isKnownCapability} from '../core/capability-registry.js';
 
 const ALLOWED_METHODS=new Set(['GET','POST','PUT','PATCH','DELETE','HEAD']);
-const REST_AUTH_TYPES=new Set([AUTH_TYPE.NONE,AUTH_TYPE.API_KEY,AUTH_TYPE.BEARER_TOKEN,AUTH_TYPE.BASIC]);
+// Phase 6G, Part 18 — OAUTH2 joined this set once the Generic OAuth2 Framework
+// (src/runtime/generic-oauth2.js) existed to actually drive it; core `validateManifest` itself
+// already requires `auth.authorizeUrl`/`auth.tokenUrl` to be real https:// URLs for this type.
+const REST_AUTH_TYPES=new Set([AUTH_TYPE.NONE,AUTH_TYPE.API_KEY,AUTH_TYPE.BEARER_TOKEN,AUTH_TYPE.BASIC,AUTH_TYPE.OAUTH2]);
 
 function fail(message){const e=new Error(message);e.status=400;throw e;}
 
@@ -25,7 +28,7 @@ const METHOD_DEFAULTS={
 };
 
 export function validateRestManifest(raw) {
- if(!REST_AUTH_TYPES.has(raw.auth?.type))fail(`Generic REST connector ${raw.slug}: auth.type must be one of NONE/API_KEY/BEARER_TOKEN/BASIC (got ${raw.auth?.type}) — generic OAuth2 is deferred, Part 5/39`);
+ if(!REST_AUTH_TYPES.has(raw.auth?.type))fail(`Generic REST connector ${raw.slug}: auth.type must be one of NONE/API_KEY/BEARER_TOKEN/BASIC/OAUTH2 (got ${raw.auth?.type})`);
  // Part 9 — NONE is only real when the definition explicitly says so; never inferred from an
  // absent credential at connection time (that is checked separately, at execution time).
  if(raw.auth.type===AUTH_TYPE.NONE && raw.auth.allowNone!==true)fail(`Generic REST connector ${raw.slug}: auth.type NONE requires an explicit auth.allowNone:true`);

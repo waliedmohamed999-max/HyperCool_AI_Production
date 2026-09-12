@@ -3,10 +3,36 @@
 // is declarative data only (Part 21) — no code, no eval, no module path ever stored or loaded.
 import {randomUUID} from 'node:crypto';
 import {getIntegrationDefinition,listIntegrationDefinitions} from '../../integrations/definitions.js';
-import {listActionsForDefinition,upsertAction as storeUpsertAction,deleteAction as storeDeleteAction,listTriggersForDefinition,upsertTrigger as storeUpsertTrigger,deleteTrigger as storeDeleteTrigger,saveVersionSnapshot} from './store.js';
+import {listActionsForDefinition,upsertAction as storeUpsertAction,deleteAction as storeDeleteAction,listTriggersForDefinition,upsertTrigger as storeUpsertTrigger,deleteTrigger as storeDeleteTrigger,saveVersionSnapshot,listVersionSnapshotsForDefinition,getVersionSnapshot} from './store.js';
 import {hydrateAndValidate} from './hydrate.js';
 import {isKnownCapability} from '../core/capability-registry.js';
 import {validateOutboundUrl} from '../core/ssrf.js';
+
+// Phase 6G, Part 18/19/20 — the Generic OAuth2 Framework's own config validator, shared by
+// create/update so a Platform Admin can define a brand-new OAuth2 connector (authorizationUrl/
+// tokenUrl/scopes/PKCE/identity endpoint/token field mappings/client credential ENV KEY
+// references) entirely through the Builder — never a tenant-editable URL (Part 20), never a
+// plaintext client secret on the definition (Part 21 — only an env var NAME is stored; the real
+// secret value lives in process env, resolved at call time by src/runtime/generic-oauth2.js).
+const ENV_KEY_RE=/^[A-Z][A-Z0-9_]*$/;
+function validateOAuth2Config(auth,fail) {
+ // Field name matches src/connectors/core/manifest.js's own OAUTH2 validation exactly
+ // (`raw.auth.authorizeUrl`) — one shared vocabulary, not a second one at the Builder layer.
+ if(!auth?.authorizeUrl)fail(400,'INVALID_AUTH_TYPE','OAUTH2 يتطلب authorizeUrl');
+ if(!auth?.tokenUrl)fail(400,'INVALID_AUTH_TYPE','OAUTH2 يتطلب tokenUrl');
+ try{validateOutboundUrl(auth.authorizeUrl,{allowHttp:false});}
+ catch(error){fail(400,'UNSAFE_AUTHORIZATION_URL',`authorizeUrl غير آمن: ${error.message}`);}
+ try{validateOutboundUrl(auth.tokenUrl,{allowHttp:false});}
+ catch(error){fail(400,'UNSAFE_TOKEN_URL',`tokenUrl غير آمن: ${error.message}`);}
+ if(auth.identityEndpoint) {
+  try{validateOutboundUrl(auth.identityEndpoint,{allowHttp:false});}
+  catch(error){fail(400,'UNSAFE_IDENTITY_ENDPOINT',`identityEndpoint غير آمن: ${error.message}`);}
+ }
+ if(auth.scopes!==undefined && !Array.isArray(auth.scopes))fail(400,'INVALID_AUTH_TYPE','scopes يجب أن تكون مصفوفة نصوص');
+ if(!['body','basic'].includes(auth.clientAuthMethod||'body'))fail(400,'INVALID_AUTH_TYPE','clientAuthMethod يجب أن يكون body أو basic');
+ if(!auth.clientIdEnvKey||!ENV_KEY_RE.test(auth.clientIdEnvKey))fail(400,'INVALID_AUTH_TYPE','clientIdEnvKey يجب أن يكون اسم متغيّر بيئة صالح (أحرف كبيرة/أرقام/شرطة سفلية)');
+ if(!auth.clientSecretEnvKey||!ENV_KEY_RE.test(auth.clientSecretEnvKey))fail(400,'INVALID_AUTH_TYPE','clientSecretEnvKey يجب أن يكون اسم متغيّر بيئة صالح — لا يُخزَّن أي سر فعلي هنا');
+}
 
 function fail(status,code,message){const e=new Error(message||code);e.status=status;e.code=code;throw e;}
 
@@ -34,9 +60,13 @@ export function createDraftConnector(db,env,actorUser,input) {
  if(!['GENERIC_REST'].includes(input.adapterType))fail(400,'INVALID_ADAPTER_TYPE','النوع المدعوم ديناميكيًا حاليًا هو GENERIC_REST فقط — BUILT_IN/AI_PROVIDER محجوزان لموصلات الكود الحقيقية');
  if(!['MULTI','SINGLE'].includes(input.connectionMode))fail(400,'INVALID_CONNECTION_MODE','connectionMode يجب أن يكون MULTI أو SINGLE');
  const authType=input.auth?.type;
- if(!['NONE','API_KEY','BEARER_TOKEN','BASIC'].includes(authType))fail(400,'INVALID_AUTH_TYPE','نوع مصادقة غير مدعوم — OAuth2 العام مؤجَّل عمدًا (راجع التوثيق)');
+ if(!['NONE','API_KEY','BEARER_TOKEN','BASIC','OAUTH2'].includes(authType))fail(400,'INVALID_AUTH_TYPE','نوع مصادقة غير مدعوم');
  if(authType==='NONE' && input.auth?.allowNone!==true)fail(400,'INVALID_AUTH_TYPE','auth.type=NONE يتطلب allowNone:true صراحة');
  if(authType==='API_KEY' && !input.auth?.headerName)fail(400,'INVALID_AUTH_TYPE','API_KEY يتطلب headerName حقيقيًا');
+ // Phase 6G, Part 18-21 — the Generic OAuth2 Framework: a Platform-Admin-defined connector can
+ // now declare a real OAuth2 flow entirely through the Builder (see validateOAuth2Config above)
+ // instead of OAuth2 being permanently reserved for hand-written BUILT_IN adapters (Salla/Zid).
+ if(authType==='OAUTH2')validateOAuth2Config(input.auth,fail);
  // Part 85 — the base URL is validated through the SAME SSRF module 6B built; an unsafe host
  // (localhost/private IP/metadata endpoint) can never even be SAVED, not just blocked at runtime.
  if(!input.rest?.baseUrl)fail(400,'INVALID_BASE_URL','rest.baseUrl مطلوب');
@@ -74,9 +104,10 @@ export function updateDraftConnector(db,env,actorUser,id,patch) {
  // validation is a second, independent layer — this is the first).
  if(patch.auth) {
   const authType=patch.auth.type;
-  if(!['NONE','API_KEY','BEARER_TOKEN','BASIC'].includes(authType))fail(400,'INVALID_AUTH_TYPE','نوع مصادقة غير مدعوم — OAuth2 العام مؤجَّل عمدًا (راجع التوثيق)');
+  if(!['NONE','API_KEY','BEARER_TOKEN','BASIC','OAUTH2'].includes(authType))fail(400,'INVALID_AUTH_TYPE','نوع مصادقة غير مدعوم');
   if(authType==='NONE' && patch.auth.allowNone!==true)fail(400,'INVALID_AUTH_TYPE','auth.type=NONE يتطلب allowNone:true صراحة');
   if(authType==='API_KEY' && !patch.auth.headerName)fail(400,'INVALID_AUTH_TYPE','API_KEY يتطلب headerName حقيقيًا');
+  if(authType==='OAUTH2')validateOAuth2Config(patch.auth,fail);
  }
  const now=new Date().toISOString();
  db.prepare(`UPDATE integration_definitions SET name_ar=COALESCE(?,name_ar),name_en=COALESCE(?,name_en),description_ar=COALESCE(?,description_ar),description_en=COALESCE(?,description_en),category=COALESCE(?,category),capabilities=COALESCE(?,capabilities),rest_config=COALESCE(?,rest_config),auth_config=COALESCE(?,auth_config),updated_at=? WHERE id=?`)
@@ -300,12 +331,116 @@ export function getConnectorForBuilder(db,env,actorUser,id) {
  };
 }
 
+// --- Versioning UI backend (Phase 6G, Part 2-8) --------------------------------------------------
+// The version MODEL (`connector_definition_versions`, immutable snapshots, a connection's own
+// `connector_version` pin) is real since Phase 6D — see docs/CONNECTOR_VERSIONING.md. What was
+// missing was a Platform Admin actually being able to BROWSE past versions, see what changed,
+// and start a new draft version without instantly changing what a live-pinned connection sees.
+
+function diffArraysBySlug(oldArr=[],newArr=[],fields) {
+ const oldMap=new Map(oldArr.map(x=>[x.slug,x]));
+ const newMap=new Map(newArr.map(x=>[x.slug,x]));
+ const added=[...newMap.keys()].filter(s=>!oldMap.has(s));
+ const removed=[...oldMap.keys()].filter(s=>!newMap.has(s));
+ const changed=[];
+ for(const slug of newMap.keys()) {
+  if(!oldMap.has(slug))continue;
+  const a=oldMap.get(slug),b=newMap.get(slug);
+  const changedFields=fields.filter(f=>JSON.stringify(a[f])!==JSON.stringify(b[f]));
+  if(changedFields.length)changed.push({slug,changedFields});
+ }
+ return {added,removed,changed};
+}
+/** A structural diff between two immutable manifest snapshots — never a secret (a manifest's
+ * `auth` block is, by construction, non-secret config only: type + header names/URLs/env-var-
+ * name REFERENCES, never a token/password/client-secret value — see CONNECTOR_IMPORT_EXPORT.md's
+ * identical guarantee for Export). Used by both the Versions tab's diff view and the Connection
+ * page's pre-migration preview so there is exactly one diff algorithm, never two that could
+ * silently disagree. */
+export function computeManifestDiff(oldManifest,newManifest) {
+ return {
+  connectionMode:{from:oldManifest.connectionMode,to:newManifest.connectionMode,changed:oldManifest.connectionMode!==newManifest.connectionMode},
+  auth:{from:oldManifest.auth?.type,to:newManifest.auth?.type,changed:JSON.stringify(oldManifest.auth)!==JSON.stringify(newManifest.auth)},
+  capabilities:{
+   added:(newManifest.capabilities||[]).filter(c=>!(oldManifest.capabilities||[]).includes(c)),
+   removed:(oldManifest.capabilities||[]).filter(c=>!(newManifest.capabilities||[]).includes(c))
+  },
+  actions:diffArraysBySlug(oldManifest.actions,newManifest.actions,['requiredCapability','riskLevel','rest']),
+  triggers:diffArraysBySlug(oldManifest.triggers,newManifest.triggers,['normalizedEventType','mappingDefinition','authentication']),
+  health:{from:oldManifest.rest?.health||null,to:newManifest.rest?.health||null,changed:JSON.stringify(oldManifest.rest?.health)!==JSON.stringify(newManifest.rest?.health)}
+ };
+}
+function describeVersionChange(version,snapshots) {
+ if(version===1)return 'الإصدار الأول';
+ const prev=snapshots.find(s=>s.version===version-1);
+ const curr=snapshots.find(s=>s.version===version);
+ if(!prev||!curr)return 'غير معروف';
+ const diff=computeManifestDiff(prev.manifest,curr.manifest);
+ const parts=[];
+ if(diff.capabilities.added.length||diff.capabilities.removed.length)parts.push('القدرات');
+ if(diff.actions.added.length||diff.actions.removed.length||diff.actions.changed.length)parts.push('الإجراءات');
+ if(diff.triggers.added.length||diff.triggers.removed.length||diff.triggers.changed.length)parts.push('الويبهوك');
+ if(diff.auth.changed)parts.push('المصادقة');
+ if(diff.health.changed)parts.push('فحص الصحة');
+ if(diff.connectionMode.changed)parts.push('وضع الاتصال');
+ return parts.length?`تغييرات في: ${parts.join('، ')}`:'تعديلات طفيفة';
+}
+/** Part 2 — the Versions tab's list: every real, permanent snapshot plus (Part 4) a synthetic
+ * "working copy" row while a new draft version is being prepared. `connectionsPinned` is a
+ * live COUNT, never an estimate. */
+export function listConnectorVersions(db,env,actorUser,definitionId) {
+ requirePlatformAdmin(env,actorUser);
+ const definition=requireOwnDefinition(db,definitionId);
+ if(definition.isSystem)return [];
+ const snapshots=listVersionSnapshotsForDefinition(db,definitionId);
+ const rows=snapshots.map(s=>({
+  version:s.version,
+  status:(s.version===definition.version && definition.status==='PUBLISHED')?'PUBLISHED':'ARCHIVED',
+  publishedAt:s.publishedAt,publishedByUserId:s.publishedByUserId,
+  connectionsPinned:db.prepare('SELECT COUNT(*) c FROM integration_connections WHERE integration_definition_id=? AND connector_version=?').get(definition.slug,s.version).c,
+  changeType:describeVersionChange(s.version,snapshots)
+ }));
+ if(definition.status==='DRAFT' && definition.publishedAt)
+  rows.push({version:definition.version+1,status:'DRAFT',publishedAt:null,publishedByUserId:null,connectionsPinned:0,changeType:'نسخة عمل قيد الإعداد'});
+ return rows;
+}
+/** Part 3 — a real diff between two already-published snapshots. */
+export function getVersionDiff(db,env,actorUser,definitionId,fromVersion,toVersion) {
+ requirePlatformAdmin(env,actorUser);
+ requireOwnDefinition(db,definitionId);
+ const from=getVersionSnapshot(db,definitionId,Number(fromVersion));
+ const to=getVersionSnapshot(db,definitionId,Number(toVersion));
+ if(!from||!to)fail(404,'VERSION_NOT_FOUND','أحد الإصدارين غير موجود');
+ return {fromVersion:Number(fromVersion),toVersion:Number(toVersion),diff:computeManifestDiff(from,to)};
+}
+/** Part 4 — "Create New Draft Version": flips the LIVE row back to DRAFT so further edits
+ * accumulate toward the NEXT publish, WITHOUT touching the already-immutable current snapshot.
+ * Every connection currently pinned to the current version is completely unaffected — a pinned
+ * resolution (`resolveConnectorDynamic`) only ever checks the definition's `status` for the
+ * DISABLED case, never for DRAFT — so a live tenant's pinned connection keeps executing exactly
+ * as before while a Platform Admin drafts the next version. New connections simply cannot be
+ * started until the next publish (the same rule that already applies to any DRAFT connector). */
+export function createDraftVersion(db,env,actorUser,definitionId) {
+ requirePlatformAdmin(env,actorUser);
+ const definition=requireOwnDefinition(db,definitionId);
+ if(definition.isSystem)fail(400,'SYSTEM_CONNECTOR_READONLY','لا يمكن إنشاء نسخة مسودة لموصل نظامي');
+ if(definition.status!=='PUBLISHED')fail(400,'NOT_PUBLISHED','يمكن إنشاء نسخة مسودة جديدة فقط من موصل منشور حاليًا');
+ db.prepare("UPDATE integration_definitions SET status='DRAFT',updated_at=? WHERE id=?").run(new Date().toISOString(),definitionId);
+ return getDefinitionById(db,definitionId);
+}
+
 // --- Tenant-facing catalog (Part 26/27/39/40) ---------------------------------------------------
 
-/** Published, available, non-disabled connectors only — safe metadata, no secrets, no draft. */
-export function getTenantCatalog(db) {
+/** Published, available, non-disabled connectors only — safe metadata, no secrets, no draft.
+ * Phase 6G, Part 30 — a tenant-owned custom connector (`ownerTenantId` set, see
+ * docs/TENANT_CUSTOM_CONNECTORS.md) is NEVER globally visible even once PUBLISHED/APPROVED:
+ * it only ever appears in the catalog of the exact tenant that created it. `tenantId` is
+ * REQUIRED precisely so this function itself enforces that isolation — there is no "global"
+ * call shape that could accidentally leak one to every tenant. */
+export function getTenantCatalog(db,tenantId) {
  return listIntegrationDefinitions(db)
-  .filter(d=>d.status==='PUBLISHED')
+  .filter(d=>d.status==='PUBLISHED' && (!d.ownerTenantId || d.ownerTenantId===tenantId))
   .map(d=>({slug:d.slug,nameAr:d.nameAr,nameEn:d.nameEn,category:d.category,descriptionAr:d.descriptionAr,descriptionEn:d.descriptionEn,
-   iconKey:d.iconKey,capabilities:d.capabilities,isAvailable:d.isAvailable,connectionMode:d.connectionMode,authType:d.authConfig?.type||d.authType}));
+   iconKey:d.iconKey,capabilities:d.capabilities,isAvailable:d.isAvailable,connectionMode:d.connectionMode,authType:d.authConfig?.type||d.authType,
+   isTenantCustom:!!d.ownerTenantId}));
 }
