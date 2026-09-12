@@ -63,8 +63,7 @@ await page.click('dialog.confirmation button:has-text("إضافة إجراء")')
 await page.waitForTimeout(600);
 check('action added', (await page.locator('dialog.drawer[open]').innerText()).includes('get_invoices'));
 
-tabButtons = await page.$$('dialog.drawer[open] [role=tab]');
-await tabButtons[4].click();
+await page.getByRole('tab', { name: /المراجعة والنشر/ }).click();
 await page.waitForTimeout(200);
 await page.evaluate(async () => { window.__preCatalog = await (await fetch('/api/integrations/catalog')).json(); });
 const slugPresentBeforePublish = await page.evaluate(s => window.__preCatalog.some(c => c.slug === s), slug);

@@ -175,6 +175,9 @@ async function render(){
   // neither condition holds true then — see docs/SAAS_ENTRY_FLOW.md.)
   if(!auth.user){$('#signup-form').hidden=true;$('#show-login-link').hidden=true;$('#auth-form').hidden=false;$('#forgot-password-link').hidden=false;}
   shellData(auth,viewData,api);
+  // Submit only after the handlers and the initial authentication state are ready.
+  $('#auth-form button').disabled=false;
+  $('#signup-form button').disabled=false;
   if(!auth.user)return;
   if(!accountLocaleApplied){accountLocaleApplied=true;if(auth.user.preferredLocale&&auth.user.preferredLocale!==getLocale()){await setLocale(auth.user.preferredLocale);return;}}
   // Phase 4C-1 — Workspace Selection. Resolved BEFORE anything tenant-scoped renders: a
