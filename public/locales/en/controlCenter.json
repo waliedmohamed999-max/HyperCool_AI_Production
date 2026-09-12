@@ -202,6 +202,7 @@
  "agentMap": {
   "hint": "A live view of every Agent -> Tool -> Capability -> Connector -> Connection -> Version -> Health link, built on the exact same readiness computation the Agents tab uses.",
   "connectorFilterPlaceholder": "Filter by connector slug",
+  "capabilityFilterPlaceholder": "Filter by capability",
   "tool": "Tool",
   "capability": "Capability",
   "connector": "Connector",
@@ -210,7 +211,10 @@
   "health": "Health",
   "compatibilityTitle": "Tool / Connection compatibility",
   "compatibleConnections": "Compatible connections",
-  "assignedAgents": "Agents assigned"
+  "assignedAgents": "Agents assigned",
+  "cardView": "Card View",
+  "tableView": "Table View",
+  "connectorNotFound": "Could not find this connector among your workspace's integrations"
  },
  "customConnectors": {
   "title": "My custom connectors",

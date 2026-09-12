@@ -16,7 +16,7 @@ import {listCompatibleConnections} from '../connectors/dynamic/compatibility.js'
  * when the underlying connection's raw status is specifically TOKEN_EXPIRED — a real, already-
  * true fact this map is the first screen to surface explicitly rather than folding it into the
  * more generic CONNECTION_UNHEALTHY bucket. */
-export function buildAgentConnectionMap(db,env,tenantId,{agentId=null,connectorSlug=null,status=null,capability=null}={}) {
+export function buildAgentConnectionMap(db,env,tenantId,{agentId=null,connectorSlug=null,status=null,capability=null,health=null}={}) {
  const agents=agentDefinitions.filter(a=>!agentId||a.id===agentId);
  const rows=[];
  for(const agent of agents) {
@@ -46,6 +46,11 @@ export function buildAgentConnectionMap(db,env,tenantId,{agentId=null,connectorS
    if(connectorSlug && row.connectorSlug!==connectorSlug)continue;
    if(status && row.readinessStatus!==status)continue;
    if(capability && row.capability!==capability)continue;
+   // Part 33-36 — a "Health" filter distinct from "Readiness": readiness is the tool's own
+   // computed usability (READY/BLOCKED/DISABLED), health is the underlying connection's raw
+   // transport status (CONNECTED/DEGRADED/ERROR/TOKEN_EXPIRED/DISCONNECTED) — two different,
+   // both real questions an operator may want to filter by independently.
+   if(health && row.healthStatus!==health)continue;
    rows.push(row);
   }
  }

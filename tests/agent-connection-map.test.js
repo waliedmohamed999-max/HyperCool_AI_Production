@@ -114,6 +114,13 @@ test('Filters: agentId/connectorSlug/status/capability all narrow the result set
 
   const byCapability=buildAgentConnectionMap(db,env,tenantId,{capability:'commerce.orders.read',agentId:'frost'});
   assert.ok(byCapability.some(r=>r.toolSlug==='map_filter_tool'));
+
+  // Phase 6H, Part 33-36 — a "Health" filter, distinct from "Readiness": the underlying
+  // connection's own raw transport status, not the tool's computed usability.
+  const byHealth=buildAgentConnectionMap(db,env,tenantId,{health:'CONNECTED',agentId:'frost'});
+  assert.ok(byHealth.some(r=>r.toolSlug==='map_filter_tool'));
+  const byWrongHealth=buildAgentConnectionMap(db,env,tenantId,{health:'DEGRADED',agentId:'frost',connectorSlug:'map_filter'});
+  assert.equal(byWrongHealth.length,0);
  } finally { await cleanup(); }
 });
 

@@ -1611,7 +1611,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner','operator']);
         return send(200,buildAgentConnectionMap(store.db,env,session.tenantId,{
          agentId:url.searchParams.get('agentId')||null,connectorSlug:url.searchParams.get('connectorSlug')||null,
-         status:url.searchParams.get('status')||null,capability:url.searchParams.get('capability')||null
+         status:url.searchParams.get('status')||null,capability:url.searchParams.get('capability')||null,
+         health:url.searchParams.get('health')||null
         }));
       }
       if(req.method==='GET' && url.pathname==='/api/tool-compatibility') {

@@ -202,6 +202,7 @@
  "agentMap": {
   "hint": "عرض حي لكل ربط وكيل ← أداة ← قدرة ← موصل ← اتصال ← إصدار ← حالة صحة، مبني على نفس حسابات الجاهزية التي يستخدمها تبويب الوكلاء.",
   "connectorFilterPlaceholder": "تصفية حسب اسم الموصل",
+  "capabilityFilterPlaceholder": "تصفية حسب القدرة",
   "tool": "الأداة",
   "capability": "القدرة",
   "connector": "الموصل",
@@ -210,7 +211,10 @@
   "health": "الصحة",
   "compatibilityTitle": "التوافق بين الأدوات والاتصالات",
   "compatibleConnections": "اتصالات متوافقة",
-  "assignedAgents": "الوكلاء المرتبطون"
+  "assignedAgents": "الوكلاء المرتبطون",
+  "cardView": "عرض البطاقات",
+  "tableView": "عرض الجدول",
+  "connectorNotFound": "تعذّر العثور على هذا الموصل ضمن تكاملات منشأتك"
  },
  "customConnectors": {
   "title": "موصلاتي المخصصة",

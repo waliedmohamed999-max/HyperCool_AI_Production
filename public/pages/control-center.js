@@ -459,7 +459,7 @@ function paintAgentCards(){
  grid.querySelectorAll('article').forEach(card=>{card.onclick=()=>openAgentDrawer(card.dataset.agent);const b=button(t('controlCenter.manage'),{variant:'secondary',iconName:'arrow'});b.onclick=e=>{e.stopPropagation();openAgentDrawer(card.dataset.agent);};card.append(b);});
 }
 
-async function openAgentDrawer(agentId){
+async function openAgentDrawer(agentId,{initialTab=null}={}){
  const agent=summary.agents.items.find(a=>a.id===agentId);
  const node=document.createElement('div');node.innerHTML=skeleton(t('common.loading'));
  const dialog=drawer(agent?.name||agentId,node);
@@ -472,11 +472,14 @@ async function openAgentDrawer(agentId){
  // appends the panel nodes anywhere; the caller must place them, exactly like every other
  // `tabs()` call site in this codebase (e.g. public/pages/workspace.js's content tabs).
  node.append(overviewPanel,aiPanel,toolsPanel,readinessPanel);
- tabs(node,[[t('controlCenter.drawerOverview'),overviewPanel],[t('controlCenter.drawerAiModel'),aiPanel],[t('controlCenter.drawerTools'),toolsPanel],[t('controlCenter.drawerReadiness'),readinessPanel]]);
+ const tabBar=tabs(node,[[t('controlCenter.drawerOverview'),overviewPanel],[t('controlCenter.drawerAiModel'),aiPanel],[t('controlCenter.drawerTools'),toolsPanel],[t('controlCenter.drawerReadiness'),readinessPanel]]);
  paintAgentOverview(overviewPanel,agentId,config,readiness);
  paintAgentAiModel(aiPanel,agentId,config);
  paintAgentTools(toolsPanel,agentId,tools);
  paintAgentReadiness(readinessPanel,readiness);
+ // Phase 6H, Part 33-36 — Agent Connection Map navigation: a "Tool" cell opens straight to
+ // this SAME drawer's own Tools tab (never a second, separate tool-detail screen).
+ if(initialTab==='tools')tabBar.select(2);
  // Any edit inside this drawer (enabled toggle, AI config, tool assignment) can change
  // readiness/KPIs — refresh the whole Control Center once the drawer closes, matching this
  // app's existing convention (e.g. team.js's `team-refresh` event) rather than tracking
@@ -563,23 +566,52 @@ function paintAgentReadiness(panel,readiness){
 // live table built entirely from the same readiness/compatibility computations the Agents tab
 // above already uses — never a second, divergent readiness engine.
 
-let agentMapFilters={agentId:'',connectorSlug:'',status:'',capability:''};
+let agentMapFilters={agentId:'',connectorSlug:'',status:'',capability:'',health:''};
+let agentMapViewMode='table'; // Part 34 — a simple toggle, never a graph editor.
+const AGENT_MAP_HEALTH_VALUES=['CONNECTED','DEGRADED','ERROR','TOKEN_EXPIRED','DISCONNECTED'];
 function renderAgentMapTab(){
  const container=document.getElementById('cc-panel-agentMap');
  container.innerHTML=`<p class="kpi-context">${escape(t('controlCenter.agentMap.hint'))}</p>
   <div class="table-toolbar">
    <select id="am-agent"><option value="">${escape(t('common.all'))}</option>${summary.agents.items.map(a=>`<option value="${escape(a.id)}">${escape(a.name)}</option>`).join('')}</select>
    <select id="am-status"><option value="">${escape(t('common.all'))}</option>${['READY','CONNECTION_REQUIRED','CONNECTION_UNHEALTHY','CONNECTION_CAPABILITY_MISSING','DISABLED'].map(s=>`<option value="${s}">${escape(t('controlCenter.toolStatus.'+s)||s)}</option>`).join('')}</select>
+   <select id="am-health"><option value="">${escape(t('common.all'))}</option>${AGENT_MAP_HEALTH_VALUES.map(h=>`<option value="${h}">${escape(t('controlCenter.status.'+h)||h)}</option>`).join('')}</select>
    <input type="search" id="am-connector" placeholder="${escape(t('controlCenter.agentMap.connectorFilterPlaceholder'))}" dir="ltr">
+   <input type="search" id="am-capability" placeholder="${escape(t('controlCenter.agentMap.capabilityFilterPlaceholder'))}" dir="ltr">
+   <span id="am-view-toggle"></span>
   </div>
   <div id="am-table"></div>
   <h4>${escape(t('controlCenter.agentMap.compatibilityTitle'))}</h4>
   <div id="am-compat"></div>`;
  container.querySelector('#am-agent').onchange=e=>{agentMapFilters.agentId=e.target.value;paintAgentMapTable();};
  container.querySelector('#am-status').onchange=e=>{agentMapFilters.status=e.target.value;paintAgentMapTable();};
+ container.querySelector('#am-health').onchange=e=>{agentMapFilters.health=e.target.value;paintAgentMapTable();};
  container.querySelector('#am-connector').oninput=e=>{agentMapFilters.connectorSlug=e.target.value.trim();paintAgentMapTable();};
+ container.querySelector('#am-capability').oninput=e=>{agentMapFilters.capability=e.target.value.trim();paintAgentMapTable();};
+ const viewToggle=button(agentMapViewMode==='table'?t('controlCenter.agentMap.cardView'):t('controlCenter.agentMap.tableView'),{variant:'ghost'});
+ viewToggle.onclick=()=>{agentMapViewMode=agentMapViewMode==='table'?'cards':'table';viewToggle.textContent=agentMapViewMode==='table'?t('controlCenter.agentMap.cardView'):t('controlCenter.agentMap.tableView');paintAgentMapTable();};
+ container.querySelector('#am-view-toggle').append(viewToggle);
  paintAgentMapTable();
  paintToolCompatibility();
+}
+/** Phase 6H, Part 33-36 — navigation: clicking Agent/Tool opens the SAME Agent drawer this
+ * page's own Agents tab already uses (never a second agent-detail screen); clicking Connector/
+ * Connection opens the connector's connection-management drawer for a tenant operator, or the
+ * real Builder definition for a Platform Admin (mirroring the Integrations tab's own existing
+ * "Manage" / "Manage Definition" split — never a third navigation pattern). */
+function openConnectorFromMap(connectorSlug){
+ if(!connectorSlug)return;
+ if(currentAuth?.isPlatformAdmin){location.hash='#platform';openConnectorWizardBySlug(connectorSlug);return;}
+ const provider=summary.integrations.providers.find(p=>p.slug===connectorSlug);
+ if(provider)openProviderDrawer(provider);
+ else toastError(t('controlCenter.agentMap.connectorNotFound'));
+}
+function agentMapRowChainHtml(r){
+ return `<div class="report-actions" data-am-chain>
+  <span data-am-chip="agent"></span> → <span data-am-chip="tool"></span>${r.capability?' ('+escape(r.capability)+')':''} → <span data-am-chip="connector"></span> → <span data-am-chip="connection"></span>
+  ${r.healthStatus?statusBadge(r.healthStatus,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',DISCONNECTED:'DISCONNECTED'}):''}
+  ${badge(t('controlCenter.toolStatus.'+r.readinessStatus)||r.readinessStatus,r.readinessStatus==='READY'?'CONNECTED':r.readinessStatus==='DISABLED'?'DISCONNECTED':'ERROR')}
+ </div>`;
 }
 async function paintAgentMapTable(){
  const host=document.getElementById('am-table');if(!host)return;
@@ -587,19 +619,51 @@ async function paintAgentMapTable(){
  const params=new URLSearchParams();
  if(agentMapFilters.agentId)params.set('agentId',agentMapFilters.agentId);
  if(agentMapFilters.status)params.set('status',agentMapFilters.status);
+ if(agentMapFilters.health)params.set('health',agentMapFilters.health);
+ if(agentMapFilters.capability)params.set('capability',agentMapFilters.capability);
+ if(agentMapFilters.connectorSlug)params.set('connectorSlug',agentMapFilters.connectorSlug);
  let rows;
  try{rows=await api(`/api/agent-connection-map?${params}`);}catch(error){host.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
- if(agentMapFilters.connectorSlug)rows=rows.filter(r=>(r.connectorSlug||'').includes(agentMapFilters.connectorSlug));
  if(!rows.length){host.innerHTML=empty(t('common.noResults'));return;}
+ if(agentMapViewMode==='cards'){
+  // Part 34 — "a simple visual relation mode... a clear dependency chain/card view is
+  // enough" — one card per row rendering the real Agent → Tool → Connector → Connection
+  // chain as plain clickable chips, deliberately NOT a graph/canvas editor.
+  host.innerHTML=`<div class="grid">${rows.map((r,i)=>`<article class="card" data-am-card="${i}">${agentMapRowChainHtml(r)}</article>`).join('')}</div>`;
+  rows.forEach((r,i)=>attachAgentMapLinks(host.querySelector(`[data-am-card="${i}"]`),r));
+  return;
+ }
  host.innerHTML=table(
   [t('controlCenter.agent'),t('controlCenter.agentMap.tool'),t('controlCenter.agentMap.capability'),t('controlCenter.agentMap.connector'),t('controlCenter.agentMap.connection'),t('controlCenter.agentMap.version'),t('controlCenter.agentMap.health'),t('controlCenter.readinessLabel')],
-  rows.map(r=>[
-   escape(r.agentName),`<span dir="ltr">${escape(r.toolSlug)}</span>`,`<span dir="ltr">${escape(r.capability||'—')}</span>`,
-   `<span dir="ltr">${escape(r.connectorSlug||'—')}</span>`,escape(r.connectionName||'—'),escape(r.connectorVersion??'—'),
+  rows.map((r,i)=>[
+   `<span data-am-row="${i}" data-am-chip="agent"></span>`,`<span data-am-row="${i}" data-am-chip="tool" dir="ltr"></span>`,`<span dir="ltr">${escape(r.capability||'—')}</span>`,
+   `<span data-am-row="${i}" data-am-chip="connector" dir="ltr"></span>`,`<span data-am-row="${i}" data-am-chip="connection" dir="ltr"></span>`,escape(r.connectorVersion??'—'),
    r.healthStatus?statusBadge(r.healthStatus,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',DISCONNECTED:'DISCONNECTED'}):'—',
    badge(t('controlCenter.toolStatus.'+r.readinessStatus)||r.readinessStatus,r.readinessStatus==='READY'?'CONNECTED':r.readinessStatus==='DISABLED'?'DISCONNECTED':'ERROR')
   ])
  );
+ rows.forEach((r,i)=>attachAgentMapLinks(host,r,i));
+}
+/** Fills in the `data-am-chip` placeholders (either inside one card, or scattered across one
+ * table row identified by `data-am-row="i"`) with real, clickable links — one shared function
+ * so the table view and the card view never drift into two different navigation behaviors. */
+function attachAgentMapLinks(scopeEl,r,rowIndex=null){
+ if(!scopeEl)return;
+ const find=chip=>rowIndex===null?scopeEl.querySelector(`[data-am-chip="${chip}"]`):scopeEl.querySelector(`[data-am-row="${rowIndex}"][data-am-chip="${chip}"]`);
+ const agentCell=find('agent');
+ if(agentCell){const link=button(r.agentName,{variant:'ghost'});link.onclick=()=>openAgentDrawer(r.agentId);agentCell.append(link);}
+ const toolCell=find('tool');
+ if(toolCell){const link=button(r.toolSlug,{variant:'ghost'});link.onclick=()=>openAgentDrawer(r.agentId,{initialTab:'tools'});toolCell.append(link);}
+ const connectorCell=find('connector');
+ if(connectorCell){
+  if(r.connectorSlug){const link=button(r.connectorSlug,{variant:'ghost'});link.onclick=()=>openConnectorFromMap(r.connectorSlug);connectorCell.append(link);}
+  else connectorCell.textContent='—';
+ }
+ const connectionCell=find('connection');
+ if(connectionCell){
+  if(r.connectionId){const link=button(r.connectionName||r.connectionId,{variant:'ghost'});link.onclick=()=>openConnectorFromMap(r.connectorSlug);connectionCell.append(link);}
+  else connectionCell.textContent='—';
+ }
 }
 async function paintToolCompatibility(){
  const host=document.getElementById('am-compat');if(!host)return;
