@@ -58,9 +58,9 @@ test('Control Center summary: tool/integration/AI-provider counts reflect the re
  const {call,cleanup,ownerA}=await twoTenants();
  try{
   const summary=(await call('/api/control-center/summary',null,ownerA,{method:'GET'})).data;
-  assert.equal(summary.tools.total,29); // Phase 6D added get_invoices (the generic, capability-only proof tool)
+  assert.equal(summary.tools.total,31); // Phase 6D added get_invoices; Phase 6E added get_orders/get_customers (generic, capability-only)
   assert.equal(summary.tools.unavailable,2); // canva_generateAsset, salla_syncOrders — honestly NOT_IMPLEMENTED
-  assert.equal(summary.integrations.providers.length,9);
+  assert.equal(summary.integrations.providers.length,10);
   assert.equal(summary.integrations.configuredProviders,0); // no connection created yet
   assert.equal(summary.aiProviders.length,0);
   assert.equal(summary.workspace.role,'owner');

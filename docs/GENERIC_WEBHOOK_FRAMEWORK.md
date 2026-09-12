@@ -9,6 +9,13 @@
 > a code-defined trigger, with zero change to the pipeline described below. See
 > `docs/DYNAMIC_CONNECTOR_DEFINITIONS.md`.
 
+> **Phase 6E note**: Zid (`docs/ZID_CONNECTOR.md`) deliberately declares zero triggers — Zid's
+> official webhook registration endpoint documents no signing-secret/HMAC verification
+> mechanism at all, and this framework's own ground rule ("never invent an HMAC scheme a
+> provider didn't document") means the honest choice is no webhook, not a fabricated one. The
+> generic webhook URL route already reports this correctly (`NOT_APPLICABLE`, zero triggers) for
+> any connector with no declared trigger — no special case was added for Zid specifically.
+
 `src/connectors/generic-webhook/`. Reuses Phase 6A/6B's SDK and the platform's EXISTING
 idempotency ledger (`webhook_events`) and Event Bus (`runtime/events.js`) — no second copy of
 either was built.

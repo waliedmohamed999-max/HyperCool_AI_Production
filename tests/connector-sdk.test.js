@@ -103,13 +103,15 @@ test('validateAdapter requires healthCheck, requires executeAction when actions 
 
 // --- Registry: the 3 real, wrapped providers load without throwing ---------------------------
 
-test('The connector registry loads Salla/Anthropic/OpenAI as real Connectors with validated manifests+adapters',()=>{
+test('The connector registry loads Salla/Anthropic/OpenAI/Zid as real Connectors with validated manifests+adapters',()=>{
  const manifests=listConnectorManifests();
- assert.equal(manifests.length,3);
+ assert.equal(manifests.length,4);
  assert.ok(getConnectorManifest('salla'));
  assert.ok(getConnectorManifest('anthropic'));
  assert.ok(getConnectorManifest('openai'));
+ assert.ok(getConnectorManifest('zid'));
  assert.equal(getConnector('salla').manifest.connectionMode,'MULTI');
+ assert.equal(getConnector('zid').manifest.connectionMode,'MULTI');
  assert.equal(getConnector('does-not-exist'),null);
 });
 

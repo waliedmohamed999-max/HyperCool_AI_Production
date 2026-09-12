@@ -33,16 +33,18 @@ function twoTenants(store){
 
 // --- IntegrationDefinitions ------------------------------------------------------------
 
-test('IntegrationDefinitions: seeds exactly the 9 real providers, Canva correctly marked NOT_IMPLEMENTED (isAvailable:false)',()=>{
+test('IntegrationDefinitions: seeds exactly the 10 real providers, Canva correctly marked NOT_IMPLEMENTED (isAvailable:false)',()=>{
  const store=fixture();try{
   const defs=listIntegrationDefinitions(store.db);
-  assert.equal(defs.length,9);
+  assert.equal(defs.length,10);
   const canva=getIntegrationDefinition(store.db,'canva');
   assert.equal(canva.authType,'NONE');assert.equal(canva.isAvailable,false);
   const salla=getIntegrationDefinition(store.db,'salla');
   assert.equal(salla.authType,'OAUTH2');assert.equal(salla.isAvailable,true);
   const anthropic=getIntegrationDefinition(store.db,'anthropic');
   assert.equal(anthropic.authType,'API_KEY');
+  const zid=getIntegrationDefinition(store.db,'zid');
+  assert.equal(zid.authType,'OAUTH2');assert.equal(zid.isAvailable,true);assert.equal(zid.connectionMode,'MULTI');
   assert.equal(getIntegrationDefinition(store.db,'not-a-real-provider'),null);
  }finally{store.close();}
 });

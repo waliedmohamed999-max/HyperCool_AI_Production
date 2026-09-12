@@ -1,5 +1,12 @@
 # Agent Tool Mapping (Multi-Tenant Phase 4B)
 
+> **Phase 6E update**: `get_orders`/`get_customers` (`src/runtime/tools.js`) are the second real
+> proof (after Phase 6D's `get_invoices`) that a generic, capability-only tool
+> (`integrationSlug: null`) auto-discovers ANY compatible connection — now genuinely exercised
+> with two different real commerce connectors in the same tenant (Salla + Zid, `docs/
+> ZID_CONNECTOR.md`), never a hardcoded per-provider tool. Assignment still selects the exact
+> connection; capability only decides eligibility.
+
 This document records what Phase 4B actually built: `Tenant → TenantAgentConfig → Agent Tool
 Assignment → exact Integration Connection → Runtime Tool Execution`, on top of the Phase 4A
 Integration Connection Core (see `docs/INTEGRATION_CONNECTION_ARCHITECTURE.md`).

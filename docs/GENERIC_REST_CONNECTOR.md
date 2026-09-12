@@ -16,6 +16,11 @@
 > (only the async, request-time `safeFetch` path caught it before) — see
 > `docs/CONNECTOR_SSRF_SECURITY.md` and `docs/DYNAMIC_CONNECTOR_DEFINITIONS.md`.
 
+> **Phase 6E update**: Zid (`docs/ZID_CONNECTOR.md`) needed real OAuth2 (not one of this
+> module's NONE/API_KEY/BEARER_TOKEN/BASIC auth types), so it is a `BUILT_IN` adapter, not a
+> `GENERIC_REST` one — but its adapter still calls `safeFetch` directly for every real request,
+> the same SSRF-hardened transport this module uses, rather than a bespoke or bypassed one.
+
 `src/connectors/generic-rest/`. A single, shared `genericRestAdapter` (`adapter.js`) that
 executes ANY REST connector's declarative manifest — no per-provider code. See
 `docs/CONNECTOR_SSRF_SECURITY.md` for the security layer every request goes through, and

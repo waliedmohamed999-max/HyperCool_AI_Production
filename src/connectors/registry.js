@@ -12,11 +12,14 @@ import {anthropicManifest} from './anthropic/manifest.js';
 import {anthropicAdapter} from './anthropic/adapter.js';
 import {openaiManifest} from './openai/manifest.js';
 import {openaiAdapter} from './openai/adapter.js';
+import {zidManifest} from './zid/manifest.js';
+import {zidAdapter} from './zid/adapter.js';
 
 const ENTRIES=[
  {manifest:sallaManifest,adapter:sallaAdapter},
  {manifest:anthropicManifest,adapter:anthropicAdapter},
- {manifest:openaiManifest,adapter:openaiAdapter}
+ {manifest:openaiManifest,adapter:openaiAdapter},
+ {manifest:zidManifest,adapter:zidAdapter}
 ];
 for(const {manifest,adapter} of ENTRIES)validateAdapter(adapter,manifest);
 

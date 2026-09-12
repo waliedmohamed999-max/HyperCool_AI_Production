@@ -1,5 +1,11 @@
 # Building a New Connector (Phase 6A baseline; Phase 6D added a no-code Builder UI on top)
 
+> **Phase 6E update**: Zid (`docs/ZID_CONNECTOR.md`) is a real, worked example of this doc's
+> ORIGINAL file-based pattern (below) used for exactly the reason it exists: a provider needing
+> real OAuth2 token exchange/refresh that the Builder's GENERIC_REST-only auth types (NONE/
+> API_KEY/BEARER_TOKEN/BASIC) cannot express. Its action execution still reuses the SSRF-hardened
+> transport, never a bespoke HTTP client — see `src/connectors/zid/adapter.js`.
+
 > **Phase 6D update**: for a plain REST/HTTP API with NONE/API_KEY/BEARER_TOKEN/BASIC auth, you
 > no longer need to write ANY file at all — a Platform Admin can create, configure, test, and
 > publish the connector entirely through the Integration Builder UI (`#platform`,

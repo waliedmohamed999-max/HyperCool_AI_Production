@@ -1,5 +1,11 @@
 # Universal Integration Platform — Data-Driven Marketplace (Phase 6D)
 
+> **Phase 6E update**: Zid (`docs/ZID_CONNECTOR.md`) is the first real, external, first-party
+> BUILT_IN connector proven through this exact catalog with zero frontend changes — it is seeded
+> (never Builder-authored) and appears in `GET /api/integrations/catalog` and the Control Center
+> Integrations tab purely because it is a `PUBLISHED` row in the same `integration_definitions`
+> table Salla/Anthropic/OpenAI already use. No marketplace card was hand-written for it.
+
 ## The tenant-facing catalog
 
 `GET /api/integrations/catalog` (owner/operator only, `application.js`) returns

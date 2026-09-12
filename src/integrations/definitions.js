@@ -69,7 +69,15 @@ const DEFINITIONS=[
  {slug:'microsoft365',nameAr:'مايكروسوفت 365',nameEn:'Microsoft 365',category:'productivity',descAr:'البريد الإلكتروني والتقويم عبر Microsoft Graph.',descEn:'Email and calendar via Microsoft Graph.',authType:'OAUTH2',iconKey:'microsoft365',capabilities:['mail.read','mail.send','calendar.read','calendar.write'],isAvailable:1,adapterType:'BUILT_IN'},
  {slug:'x',nameAr:'إكس (تويتر)',nameEn:'X (Twitter)',category:'social',descAr:'نشر ومتابعة أداء المنشورات على إكس.',descEn:'Publish to and track post performance on X.',authType:'OAUTH2',iconKey:'x',capabilities:['publish','analytics'],isAvailable:1,adapterType:'BUILT_IN'},
  {slug:'linkedin',nameAr:'لينكدإن',nameEn:'LinkedIn',category:'social',descAr:'نشر على صفحة الشركة في لينكدإن.',descEn:'Publish to a LinkedIn Company Page.',authType:'OAUTH2',iconKey:'linkedin',capabilities:['organization.publish','analytics'],isAvailable:1,adapterType:'BUILT_IN'},
- {slug:'canva',nameAr:'كانفا',nameEn:'Canva',category:'design',descAr:'تصميم الأصول البصرية — غير مُفعّل تقنيًا بعد.',descEn:'Visual asset design — not technically implemented yet.',authType:'NONE',iconKey:'canva',capabilities:[],isAvailable:0,adapterType:'BUILT_IN'}
+ {slug:'canva',nameAr:'كانفا',nameEn:'Canva',category:'design',descAr:'تصميم الأصول البصرية — غير مُفعّل تقنيًا بعد.',descEn:'Visual asset design — not technically implemented yet.',authType:'NONE',iconKey:'canva',capabilities:[],isAvailable:0,adapterType:'BUILT_IN'},
+ // Phase 6E — a real, first-party connector to the official Zid Merchant API
+ // (docs.zid.sa, reviewed 2026-09-12 — see docs/ZID_CONNECTOR.md). V1 is deliberately
+ // read-only (orders, customers): Products/Inventory read is NOT implemented because the
+ // official docs themselves conflict on which headers that endpoint family requires (Part
+ // 1/49/50 — never guess through a security-sensitive contract conflict); webhooks are NOT
+ // implemented because Zid's documented webhook registration has no signing-secret/HMAC
+ // mechanism this platform could honestly verify (Part 28/60 — never invent one).
+ {slug:'zid',nameAr:'زد',nameEn:'Zid',category:'ecommerce',descAr:'منصة تجارة إلكترونية سعودية — قراءة الطلبات والعملاء (الإصدار الأول: قراءة فقط).',descEn:'Saudi e-commerce platform — orders and customers read (V1: read-only).',authType:'OAUTH2',iconKey:'zid',capabilities:['commerce.orders.read','commerce.customers.read'],isAvailable:1,adapterType:'BUILT_IN'}
 ];
 // Multi-Tenant Phase 4B (Part 13/14/96) — connection_mode is a HONEST, code-derived fact
 // about the OAuth flow that actually exists today, never a promise. `integration_connections`
@@ -81,7 +89,7 @@ const DEFINITIONS=[
 // proven end-to-end with real multiple simultaneous connections (see
 // docs/AGENT_TOOL_MAPPING.md's Salla multi-store test); Anthropic/OpenAI likewise (AI
 // multi-connection test, same doc). Canva has no real implementation at all (see above).
-const CONNECTION_MODE={anthropic:'MULTI',openai:'MULTI',salla:'MULTI',whatsapp:'SINGLE',meta:'SINGLE',microsoft365:'SINGLE',x:'SINGLE',linkedin:'SINGLE',canva:'UNAVAILABLE'};
+const CONNECTION_MODE={anthropic:'MULTI',openai:'MULTI',salla:'MULTI',whatsapp:'SINGLE',meta:'SINGLE',microsoft365:'SINGLE',x:'SINGLE',linkedin:'SINGLE',canva:'UNAVAILABLE',zid:'MULTI'};
 export function connectionModeFor(slug) { return CONNECTION_MODE[slug]||'SINGLE'; }
 function seedIntegrationDefinitions(db) {
  const now=new Date().toISOString();

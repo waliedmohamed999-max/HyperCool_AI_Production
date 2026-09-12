@@ -1,5 +1,12 @@
 # Universal Integration Platform — Connector Versioning (Phase 6D)
 
+> **Phase 6E note**: this snapshot/pinning policy applies to `GENERIC_REST` (Builder-published)
+> connectors only. Zid (`docs/ZID_CONNECTOR.md`) is `adapterType: BUILT_IN` — a real, code-
+> reviewed, versioned-by-git-commit connector exactly like Salla/Anthropic/OpenAI, with no
+> `connector_actions`/`connector_triggers` rows and no per-connection `connector_version`
+> pinning; a code change to `src/connectors/zid/*` ships to every existing Zid connection on the
+> next deploy, the same as any other BUILT_IN connector fix always has.
+
 ## The policy (Policy B)
 
 > A published Connector Definition's manifest is an immutable snapshot. The live

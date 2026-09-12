@@ -7,6 +7,13 @@
 > invent an unknown or privileged capability string (`system.admin`, `security.write`, etc.);
 > such a manifest simply fails validation.
 
+> **Phase 6E update**: Zid (a real, external, BUILT_IN connector — `docs/ZID_CONNECTOR.md`)
+> declares `commerce.orders.read` and `commerce.customers.read` — both pre-existing canonical
+> capabilities, added centrally to this registry before this phase for the accounting/commerce
+> domain in general. No `zid.*`-namespaced capability was created anywhere; this is the second
+> real proof (after Salla's `commerce.products.read`) that this registry names the *concept*,
+> never the provider.
+
 
 
 `src/connectors/core/capability-registry.js`. One shared taxonomy so no future connector
