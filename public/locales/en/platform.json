@@ -45,6 +45,21 @@
  "extendTrialDaysLabel": "Number of days",
  "actionSucceeded": "Action completed successfully",
  "notPlatformAdmin": "This page is available only to a platform administrator",
+ "operations": {
+  "title": "Platform Operations",
+  "deadLetters": "Dead Letter Webhooks ({count})",
+  "pendingRetries": "Webhooks Pending Automatic Retry ({count})",
+  "recentBulkOps": "Recent Bulk Operations",
+  "connector": "Connector",
+  "tenantId": "Tenant ID",
+  "trigger": "Trigger",
+  "retryCount": "Retry Count",
+  "receivedAt": "Received At",
+  "nextRetryAt": "Next Retry At",
+  "type": "Type",
+  "createdAt": "Created At",
+  "summary": "Summary"
+ },
  "builder": {
   "sectionTitle": "Integration Builder",
   "sectionHint": "Create and publish new REST connectors entirely from data — no code required.",

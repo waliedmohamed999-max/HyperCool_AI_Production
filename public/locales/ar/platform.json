@@ -45,6 +45,21 @@
  "extendTrialDaysLabel": "عدد الأيام",
  "actionSucceeded": "تم تنفيذ الإجراء بنجاح",
  "notPlatformAdmin": "هذه الصفحة متاحة فقط لمسؤول المنصة",
+ "operations": {
+  "title": "عمليات المنصة",
+  "deadLetters": "أحداث Webhook استُنفدت محاولاتها ({count})",
+  "pendingRetries": "أحداث Webhook بانتظار إعادة محاولة تلقائية ({count})",
+  "recentBulkOps": "آخر العمليات الجماعية",
+  "connector": "الموصل",
+  "tenantId": "معرّف المنشأة",
+  "trigger": "الـTrigger",
+  "retryCount": "عدد المحاولات",
+  "receivedAt": "وقت الاستلام",
+  "nextRetryAt": "موعد المحاولة القادمة",
+  "type": "النوع",
+  "createdAt": "وقت الإنشاء",
+  "summary": "الملخص"
+ },
  "builder": {
   "sectionTitle": "منشئ التكاملات",
   "sectionHint": "أنشئ ونشر موصلات REST جديدة بالكامل من البيانات — بدون كتابة كود.",

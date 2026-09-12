@@ -16,7 +16,7 @@ function staleGuard(generation){return generation!==renderGeneration;}
 
 export function installPlatformPage(){
  const root=document.querySelector('[data-page="platform"] #platform');
- root.innerHTML=`<div id="pf-integration-card"></div><div id="pf-overview" class="kpi-grid"></div><div id="pf-directory"></div><div id="pf-pending-custom"></div><div id="pf-connectors"></div>`;
+ root.innerHTML=`<div id="pf-integration-card"></div><div id="pf-overview" class="kpi-grid"></div><div id="pf-directory"></div><div id="pf-pending-custom"></div><div id="pf-webhook-ops"></div><div id="pf-connectors"></div>`;
 }
 
 export async function renderPlatformPage({api:client,auth}){
@@ -43,6 +43,40 @@ export async function renderPlatformPage({api:client,auth}){
  renderDirectory(directory);
  renderConnectorsSection(connectors);
  renderPendingCustomConnectors();
+ renderWebhookOperations();
+}
+/** Phase 6H, Part 46-48 — Platform Operations visibility: real, live, cross-tenant Dead Letter
+ * Webhooks and Pending Retries (Automatic Webhook Retry, Part 13-18) plus the most recent Bulk
+ * Operations (version migrations + webhook reprocesses, Part 6-12) — never a summarized/cached
+ * copy, every row a live read of the same ledgers the rest of this phase already built. A
+ * separate fetch (like the pending-custom-connectors queue above) so a slow/erroring read here
+ * never blocks the rest of this already-critical page from rendering. */
+async function renderWebhookOperations(){
+ const host=$('#pf-webhook-ops');
+ let deadLetters,pendingRetries,bulkOps;
+ try{[deadLetters,pendingRetries,bulkOps]=await Promise.all([
+  apiClient('/api/platform/webhooks/dead-letters'),apiClient('/api/platform/webhooks/pending-retries'),apiClient('/api/platform/bulk/operations?limit=10')
+ ]);}catch{host.innerHTML='';return;}
+ if(!deadLetters.length && !pendingRetries.length && !bulkOps.length){host.innerHTML='';return;}
+ host.innerHTML=`<h3>${escape(t('platform.operations.title'))}</h3>`;
+ if(deadLetters.length){
+  host.innerHTML+=`<h4>${escape(t('platform.operations.deadLetters',{count:deadLetters.length}))}</h4>`+table(
+   [t('platform.operations.connector'),t('platform.operations.tenantId'),t('platform.operations.trigger'),'errorCode',t('platform.operations.retryCount'),t('platform.operations.receivedAt')],
+   deadLetters.map(e=>[`<span dir="ltr">${escape(e.connectorSlug)}</span>`,`<span dir="ltr" class="kpi-context">${escape(e.tenantId)}</span>`,escape(e.triggerSlug),escape(e.errorCode||'—'),escape(e.retryCount),new Date(e.receivedAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA')])
+  );
+ }
+ if(pendingRetries.length){
+  host.innerHTML+=`<h4>${escape(t('platform.operations.pendingRetries',{count:pendingRetries.length}))}</h4>`+table(
+   [t('platform.operations.connector'),t('platform.operations.tenantId'),t('platform.operations.trigger'),'errorCode',t('platform.operations.retryCount'),t('platform.operations.nextRetryAt')],
+   pendingRetries.map(e=>[`<span dir="ltr">${escape(e.connectorSlug)}</span>`,`<span dir="ltr" class="kpi-context">${escape(e.tenantId)}</span>`,escape(e.triggerSlug),escape(e.errorCode||'—'),escape(e.retryCount),new Date(e.nextRetryAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA')])
+  );
+ }
+ if(bulkOps.length){
+  host.innerHTML+=`<h4>${escape(t('platform.operations.recentBulkOps'))}</h4>`+table(
+   [t('platform.operations.type'),t('platform.operations.createdAt'),t('platform.operations.summary')],
+   bulkOps.map(o=>[escape(o.type),new Date(o.createdAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA'),`<span dir="ltr">${escape(JSON.stringify(o.results.length?Object.fromEntries(Object.entries(o.results.reduce((acc,r)=>{acc[r.status]=(acc[r.status]||0)+1;return acc;},{}))):{}))}</span>`])
+  );
+ }
 }
 /** Phase 6G, Part 35 — Platform Review queue for Tenant Custom Connector drafts. A separate
  * fetch (not part of the Promise.all above) so a slow/erroring pending-list never blocks the

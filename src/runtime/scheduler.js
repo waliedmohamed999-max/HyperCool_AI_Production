@@ -8,6 +8,7 @@ import {renewMailSubscription} from './microsoft-graph.js';
 import {isEnabled} from './feature-flags.js';
 import {listTenants,expireTrials} from '../tenancy.js';
 import {recordAudit} from '../audit.js';
+import {processWebhookRetries} from '../connectors/generic-webhook/retry.js';
 
 export const SCHEDULER_ACTOR={id:'scheduler',name:'الجدولة الآلية',role:'automation'};
 const FOLLOWUP_ELIGIBLE_STAGES=['QUOTE_SENT','DEMO','POST_PURCHASE'];
@@ -174,6 +175,12 @@ export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch,
     result.tenants[tenantId]=tenantResult;
    }
    result.microsoftSubscriptionRenewal=await renewMicrosoftSubscriptionsForAllTenants({store,env,fetcher});
+   // Phase 6H, Part 13-18 — Automatic Webhook Retry: a platform-wide (cross-tenant) sweep, one
+   // per tick, matching the Microsoft-subscription-renewal job's own "not a per-tenant TENANT_JOB"
+   // shape (a failed webhook is identified by its own tenant_id column already, not by iterating
+   // `listTenants`). A missing eventBus (a caller that built a scheduler without one) is treated
+   // the same as "nothing to dispatch onto" — skipped rather than throwing and breaking the tick.
+   if(eventBus)result.webhookRetrySweep=await processWebhookRetries({db,env,eventBus,now});
    return result;
   } finally {
    tickRunning=false;

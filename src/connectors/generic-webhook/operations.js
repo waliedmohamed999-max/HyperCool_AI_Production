@@ -5,7 +5,7 @@
 import {randomBytes,createHmac} from 'node:crypto';
 import {getConnection,rotateWebhookPublicId as storeRotatePublicId,getOrCreateWebhookPublicId} from '../../integrations/connections.js';
 import {getCredentialForRuntime,storeCredential} from '../../integrations/vault.js';
-import {getWebhookEventById,listFailedWebhookEvents,transitionWebhookEventStatus} from '../../runtime/webhook-events.js';
+import {getWebhookEventById,transitionWebhookEventStatus} from '../../runtime/webhook-events.js';
 import {resolveConnectorDynamic} from '../dynamic/registry.js';
 import {applyMapping,safeLookup,MappingError} from '../core/mapping.js';
 import {processGenericWebhook} from './webhook.js';
@@ -87,13 +87,18 @@ export async function sendTestWebhookEvent({db,env,eventBus,connectionId,tenantI
 }
 
 /** Part 14 — Failed Webhook Inspector: safe metadata only (Part 14 explicitly excludes raw
- * payload by default). */
+ * payload by default). Phase 6H, Part 13-18 — also surfaces events currently in the automatic
+ * retry cycle (RETRY_SCHEDULED) and ones that exhausted it (DEAD_LETTER), each carrying its real
+ * `retryCount`/`nextRetryAt` so an operator sees the whole picture, not just the initial
+ * failure — a retrying event is not "gone", it is still failed until it actually succeeds. */
 export function listFailedWebhookEventsForConnection(db,connectionId,tenantId) {
  const connection=getConnection(db,connectionId,tenantId);
  const source=`connector:${connection.integrationDefinitionId}`;
- return listFailedWebhookEvents(db,tenantId,{source,limit:50}).map(row=>({
+ const rows=db.prepare("SELECT * FROM webhook_events WHERE tenant_id=? AND source=? AND status IN ('FAILED','RETRY_SCHEDULED','DEAD_LETTER') ORDER BY received_at DESC LIMIT 50").all(tenantId,source);
+ return rows.map(row=>({
   id:row.id,receivedAt:row.received_at,triggerSlug:row.type,errorCode:row.error,status:row.status,
-  externalEventId:row.external_event_id,correlationId:row.id,hasRawPayload:!!row.raw_payload
+  externalEventId:row.external_event_id,correlationId:row.id,hasRawPayload:!!row.raw_payload,
+  retryCount:row.retry_count||0,nextRetryAt:row.next_retry_at||null
  }));
 }
 /** Part 15 — raw payload detail, gated to the caller's own authorization check (the HTTP route
@@ -131,9 +136,12 @@ export function reprocessFailedWebhookEvent({db,eventBus,connectionId,tenantId,e
  const connection=getConnection(db,connectionId,tenantId);
  const row=getWebhookEventById(db,eventId,tenantId);
  if(!row||row.source!==`connector:${connection.integrationDefinitionId}`)fail(404,'EVENT_NOT_FOUND','لا يوجد حدث بهذا المعرّف لهذا الاتصال');
- if(row.status!=='FAILED')fail(409,'NOT_REPROCESSABLE','هذا الحدث ليس في حالة فشل قابلة لإعادة المعالجة');
+ // Phase 6H, Part 18 — manual reprocess must still work once automatic retry has exhausted its
+ // budget and dead-lettered the event (RETRY_SCHEDULED itself is deliberately excluded — that
+ // state is already being handled by the automatic retry sweep, see retry.js).
+ if(row.status!=='FAILED' && row.status!=='DEAD_LETTER')fail(409,'NOT_REPROCESSABLE','هذا الحدث ليس في حالة فشل قابلة لإعادة المعالجة');
  if(!row.raw_payload)fail(409,'NOT_REPROCESSABLE','لم يتم حفظ المحتوى الأصلي لهذا الحدث (أحداث أقدم من هذه الميزة)');
- const claimed=transitionWebhookEventStatus(db,eventId,tenantId,{fromStatus:'FAILED',toStatus:'REPROCESSING'});
+ const claimed=transitionWebhookEventStatus(db,eventId,tenantId,{fromStatus:row.status,toStatus:'REPROCESSING'});
  if(!claimed)fail(409,'CONCURRENT_REPROCESS','تمت معالجة هذا الحدث بالفعل من جلسة أخرى');
  const entry=resolveConnectorDynamic(db,connection.integrationDefinitionId,{connectorVersion:connection.connectorVersion??null});
  const trigger=(entry?.manifest?.triggers||[]).find(t=>t.slug===row.type);

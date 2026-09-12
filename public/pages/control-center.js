@@ -941,14 +941,19 @@ async function paintWebhookPanel(panel,connection){
   showFailed.onclick=async()=>{
    let failed;
    try{failed=await api(`/api/integrations/connections/${connection.id}/webhook/failed`);}catch(error){toastError(error.message);return;}
-   failedHost.innerHTML=failed.length?table([t('controlCenter.advanced.receivedAt'),t('controlCenter.advanced.trigger'),t('controlCenter.statusLabel'),'errorCode',t('controlCenter.advanced.reprocess')],
-    failed.map(f=>[new Date(f.receivedAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA'),escape(f.triggerSlug),escape(f.status),escape(f.errorCode||'—'),`<span data-reprocess="${escape(f.id)}"></span>`])
+   // Phase 6H, Part 13-18 — a failed event may now also be RETRY_SCHEDULED (the automatic
+   // retry sweep already has it queued) or DEAD_LETTER (retries exhausted, needs a human);
+   // the retry-status column and count make that visible instead of a bare generic "FAILED".
+   failedHost.innerHTML=failed.length?table([t('controlCenter.advanced.receivedAt'),t('controlCenter.advanced.trigger'),t('controlCenter.statusLabel'),'errorCode',t('controlCenter.advanced.retryStatus'),t('controlCenter.advanced.reprocess')],
+    failed.map(f=>[new Date(f.receivedAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA'),escape(f.triggerSlug),badge(t('controlCenter.advanced.retryStatusValue.'+f.status)||f.status,f.status==='DEAD_LETTER'?'ERROR':f.status==='RETRY_SCHEDULED'?'PENDING':'ERROR'),escape(f.errorCode||'—'),f.status==='RETRY_SCHEDULED'&&f.nextRetryAt?new Date(f.nextRetryAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA'):(f.retryCount?t('controlCenter.advanced.retryCount',{count:f.retryCount}):'—'),`<span data-reprocess="${escape(f.id)}"></span>`])
    ):empty(t('common.noResults'));
    for(const f of failed){
     const cell=failedHost.querySelector(`[data-reprocess="${CSS.escape(f.id)}"]`);
     if(!cell)continue;
     const reprocessButton=button(t('controlCenter.advanced.reprocess'),{variant:'ghost'});
-    reprocessButton.disabled=!f.hasRawPayload;
+    // Only FAILED/DEAD_LETTER are reprocessable — RETRY_SCHEDULED is already being handled
+    // automatically (see generic-webhook/retry.js's own CAS guard, which would refuse it anyway).
+    reprocessButton.disabled=!f.hasRawPayload||f.status==='RETRY_SCHEDULED';
     reprocessButton.onclick=async()=>{
      const confirmed=await promptDrawer(t('controlCenter.advanced.reprocess'),n=>{n.innerHTML=`<p>${escape(t('controlCenter.advanced.reprocessConfirm'))}</p>`;},{confirmLabel:t('controlCenter.advanced.reprocess')});
      if(!confirmed)return;

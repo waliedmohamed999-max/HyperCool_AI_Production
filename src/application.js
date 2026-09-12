@@ -13,6 +13,7 @@ import {processGenericWebhook} from './connectors/generic-webhook/webhook.js';
 import {installDynamicConnectorTables} from './connectors/dynamic/store.js';
 import {installDraftOverlayTables} from './connectors/dynamic/draft-store.js';
 import {installBulkOperations,previewBulkVersionMigration,bulkMigrateConnections,bulkRollbackOperation,listBulkOperations,getBulkOperation,previewBulkWebhookReprocess,bulkReprocessWebhookEvents} from './connectors/dynamic/bulk-operations.js';
+import {listDeadLetterEvents,listPendingRetries} from './connectors/generic-webhook/retry.js';
 import {resolveConnectorDynamic} from './connectors/dynamic/registry.js';
 import {listCompatibleConnections} from './connectors/dynamic/compatibility.js';
 import {
@@ -904,6 +905,14 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const result=await bulkReprocessWebhookEvents({db:store.db,env,eventBus,actorUser:session.user,connectorSlug:input.connectorSlug,tenantId:input.tenantId||null,fromDate:input.fromDate||null,toDate:input.toDate||null,errorCode:input.errorCode||null,eventIds:input.eventIds||null});
         recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'BULK_WEBHOOK_REPROCESS_EXECUTED',itemId:result.operationId,detail:JSON.stringify(result.summary),actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
         return send(200,result);
+      }
+      // Phase 6H, Part 46-48 — Platform Operations visibility: real, live, cross-tenant Dead
+      // Letter / Pending Retry lists (Automatic Webhook Retry, Part 13-18).
+      if(url.pathname==='/api/platform/webhooks/dead-letters' && req.method==='GET') {
+        return send(200,listDeadLetterEvents(store.db,env,session.user,{limit:Number(url.searchParams.get('limit'))||50}));
+      }
+      if(url.pathname==='/api/platform/webhooks/pending-retries' && req.method==='GET') {
+        return send(200,listPendingRetries(store.db,env,session.user,{limit:Number(url.searchParams.get('limit'))||50}));
       }
       // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only

@@ -184,6 +184,13 @@
   "trigger": "الـTrigger",
   "reprocess": "إعادة معالجة",
   "reprocessConfirm": "سيُعاد تشغيل التعيين (mapping) والإرسال لنفس الحدث الأصلي فقط — لن يُعالج أي حدث آخر ولن يتكرر النجاح إن سبق نجاحه.",
+  "retryStatus": "حالة إعادة المحاولة",
+  "retryCount": "محاولات: {count}",
+  "retryStatusValue": {
+   "FAILED": "فشل",
+   "RETRY_SCHEDULED": "مجدول لإعادة محاولة تلقائية",
+   "DEAD_LETTER": "استُنفدت المحاولات — يحتاج تدخلاً يدويًا"
+  },
   "usageCalls": "عدد الاستدعاءات (٧ أيام)",
   "usageSuccess": "ناجحة",
   "usageFailure": "فاشلة",

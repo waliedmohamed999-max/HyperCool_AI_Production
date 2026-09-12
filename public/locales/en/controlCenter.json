@@ -184,6 +184,13 @@
   "trigger": "Trigger",
   "reprocess": "Reprocess",
   "reprocessConfirm": "Re-runs mapping and dispatch for this exact original event only — no other event is affected, and it will not re-succeed twice.",
+  "retryStatus": "Retry Status",
+  "retryCount": "Attempts: {count}",
+  "retryStatusValue": {
+   "FAILED": "Failed",
+   "RETRY_SCHEDULED": "Scheduled for automatic retry",
+   "DEAD_LETTER": "Retries exhausted — needs manual action"
+  },
   "usageCalls": "Calls (7 days)",
   "usageSuccess": "Successful",
   "usageFailure": "Failed",

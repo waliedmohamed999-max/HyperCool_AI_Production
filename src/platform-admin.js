@@ -57,7 +57,10 @@ export function buildPlatformOverview(db,env) {
  // Phase 6F, Part 2 — real, platform-wide (cross-tenant) webhook failure count for the
  // Integration Platform dashboard card; reuses the EXISTING webhook_events ledger's own
  // `status` column (Phase 4C-C's real idempotency ledger) — never a second failure tracker.
- const failedWebhooksRow=db.prepare("SELECT COUNT(*) n FROM webhook_events WHERE status='FAILED'").get();
+ // Phase 6H, Part 13-18 — also counts DEAD_LETTER (retries exhausted, genuinely needs a human)
+ // alongside plain FAILED; RETRY_SCHEDULED is deliberately excluded — it is already being
+ // handled automatically and is not yet something an operator needs to act on.
+ const failedWebhooksRow=db.prepare("SELECT COUNT(*) n FROM webhook_events WHERE status IN ('FAILED','DEAD_LETTER')").get();
  return {tenants:counts,users:{total:users,verified:verifiedUsers},connectionsNeedingAttention,healthyConnections,agentsFailing,recentCriticalErrors:recentCritical,failedWebhooks:failedWebhooksRow.n};
 }
 

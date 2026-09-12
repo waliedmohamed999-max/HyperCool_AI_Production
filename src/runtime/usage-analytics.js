@@ -34,7 +34,10 @@ export function getConnectionUsage(db,tenantId,connectionId,window='7d') {
  }
  const source=`connector:${connection.integrationDefinitionId}`;
  const webhookReceived=db.prepare('SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source=? AND received_at>=?').get(tenantId,source,cutoff).c;
- const webhookFailed=db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source=? AND status='FAILED' AND received_at>=?").get(tenantId,source,cutoff).c;
+ // Phase 6H, Part 13-18 — a webhook that failed and is now automatically retrying
+ // (RETRY_SCHEDULED) or has exhausted its retry budget (DEAD_LETTER) is still a real failure
+ // from an operator's point of view; it must never silently drop out of this count.
+ const webhookFailed=db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source=? AND status IN ('FAILED','RETRY_SCHEDULED','DEAD_LETTER') AND received_at>=?").get(tenantId,source,cutoff).c;
  return {
   window,actionCalls:success+failure,success,failure,
   averageLatencyMs:latencyCount?Math.round(latencySum/latencyCount):null,
@@ -80,10 +83,10 @@ export function getConnectorAnalytics(db,slug,window='7d',{tenantId=null}={}) {
  let webhookReceived=0,webhookFailed=0;
  if(tenantId) {
   webhookReceived=db.prepare('SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source=? AND received_at>=?').get(tenantId,source,cutoff).c;
-  webhookFailed=db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source=? AND status='FAILED' AND received_at>=?").get(tenantId,source,cutoff).c;
+  webhookFailed=db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source=? AND status IN ('FAILED','RETRY_SCHEDULED','DEAD_LETTER') AND received_at>=?").get(tenantId,source,cutoff).c;
  } else {
   webhookReceived=db.prepare('SELECT COUNT(*) c FROM webhook_events WHERE source=? AND received_at>=?').get(source,cutoff).c;
-  webhookFailed=db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE source=? AND status='FAILED' AND received_at>=?").get(source,cutoff).c;
+  webhookFailed=db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE source=? AND status IN ('FAILED','RETRY_SCHEDULED','DEAD_LETTER') AND received_at>=?").get(source,cutoff).c;
  }
  return {
   slug,window,tenantId,connectionsCount,activeTenants,calls,failures,

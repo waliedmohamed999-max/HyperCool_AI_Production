@@ -44,6 +44,12 @@ export function installWebhookEvents(db) {
  // specifically so that one delivery — and only that one — becomes safely reprocessable.
  const columns=db.prepare('PRAGMA table_info(webhook_events)').all().map(c=>c.name);
  if(!columns.includes('raw_payload'))db.exec('ALTER TABLE webhook_events ADD COLUMN raw_payload TEXT');
+ // Phase 6H, Part 13-18 — Automatic Webhook Retry: `retry_count` (attempts already made) and
+ // `next_retry_at` (when the next automatic attempt is due) back the RETRY_SCHEDULED/DEAD_LETTER
+ // states (see connectors/generic-webhook/retry.js) — a bounded, backed-off retry loop that
+ // reuses this SAME ledger, never a second queue table.
+ if(!columns.includes('retry_count'))db.exec('ALTER TABLE webhook_events ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0');
+ if(!columns.includes('next_retry_at'))db.exec('ALTER TABLE webhook_events ADD COLUMN next_retry_at TEXT');
 }
 export function listWebhookEvents(db,{source,limit=50}={},tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
