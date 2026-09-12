@@ -220,6 +220,19 @@
    "connectionId": "Connection ID",
    "rollbackOperation": "Rollback this operation",
    "rollbackConfirm": "Only rolls back the connections this specific operation actually migrated, each through the same safety checks."
+  },
+  "tabAnalytics": "Analytics",
+  "analytics": {
+   "connections": "Connections",
+   "activeTenants": "Active Tenants",
+   "calls": "Calls",
+   "successRate": "Success Rate",
+   "failures": "Failures",
+   "avgLatency": "Average Latency",
+   "webhookReceived": "Webhook Received",
+   "webhookFailed": "Webhook Failed",
+   "healthDistribution": "Health Distribution",
+   "count": "Count"
   }
  },
  "customConnectors": {

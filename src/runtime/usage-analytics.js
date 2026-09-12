@@ -42,26 +42,53 @@ export function getConnectionUsage(db,tenantId,connectionId,window='7d') {
  };
 }
 
-/** Part 41 — a Platform Admin's Connector Analytics: aggregated across EVERY tenant that has a
- * connection to this connector — a genuinely cross-tenant read, so it deliberately bypasses
- * `listAuditLog`'s own always-tenant-scoped default (see audit.js) via a direct, bounded query,
- * then attributes each row to this specific connector by its own `connectorSlug` field (the
- * same field `CONNECTOR_ACTION_EXECUTED`/`_FAILED` entries already carry — never re-deriving it
- * from a guess). */
-export function getConnectorAnalytics(db,slug,window='7d') {
+/** Part 22-25 (Phase 6H) / Part 41 (Phase 6G) — a Platform Admin's Connector Analytics:
+ * aggregated across EVERY tenant that has a connection to this connector (or, when `tenantId`
+ * is given, narrowed to that ONE tenant's own contribution — Part 24's tenant filter) — a
+ * genuinely cross-tenant read by default, so it deliberately bypasses `listAuditLog`'s own
+ * always-tenant-scoped default (see audit.js) via a direct, bounded query, then attributes each
+ * row to this specific connector by its own `connectorSlug` field (the same field
+ * `CONNECTOR_ACTION_EXECUTED`/`_FAILED` entries already carry — never re-deriving it from a
+ * guess). `successRate`/`averageLatencyMs`/`webhookReceived`/`webhookFailed` are real, computed
+ * from the exact same rows — Part 25: every number here comes from the DB/logs, never a
+ * generated placeholder; an empty window honestly reports 0/null, not a demo value. */
+export function getConnectorAnalytics(db,slug,window='7d',{tenantId=null}={}) {
  const cutoff=cutoffIso(window);
- const connectionsCount=db.prepare('SELECT COUNT(*) c FROM integration_connections WHERE integration_definition_id=?').get(slug).c;
- const activeTenants=db.prepare("SELECT COUNT(DISTINCT tenant_id) c FROM integration_connections WHERE integration_definition_id=? AND status IN ('CONNECTED','DEGRADED')").get(slug).c;
+ const connectionsCount=tenantId
+  ?db.prepare('SELECT COUNT(*) c FROM integration_connections WHERE integration_definition_id=? AND tenant_id=?').get(slug,tenantId).c
+  :db.prepare('SELECT COUNT(*) c FROM integration_connections WHERE integration_definition_id=?').get(slug).c;
+ const activeTenants=tenantId
+  ?(db.prepare("SELECT COUNT(*) c FROM integration_connections WHERE integration_definition_id=? AND tenant_id=? AND status IN ('CONNECTED','DEGRADED')").get(slug,tenantId).c>0?1:0)
+  :db.prepare("SELECT COUNT(DISTINCT tenant_id) c FROM integration_connections WHERE integration_definition_id=? AND status IN ('CONNECTED','DEGRADED')").get(slug).c;
  const healthDistribution=Object.fromEntries(
-  db.prepare('SELECT status,COUNT(*) c FROM integration_connections WHERE integration_definition_id=? GROUP BY status').all(slug).map(r=>[r.status,r.c])
+  (tenantId
+   ?db.prepare('SELECT status,COUNT(*) c FROM integration_connections WHERE integration_definition_id=? AND tenant_id=? GROUP BY status').all(slug,tenantId)
+   :db.prepare('SELECT status,COUNT(*) c FROM integration_connections WHERE integration_definition_id=? GROUP BY status').all(slug)
+  ).map(r=>[r.status,r.c])
  );
  const rows=db.prepare(ACTION_ROWS).all(cutoff,MAX_ROWS_SCANNED);
- let calls=0,failures=0;
+ let calls=0,failures=0,latencySum=0,latencyCount=0;
  for(const row of rows) {
   const entry=JSON.parse(row.json);
   if(entry.connectorSlug!==slug)continue;
+  if(tenantId && row.tenant_id!==tenantId)continue;
   calls++;
   if(entry.status!=='OK')failures++;
+  if(Number.isFinite(entry.latencyMs)){latencySum+=entry.latencyMs;latencyCount++;}
  }
- return {slug,window,connectionsCount,activeTenants,calls,failures,healthDistribution};
+ const source=`connector:${slug}`;
+ let webhookReceived=0,webhookFailed=0;
+ if(tenantId) {
+  webhookReceived=db.prepare('SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source=? AND received_at>=?').get(tenantId,source,cutoff).c;
+  webhookFailed=db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source=? AND status='FAILED' AND received_at>=?").get(tenantId,source,cutoff).c;
+ } else {
+  webhookReceived=db.prepare('SELECT COUNT(*) c FROM webhook_events WHERE source=? AND received_at>=?').get(source,cutoff).c;
+  webhookFailed=db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE source=? AND status='FAILED' AND received_at>=?").get(source,cutoff).c;
+ }
+ return {
+  slug,window,tenantId,connectionsCount,activeTenants,calls,failures,
+  successRate:calls?Math.round(((calls-failures)/calls)*1000)/10:null,
+  averageLatencyMs:latencyCount?Math.round(latencySum/latencyCount):null,
+  webhookReceived,webhookFailed,healthDistribution
+ };
 }

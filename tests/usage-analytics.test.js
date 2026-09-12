@@ -118,6 +118,14 @@ test('Connector Analytics: cross-tenant aggregate — connections/active tenants
   assert.equal(analytics.connectionsCount,2);
   assert.equal(analytics.calls,2);
   assert.equal(analytics.failures,1,'tenant B\'s wrong key call must be counted as a real cross-tenant failure');
+  // Phase 6H, Part 22-25 — successRate/webhook fields, real and computed, and the tenant filter
+  // narrows every one of these to that tenant's own contribution only.
+  assert.equal(analytics.successRate,50);
+  const onlyA=getConnectorAnalytics(db,'analytics_co','7d',{tenantId:tenantA});
+  assert.equal(onlyA.connectionsCount,1);
+  assert.equal(onlyA.calls,1);
+  assert.equal(onlyA.failures,0);
+  assert.equal(onlyA.successRate,100);
  } finally { await cleanup(); }
 });
 

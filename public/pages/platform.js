@@ -4,7 +4,7 @@
 // (`auth.isPlatformAdmin`, from `/api/auth`) — the nav link stays hidden otherwise, and every
 // route this page calls is independently, server-side gated by `requirePlatformAdmin` (Part
 // 58: a normal tenant owner/reviewer/operator gets a real 403, never a client-side illusion).
-import {escape,button,badge,empty,skeleton,promptDrawer,drawer,tabs,table,toast as showToast} from '../components/ui/index.js';
+import {escape,button,badge,empty,skeleton,promptDrawer,drawer,tabs,table,metric,toast as showToast} from '../components/ui/index.js';
 import {t,getLocale} from '../i18n.js';
 
 const $=s=>document.querySelector('#platform '+s);
@@ -385,8 +385,9 @@ async function openConnectorWizard(summary){
  const draftBanner=document.createElement('div');draftBanner.hidden=true;
  const basicPanel=document.createElement('div'),actionsPanel=document.createElement('div'),
        webhooksPanel=document.createElement('div'),healthPanel=document.createElement('div'),
-       versionsPanel=document.createElement('div'),reviewPanel=document.createElement('div');
- node.append(draftBanner,basicPanel,actionsPanel,webhooksPanel,healthPanel,versionsPanel,reviewPanel);
+       versionsPanel=document.createElement('div'),reviewPanel=document.createElement('div'),
+       analyticsPanel=document.createElement('div');
+ node.append(draftBanner,basicPanel,actionsPanel,webhooksPanel,healthPanel,versionsPanel,reviewPanel,analyticsPanel);
  // Item 7 — the numbered steps stay visible in every tab label even though steps 1-3 share one
  // panel (the Builder's create call is atomic — see the Basics panel's own doc comment) — a
  // Platform Admin always sees where they are in the full 8-step flow.
@@ -396,7 +397,8 @@ async function openConnectorWizard(summary){
   [`5. ${t('platform.builder.tabWebhooks')}`,webhooksPanel],
   [`6. ${t('platform.builder.tabHealth')}`,healthPanel],
   [`7. ${t('platform.builder.tabVersions')}`,versionsPanel],
-  [`8. ${t('platform.builder.tabReview')}`,reviewPanel]
+  [`8. ${t('platform.builder.tabReview')}`,reviewPanel],
+  [`9. ${t('platform.builder.tabAnalytics')}`,analyticsPanel]
  ]);
  const dialog=drawer(summary?(getLocale()==='en'?summary.nameEn:summary.nameAr):t('platform.builder.wizardTitleNew'),node);
  let detail=summary?null:{actions:[],triggers:[],restConfig:null,authConfig:null,capabilities:[]};
@@ -406,7 +408,7 @@ async function openConnectorWizard(summary){
   try{detail=await apiClient(`/api/platform/connectors/${definitionId}`);}
   catch(error){toastError(error.message);return;}
   paintDraftBanner();
-  paintBasic();paintActions();paintWebhooks();paintHealth();paintVersions();paintReview();gateOtherTabs();
+  paintBasic();paintActions();paintWebhooks();paintHealth();paintVersions();paintReview();paintAnalytics();gateOtherTabs();
  }
  function paintDraftBanner(){
   draftBanner.hidden=!detail?.hasDraft;
@@ -423,7 +425,7 @@ async function openConnectorWizard(summary){
  }
  function gateOtherTabs(){
   const disabled=!definitionId;
-  [actionsPanel,webhooksPanel,healthPanel,versionsPanel,reviewPanel].forEach(panel=>{
+  [actionsPanel,webhooksPanel,healthPanel,versionsPanel,reviewPanel,analyticsPanel].forEach(panel=>{
    if(disabled)panel.innerHTML=empty(t('platform.builder.createFirst'));
   });
  }
@@ -758,6 +760,35 @@ async function openConnectorWizard(summary){
     catch(error){toastError(error.message);}
    };
    host.append(rollbackButton);
+  }
+ }
+
+ // Phase 6H, Part 22-25 — Platform Connector Analytics: real, live numbers only (Part 25 — an
+ // empty window shows 0/—, never a generated demo value), with a real time-window switcher.
+ let analyticsWindow='7d';
+ async function paintAnalytics(){
+  if(!definitionId)return;
+  analyticsPanel.innerHTML=`<div class="table-toolbar"><select id="analytics-window">${['24h','7d','30d'].map(w=>`<option value="${w}" ${w===analyticsWindow?'selected':''}>${w}</option>`).join('')}</select></div><div id="analytics-body"></div>`;
+  analyticsPanel.querySelector('#analytics-window').onchange=e=>{analyticsWindow=e.target.value;renderAnalyticsBody();};
+  await renderAnalyticsBody();
+  async function renderAnalyticsBody(){
+   const host=analyticsPanel.querySelector('#analytics-body');
+   host.innerHTML=skeleton(t('common.loading'));
+   let a;
+   try{a=await apiClient(`/api/platform/connectors/${definitionId}/analytics?window=${analyticsWindow}`);}
+   catch(error){host.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+   host.innerHTML=`<div class="kpi-grid">
+    ${metric(t('platform.builder.analytics.connections'),a.connectionsCount)}
+    ${metric(t('platform.builder.analytics.activeTenants'),a.activeTenants)}
+    ${metric(t('platform.builder.analytics.calls'),a.calls)}
+    ${metric(t('platform.builder.analytics.successRate'),a.successRate!=null?a.successRate+'%':'—')}
+    ${metric(t('platform.builder.analytics.failures'),a.failures)}
+    ${metric(t('platform.builder.analytics.avgLatency'),a.averageLatencyMs!=null?a.averageLatencyMs+' ms':'—')}
+    ${metric(t('platform.builder.analytics.webhookReceived'),a.webhookReceived)}
+    ${metric(t('platform.builder.analytics.webhookFailed'),a.webhookFailed)}
+   </div>
+   <h4>${escape(t('platform.builder.analytics.healthDistribution'))}</h4>
+   ${Object.keys(a.healthDistribution).length?table([t('controlCenter.statusLabel'),t('platform.builder.analytics.count')],Object.entries(a.healthDistribution).map(([status,count])=>[badge(status,status==='CONNECTED'?'CONNECTED':status==='DEGRADED'?'DEGRADED':'DISCONNECTED'),escape(count)])):empty(t('common.noResults'))}`;
   }
  }
 

@@ -220,6 +220,19 @@
    "connectionId": "معرّف الاتصال",
    "rollbackOperation": "التراجع عن هذه العملية",
    "rollbackConfirm": "سيتم التراجع فقط عن الاتصالات التي رُحِّلت فعليًا ضمن هذه العملية، كل واحد عبر نفس فحوصات الأمان."
+  },
+  "tabAnalytics": "التحليلات",
+  "analytics": {
+   "connections": "الاتصالات",
+   "activeTenants": "المنشآت النشطة",
+   "calls": "الاستدعاءات",
+   "successRate": "نسبة النجاح",
+   "failures": "الإخفاقات",
+   "avgLatency": "متوسط زمن الاستجابة",
+   "webhookReceived": "أحداث Webhook مستلمة",
+   "webhookFailed": "أحداث Webhook فاشلة",
+   "healthDistribution": "توزيع حالة الصحة",
+   "count": "العدد"
   }
  },
  "customConnectors": {

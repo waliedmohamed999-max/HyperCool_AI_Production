@@ -858,7 +858,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(platformConnectorAnalytics && req.method==='GET') {
         requirePlatformAdmin(env,session);
         const definition=getConnectorForBuilder(store.db,env,session.user,platformConnectorAnalytics[1]);
-        return send(200,getConnectorAnalytics(store.db,definition.slug,url.searchParams.get('window')||'7d'));
+        return send(200,getConnectorAnalytics(store.db,definition.slug,url.searchParams.get('window')||'7d',{tenantId:url.searchParams.get('tenantId')||null}));
       }
       // Phase 6G, Part 28-38 — Tenant Custom Connector Governance: Platform Admin's review queue.
       if(url.pathname==='/api/platform/custom-connectors/pending' && req.method==='GET') {
