@@ -19,6 +19,7 @@ import {installOnboardingPage,renderOnboardingPage} from './pages/onboarding.js'
 import {installAccountPage,renderAccountPage} from './pages/account.js';
 import {isRecoveryRoute,installRecoveryPage,renderRecoveryPage} from './pages/recovery.js';
 import {isNewWorkspaceRoute,installNewWorkspacePage,renderNewWorkspacePage} from './pages/new-workspace.js';
+import {installPlatformPage,renderPlatformPage} from './pages/platform.js';
 import {isInviteRoute,renderInvitePage} from './pages/invite.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
@@ -34,6 +35,7 @@ installOnboardingPage();
 installAccountPage();
 installRecoveryPage();
 installNewWorkspacePage();
+installPlatformPage();
 installCRMInteractions();
 installContentInteractions();
 installMemoryInteractions();
@@ -176,6 +178,7 @@ async function render(){
   await renderMemory({api,auth});
   await renderIntegrations({api});
   await renderControlCenter({api,auth});
+  await renderPlatformPage({api,auth});
   await renderOnboardingPage({api,auth});
   $('#items').querySelectorAll(':scope > article').forEach((card,index)=>addContentActions(card,state.content[index],auth,escape));
   await renderPlanning({api,auth,state,escape});
