@@ -219,5 +219,11 @@
   },
   "submit": "إرسال للمراجعة",
   "policyNote": "يُسمح فقط بمصادقة NONE/API_KEY/BEARER_TOKEN/BASIC ورابط HTTPS عام — لا OAuth2، ولا قدرات محجوزة (platform./security./admin./permissions.*)."
+ },
+ "tokenExpiry": {
+  "HEALTHY": "صحّي",
+  "EXPIRING_SOON": "قارب على الانتهاء",
+  "EXPIRED": "منتهي الصلاحية",
+  "REAUTH_REQUIRED": "يلزم إعادة الربط"
  }
 }

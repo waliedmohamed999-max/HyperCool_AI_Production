@@ -219,5 +219,11 @@
   },
   "submit": "Submit for review",
   "policyNote": "Only NONE/API_KEY/BEARER_TOKEN/BASIC auth and a public HTTPS URL are allowed — no OAuth2, and no reserved capabilities (platform./security./admin./permissions.*)."
+ },
+ "tokenExpiry": {
+  "HEALTHY": "Healthy",
+  "EXPIRING_SOON": "Expiring Soon",
+  "EXPIRED": "Expired",
+  "REAUTH_REQUIRED": "Reauthorization Required"
  }
 }

@@ -696,11 +696,22 @@ function openInviteDrawer(refreshHost){
 
 // --- Connection detail / provider drawer ---------------------------------------------------
 
+const TOKEN_EXPIRY_VARIANT={HEALTHY:'CONNECTED',EXPIRING_SOON:'PENDING',EXPIRED:'ERROR',REAUTH_REQUIRED:'ERROR'};
 function openProviderDrawer(provider){
  const node=document.createElement('div');
- node.innerHTML=provider.connections.map(c=>`<div class="card" data-connection="${escape(c.id)}"><div class="row-between"><strong>${escape(c.name)}</strong>${c.isDefault?badge(t('controlCenter.default'),'CONNECTED'):''}</div>${statusBadge(c.status,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',PERMISSION_MISSING:'ERROR',DISCONNECTED:'DISCONNECTED',CONNECTING:'PENDING',NOT_CONFIGURED:'PENDING'})}<p>${escape(c.externalAccountName||'—')}</p><p class="kpi-context">${escape(t('controlCenter.lastChecked'))}: ${escape(c.lastHealthCheck||'—')}</p><div data-reauth></div><div class="report-actions"></div></div>`).join('');
+ node.innerHTML=provider.connections.map(c=>`<div class="card" data-connection="${escape(c.id)}"><div class="row-between"><strong>${escape(c.name)}</strong>${c.isDefault?badge(t('controlCenter.default'),'CONNECTED'):''}</div>${statusBadge(c.status,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',PERMISSION_MISSING:'ERROR',DISCONNECTED:'DISCONNECTED',CONNECTING:'PENDING',NOT_CONFIGURED:'PENDING'})}<p>${escape(c.externalAccountName||'—')}</p><p class="kpi-context">${escape(t('controlCenter.lastChecked'))}: ${escape(c.lastHealthCheck||'—')}</p><div data-token-expiry></div><div data-reauth></div><div class="report-actions"></div></div>`).join('');
  for(const c of provider.connections){
   const card=node.querySelector(`[data-connection="${CSS.escape(c.id)}"]`),actions=card.querySelector('.report-actions');
+  // Phase 6H, Part 19-20 — Token Expiry proactive UI: a real, honest signal computed from the
+  // actual stored token `expiresAt` (never a hardcoded/fake status) — shown for EVERY OAuth2
+  // connection that has one, not just once something has already gone wrong, so an operator can
+  // reconnect BEFORE a real interruption happens.
+  if(c.healthView?.tokenExpiry && c.healthView.tokenExpiry.status!=='UNKNOWN'){
+   const expiry=c.healthView.tokenExpiry;
+   const expiryHost=card.querySelector('[data-token-expiry]');
+   const label=t('controlCenter.tokenExpiry.'+expiry.status)+(expiry.expiresAt?` (${new Date(expiry.expiresAt).toLocaleDateString(getLocale()==='en'?'en-US':'ar-SA')})`:'');
+   expiryHost.append(badge(label,TOKEN_EXPIRY_VARIANT[expiry.status]||'PENDING'));
+  }
   // Phase 6G, Part 25/26 — Reauth UX: an honest, additive signal (never replacing the real
   // status badge above) shown ONLY when the connection's own OAuth2 refresh has genuinely
   // failed or has no refresh token — a direct one-click path to reconnect the SAME logical
