@@ -1,5 +1,14 @@
 # Canonical Capability Registry (Phase 6A)
 
+> **Phase 6B update**: the Generic REST Connector (`docs/GENERIC_REST_CONNECTOR.md`) enforces
+> this registry directly — `validateManifest()` canonicalizes and de-duplicates every declared
+> capability, and every action's `requiredCapability` must already be in the manifest's own
+> `capabilities` list (Part 52/53) — there is no path for a Generic REST connector definition to
+> invent an unknown or privileged capability string (`system.admin`, `security.write`, etc.);
+> such a manifest simply fails validation.
+
+
+
 `src/connectors/core/capability-registry.js`. One shared taxonomy so no future connector
 invents a new name for a concept that already exists — additive only, never renames anything
 `src/runtime/tools.js`/`src/runtime/capability-map.js` already rely on.

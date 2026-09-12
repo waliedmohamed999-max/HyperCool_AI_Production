@@ -1,5 +1,15 @@
 # Universal Integration Platform — Connector Framework (Phase 6A)
 
+> **Phase 6B update**: the Generic REST Connector (`src/connectors/generic-rest/`) now exists on
+> top of this exact framework — see `docs/GENERIC_REST_CONNECTOR.md` and
+> `docs/CONNECTOR_SSRF_SECURITY.md`. The only changes to the files described below: (1)
+> `core/runtime.js`'s `executeConnectorAction` now threads a `manifest` (plus optional
+> `resolver`/`transport` test hooks) into `adapter.executeAction()` — purely additive, ignored by
+> the 6A adapters; (2) a new `checkConnectorHealth()` export in the same file, alongside (never
+> replacing) the pre-existing `src/integrations/health.js`; (3) one additive entry,
+> `'connector_action'`, was already present in `approvals.js`'s `ACTION_TYPES` from 6A and is
+> reused unchanged. Everything else below is exactly as Phase 6A left it.
+
 ## What this phase actually built
 
 A real, additive Connector SDK under `src/connectors/` that can represent an existing

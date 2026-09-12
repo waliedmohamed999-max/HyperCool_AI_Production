@@ -5,6 +5,16 @@ through 3.5 — see `docs/MULTI_TENANT_ARCHITECTURE.md` for the narrative). It c
 resolution, membership, IDOR protection, and isolation per subsystem, plus the full,
 factual classification of every table in the database.
 
+**Phase 6B addition**: the Connector Runtime (`src/connectors/core/runtime.js`) applies the
+exact same IDOR-safe pattern described below to every connector action and health check — a
+connection id belonging to Tenant A resolves to `null` under Tenant B's `tenantId` (via the
+same tenant-scoped `getConnectionOrNull`), so no outbound HTTP call — and therefore no secret
+retrieval from the Vault — is ever reachable across a tenant boundary, even with the exact real
+connection id guessed. Proven directly by `tests/generic-rest-connector.test.js`'s cross-tenant
+test, which also asserts the mock transport was never called at all. See
+`docs/GENERIC_REST_CONNECTOR.md` and `docs/CONNECTOR_SSRF_SECURITY.md` for the rest of the
+Generic REST Connector's security model (SSRF protection, header/secret handling).
+
 ## Tenant resolution
 
 `src/tenancy.js` is the single source of truth. `resolveTenantForUser(db, userId)` is what

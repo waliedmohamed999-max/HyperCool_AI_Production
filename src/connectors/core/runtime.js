@@ -28,7 +28,7 @@ class ConnectorRuntimeError extends Error {
  * `authorize(session,[...])`. This function re-checks only what it alone can know: that the
  * connection genuinely belongs to the claimed tenant and the action genuinely exists.
  */
-export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,connectorSlug,connectionId,actionId,input={},actor,correlationId=randomUUID(),resolveConnector=getConnector}) {
+export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,connectorSlug,connectionId,actionId,input={},actor,correlationId=randomUUID(),resolveConnector=getConnector,resolver,transport}) {
  if(!actor?.id)throw new ConnectorRuntimeError('ACTOR_REQUIRED','A real actor is required to execute a connector action');
  // 1. Tenant validation — reuses the exact same central check the agent runtime uses (Part 17/18
  // of Phase 4C-7), so a suspended/trial-expired tenant can never execute a connector action either.
@@ -83,13 +83,19 @@ export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,conn
  let credential=null;
  try{credential=getCredentialForRuntime(db,env,connectionId,tenantId);}catch{credential=null;}
 
- // 10. Connector adapter execution.
+ // 10. Connector adapter execution. `manifest` is passed through (Phase 6B addition, purely
+ // additive — Salla/Anthropic/OpenAI's 6A adapters simply ignore it) so a SHARED generic
+ // adapter (Generic REST) can read connector-level config (base URL, auth strategy) that a
+ // single `action` object alone never carries.
  const startedAt=Date.now();
  let result;
  try {
-  result=await adapter.executeAction({action,input,env,fetcher,credential,connection});
+  result=await adapter.executeAction({action,input,env,fetcher,credential,connection,manifest,resolver,transport});
  } catch(error) {
-  result={status:'ERROR',errorCode:'REMOTE_SERVER_ERROR'};
+  // Preserve the real, specific, already-safe error code an adapter/lower layer (e.g. the
+  // SSRF module's ConnectorHttpError) threw — never collapse every failure into one generic
+  // code, which would make CONNECTOR_SSRF_BLOCKED indistinguishable from a real timeout.
+  result={status:'ERROR',errorCode:error?.code||'REMOTE_SERVER_ERROR'};
  }
  const latencyMs=Date.now()-startedAt;
 
@@ -108,4 +114,33 @@ export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,conn
 
  // 13. Result.
  return {...result,correlationId,latencyMs};
+}
+
+/**
+ * Universal Integration Platform (Phase 6B, Part 47/48/97) — health-checks ONE connection
+ * through the Connector Registry (Salla/Anthropic/OpenAI/Generic REST today). This is
+ * ADDITIVE, alongside (never replacing) the existing, live `src/integrations/health.js`'s
+ * `testConnectionHealth` — that dispatcher keeps serving every pre-6A route unchanged. This
+ * function exists so a Registry-based connector (a Generic REST connector especially, Part 48
+ * — "Health check passes through same outbound safety layer, no bypass") has a real health
+ * path that goes through the exact same tenant/connection-scoping this runtime already
+ * enforces for actions, and updates the connection's real status/lastHealthCheck exactly like
+ * the existing health system already does (Part 47 requires it be read-only — never a POST).
+ */
+export async function checkConnectorHealth({db,env,fetcher=fetch,tenantId,connectorSlug,connectionId,resolver,transport,resolveConnector=getConnector}) {
+ const tenant=getTenant(db,tenantId);
+ const blockReason=tenantOperationalBlockReason(tenant);
+ if(blockReason)return {status:'BLOCKED',errorCode:blockReason};
+ const entry=resolveConnector(connectorSlug);
+ if(!entry)return {status:'ERROR',errorCode:'CONNECTOR_NOT_FOUND'};
+ const {manifest,adapter}=entry;
+ const connection=getConnectionOrNull(db,connectionId,tenantId);
+ if(!connection||connection.integrationDefinitionId!==manifest.slug)return {status:'ERROR',errorCode:'CONNECTION_NOT_FOUND'};
+ let credential=null;
+ try{credential=getCredentialForRuntime(db,env,connectionId,tenantId);}catch{credential=null;}
+ let result;
+ try{result=await adapter.healthCheck({env,fetcher,credential,manifest,connection,resolver,transport});}
+ catch(error){result={status:'ERROR',errorCode:error?.code||'REMOTE_SERVER_ERROR'};}
+ if(!result||typeof result.status!=='string')result={status:'ERROR',errorCode:'REMOTE_VALIDATION_ERROR'};
+ return result;
 }

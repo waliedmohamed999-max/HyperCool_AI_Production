@@ -1,10 +1,18 @@
 # Building a New Connector (Phase 6A baseline; Phase 6D will add a no-code Builder UI on top)
 
+> **Phase 6B update**: for a plain REST/HTTP API (no special OAuth needs), you no longer need to
+> write a custom adapter at all — write a manifest using `validateRestManifest()`
+> (`src/connectors/generic-rest/manifest.js`) and reuse the shared `genericRestAdapter`
+> (`src/connectors/generic-rest/adapter.js`) directly, exactly like
+> `src/connectors/acme/manifest.js` does. See `docs/GENERIC_REST_CONNECTOR.md`. A custom
+> adapter (this doc's original pattern below) is still the right choice for a provider with a
+> real OAuth2 flow, token refresh, or any behavior the generic engine doesn't cover.
+
 Today (Phase 6A), adding a connector for an existing, already-implemented provider means:
 
 1. **Define the manifest** (`src/connectors/<slug>/manifest.js`) — category, availability
-   (honest — `DEFINITION_ONLY`/`NOT_IMPLEMENTED` if there's no real API access yet, see
-   `docs/CONNECTOR_SECURITY.md`'s "no invented endpoints" rule), connectionMode, auth, the
+   (honest — `DEFINITION_ONLY`/`NOT_IMPLEMENTED` if there's no real API access yet, see the hard
+   rule at the bottom of this doc: never invent an endpoint), connectionMode, auth, the
    capabilities it really has code for, and its actions (each with a `requiredCapability`
    already present in the manifest's own `capabilities` list).
 2. **Define the adapter** (`src/connectors/<slug>/adapter.js`) — wrap the EXISTING
@@ -39,3 +47,26 @@ None of these exist yet — Phase 6A only proves the SDK layer itself is sound.
 **Never invent an endpoint, OAuth URL, or scope for a provider without a real, referenced API
 contract.** A connector with no verified documentation is built as `DEFINITION_ONLY` or
 `NOT_IMPLEMENTED` (Part 5's honest availability states) — never a fake `AVAILABLE`/`CONNECTED`.
+
+## Conceptual future example: Zid (Phase 6, Part 105) — illustration only, not implemented
+
+*Illustration only — no Zid endpoint, scope, or URL below has been verified against Zid's own
+documentation, and none is implemented anywhere in this codebase.* If Zid's real, documented
+REST API is confirmed at implementation time, a real Zid connector would likely look like a
+Generic REST manifest (`docs/GENERIC_REST_CONNECTOR.md`) declaring the same canonical
+capabilities Salla already proves out — `commerce.products.read`, `commerce.orders.read`,
+`commerce.inventory.read` — so that an existing generic commerce Tool could resolve to either
+Salla or Zid per tenant, with no Agent Runtime change. **Actual endpoints, auth flow, and scopes
+must come from Zid's official documentation** at that time, never guessed from this example.
+
+## Conceptual future example: accounting providers (Part 106) — illustration only
+
+Odoo, Zoho Books, and QuickBooks could each, in principle, expose capabilities like
+`accounting.invoices.read`/`accounting.invoices.write`/`accounting.customers.read` through the
+same Generic REST framework once their real, documented REST APIs are confirmed — the
+`ACCOUNTING` category already exists in `src/connectors/core/enums.js` for exactly this, but
+none of these specific capability ids are in the canonical registry yet (Part 9/106:
+`docs/CAPABILITY_REGISTRY.md` only lists capabilities with real code behind them today) — they
+would be added to `CANONICAL_CAPABILITIES` at the same time a real accounting connector is
+actually implemented, following the existing `category.action` naming convention. No
+implementation exists for any of the three today.

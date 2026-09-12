@@ -1,5 +1,12 @@
 # Connector SDK Reference (Phase 6A)
 
+> **Phase 6B update**: `src/connectors/generic-rest/manifest.js`'s `validateRestManifest()`
+> extends `validateManifest()` below with REST-specific fields (`rest.baseUrl`, per-action
+> `rest.httpMethod`/`rest.pathTemplate`/mappings) — see `docs/GENERIC_REST_CONNECTOR.md`. No
+> change was made to `validateManifest`/`validateAdapter` themselves.
+
+
+
 ## Manifest schema (`src/connectors/core/manifest.js`)
 
 Required fields: `id, slug, nameAr, nameEn, category, version, availability, connectionMode,
