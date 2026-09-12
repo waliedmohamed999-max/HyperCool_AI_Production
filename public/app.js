@@ -149,12 +149,33 @@ async function render(){
   // a half-loaded dashboard (Part L). Single-membership users (the one real deployment today)
   // resolve here with zero visible change — `ready` is true on the very first check.
   const workspace=await resolveActiveWorkspace(auth.csrf);
-  $('#protected').hidden=!workspace.ready;
-  if(!workspace.ready){
+  // A real, pre-existing gap this phase's own testing found: Account Settings and the
+  // Platform Admin dashboard both live inside `#protected` in the DOM, which the workspace
+  // gate hides entirely — so the gate's own "Go to Account Settings" button (and a platform
+  // admin who happens to have zero workspaces of their own) led to a page that never actually
+  // became visible. Both pages are legitimately workspace-INDEPENDENT (personal identity;
+  // cross-tenant platform authority), so a zero-workspace session viewing exactly one of
+  // those two hashes gets the real page instead of the gate, keeping the rest of the app
+  // shell reachable — everything ELSE that genuinely needs a resolved tenant is skipped below.
+  // 'platform' only counts as workspace-independent for an ACTUAL platform admin — otherwise a
+  // stale '#platform' hash (left over from a previous session/tab, or a direct URL guess) would
+  // wrongly skip the workspace gate for an ordinary user who has zero ready workspaces, leaving
+  // them stuck on a page they have no authority to view instead of the real selection/creation
+  // prompt (a real bug this phase's own suspend/reactivate journey testing surfaced).
+  const page=currentPage();
+  const viewingWorkspaceIndependentPage=page==='account'||(page==='platform'&&auth.isPlatformAdmin);
+  $('#protected').hidden=!workspace.ready && !viewingWorkspaceIndependentPage;
+  if(!workspace.ready && !viewingWorkspaceIndependentPage){
     renderWorkspaceGate(workspace,auth.csrf,()=>render().catch(error=>message(error.message,'error')),auth.user);
     return;
   }
   hideWorkspaceGate();
+  if(!workspace.ready){
+    showPage(currentPage());
+    await renderAccountPage({api,auth});
+    await renderPlatformPage({api,auth});
+    return;
+  }
   await renderWorkspaceSwitcher(workspace.workspace,auth.csrf,()=>render().catch(error=>message(error.message,'error')));
   $('#session-name').textContent=`${auth.user.name} · ${roles[auth.user.role]}`;
   $('#draft').hidden=auth.user.role==='reviewer';

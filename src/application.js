@@ -369,6 +369,21 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
        catch(error){tenantResolutionError=error;}
       }
       if(req.method==='GET' && url.pathname==='/api/auth') return send(200,{needsSetup:auth.needsSetup(),user:session?.user||null,csrf:session?.csrf||null,isPlatformAdmin:isPlatformAdmin(env,session?.user)});
+      // Multi-Tenant Phase 4C-7 — logout is a pure session action, never a workspace one.
+      // Placed here (before the tenant-resolution throw below) because a session with NO
+      // resolvable tenant is a real, valid state — a Platform Admin with zero workspaces of
+      // their own (Part 19/20), or a brand-new signup before any workspace exists — and such
+      // a user must always be able to log out. Leaving this after the throw (as it was) meant
+      // logout itself returned 403 NO_WORKSPACE_ACCESS for exactly those sessions, a real bug
+      // only surfaced by this phase's platform-admin-with-zero-workspaces Playwright journey.
+      if(req.method==='POST' && url.pathname==='/api/logout') {
+        if(session) {
+          if(req.headers['x-csrf-token']!==session.csrf) fail(403,'رمز حماية الجلسة غير صالح');
+          auth.logout(session);
+        }
+        res.setHeader('Set-Cookie',`hc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`);
+        return send(200,{ok:true});
+      }
       if(req.method==='POST' && ['/api/setup','/api/login'].includes(url.pathname)) {
         const input=await body(req);
         let result;
@@ -696,7 +711,6 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           return send(200,updated);
         }
       }
-      if(req.method==='POST' && url.pathname==='/api/logout') {auth.logout(session);res.setHeader('Set-Cookie',`hc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie}`);return send(200,{ok:true});}
       if(req.method==='POST' && url.pathname==='/api/preferences/locale') {
         const input=await body(req);
         auth.setPreferredLocale(session.user.id,input.locale);

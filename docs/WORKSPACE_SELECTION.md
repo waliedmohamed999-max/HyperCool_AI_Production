@@ -231,3 +231,39 @@ A real change WAS needed here, though not to the resolution logic itself. Two th
    working resend button. The underlying backend error code and resolution semantics are
    completely unchanged — only what the frontend does with that specific, already-existing
    signal is new.
+
+## Phase 4C-7 update: `#account`/`#platform` are workspace-INDEPENDENT pages, and two real bugs
+that only surfaced under a genuinely zero-workspace session
+
+Both `<div class="page" data-page="account">` and `<div class="page" data-page="platform">`
+live, in the DOM, nested inside `#protected` — the same container the workspace-selection gate
+hides wholesale via `$('#protected').hidden=!workspace.ready`. That is correct for every
+workspace-SCOPED page, but Account Settings (personal identity) and the Platform Admin
+dashboard (cross-tenant authority, `docs/PLATFORM_OPERATIONS.md`) are both legitimately
+reachable with zero ready workspaces — a brand-new verified user going to Account Settings from
+the gate's own button, or a Platform Admin who owns no workspace of their own. Before this
+phase, neither page's render function even ran in that state (`render()` returned early from
+the gate), so both were completely unreachable — a real, latent bug from Phase 4C-5/4C-6, only
+found now because this phase's Playwright testing specifically exercised a
+platform-admin-with-zero-workspaces scenario.
+
+The fix, in `app.js`'s `render()`: when the current hash is `#account`, or `#platform` AND
+`auth.isPlatformAdmin` is true, `#protected` stays visible and the gate is skipped — that page's
+render function is called directly instead. Two follow-on bugs were found while proving this
+end-to-end and are both fixed:
+
+1. **A hash-based (not admin-based) carve-out is wrong.** The first version of this fix checked
+   only `['account','platform'].includes(currentPage())`, with no admin check — so a completely
+   ordinary user who happened to still have `#platform` in the URL (left over from an earlier,
+   correctly-refused direct-navigation attempt) would skip the workspace gate entirely and get
+   stuck on a page they have no authority to view, instead of the real
+   selection/creation/trial-ended prompt. Fixed by gating the `#platform` branch on
+   `auth.isPlatformAdmin` specifically; `#account` has no such gate since every authenticated
+   user may always view their own account.
+2. **`POST /api/logout` itself required a resolvable tenant.** It was registered, in
+   `application.js`, after the generic `if(url.pathname.startsWith('/api/') && tenantResolutionError) throw tenantResolutionError;`
+   gate — so any session with no resolvable workspace (a Platform Admin with zero workspaces of
+   their own, or a brand-new signup) got a 403 `NO_WORKSPACE_ACCESS` from logout itself. Fixed
+   by moving the logout route before that gate, alongside `GET /api/auth` (logout is a pure
+   session action, never a workspace one), with its own explicit CSRF check preserved and a
+   null-session guard (an unauthenticated logout call is now a harmless no-op, not a crash).

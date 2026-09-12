@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {randomBytes,createHmac} from 'node:crypto';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -9,6 +10,7 @@ import {createTenant} from '../src/tenancy.js';
 import {getTrialStatus,tenantOperationalBlockReason} from '../src/tenancy.js';
 import {botProtectionStatus,captchaRequiredFor,verifyBotProtection} from '../src/runtime/bot-protection.js';
 import {isPlatformAdmin} from '../src/platform-admin.js';
+import {saveCredentials} from '../src/runtime/credentials.js';
 
 // Phase 4C-7 — Production Pilot Hardening. Real HTTP end-to-end tests, same harness shape as
 // every prior phase's own test file (mail capture transport for safe, real verification links).
@@ -308,5 +310,104 @@ test('Slug concurrency: two parallel workspace creations with the SAME explicit 
   assert.equal(succeeded.length,1,'exactly one of two concurrent identical explicit slugs must succeed');
   const count=app.store.db.prepare("SELECT COUNT(*) n FROM tenants WHERE slug='race-slug'").get().n;
   assert.equal(count,1);
+ }finally{await cleanup();}
+});
+
+// --- Agent runtime parallel-tenant load (Part 44) -----------------------------------------------
+// "never call real AI at scale" — the ONE real boundary mocked here is the outbound AI fetch
+// itself, exactly like tests/runtime-api.test.js's own established pattern; every other layer
+// (routing, session, tenant resolution, run persistence) is the real, unmocked code path.
+
+test('Agent runtime under parallel load across two tenants: every run stays correctly scoped to its own tenant, with zero cross-tenant leakage',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'hypercool-pilot-agent-load-'));
+ const decisionFor=label=>({status:'OK',action:'REPLY',rationale:'ok',verification:[],risk_level:'LOW',escalation_required:false,missing_data:[],
+  payload:{intent:'price',customer_type:'B2C',qualification:{city:null,product_need:null,quantity:null,timeline:null,budget_band:null},recommended_product_id:null,reply_ar:`رد-${label}`,reply_en:`reply-${label}`,next_best_action:'x',lead_temperature:'COLD',crm_updates:{},missing_fields:[],handoff_reason:null}});
+ const modelResponse=value=>new Response(JSON.stringify({stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(value)}],usage:{input_tokens:3,output_tokens:3}}),{status:200,headers:{'content-type':'application/json'}});
+ // Echoes back whichever tenant's own scenario text was actually sent in THIS request's
+ // messages — a real cross-tenant leak (e.g. a shared/stale context object) would show up
+ // immediately as tenant A's run receiving a reply built for tenant B, or vice versa.
+ const app=await createApp({dataDir:directory,env:{PLATFORM_MAIL_TRANSPORT:'capture',ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model'},fetcher:async(url,init)=>{
+  const userContent=JSON.parse(init.body).messages[0].content;
+  const label=userContent.includes('TENANT_A')?'A':userContent.includes('TENANT_B')?'B':'UNKNOWN';
+  return modelResponse(decisionFor(label));
+ }});
+ await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+ const base=`http://127.0.0.1:${app.server.address().port}`;
+ async function call(path,input,session){const res=await fetch(base+path,{method:input?'POST':'GET',headers:{...(input?{'Content-Type':'application/json'}:{}),...(session?{cookie:session.cookie,'x-csrf-token':session.csrf}:{})},...(input?{body:JSON.stringify(input)}:{})});const text=await res.text();let data;try{data=JSON.parse(text);}catch{data=text;}return {status:res.status,data,cookie:res.headers.get('set-cookie')?.split(';')[0],csrf:data?.csrf};}
+ try{
+  const sessionA=await signupAndVerify(call,app,{username:'load_owner_a',email:'load-a@example.com'});
+  const wsA=await call('/api/workspaces',{companyName:'Load Tenant A'},sessionA);
+  const sessionB=await signupAndVerify(call,app,{username:'load_owner_b',email:'load-b@example.com'});
+  const wsB=await call('/api/workspaces',{companyName:'Load Tenant B'},sessionB);
+  const runsPerTenant=10;
+  const runOn=session=>call('/api/agents/sales/run',{scenario:session===sessionA?'TENANT_A scenario':'TENANT_B scenario'},session);
+  const [resultsA,resultsB]=await Promise.all([
+   Promise.all(Array.from({length:runsPerTenant},()=>runOn(sessionA))),
+   Promise.all(Array.from({length:runsPerTenant},()=>runOn(sessionB)))
+  ]);
+  for(const r of resultsA){
+   assert.equal(r.status,200);
+   assert.equal(r.data.status,'COMPLETED');
+   assert.equal(r.data.tenant_id,wsA.data.id);
+   assert.equal(r.data.output.payload.reply_ar,'رد-A','tenant A must never receive tenant B\'s reply');
+  }
+  for(const r of resultsB){
+   assert.equal(r.status,200);
+   assert.equal(r.data.status,'COMPLETED');
+   assert.equal(r.data.tenant_id,wsB.data.id);
+   assert.equal(r.data.output.payload.reply_ar,'رد-B','tenant B must never receive tenant A\'s reply');
+  }
+  assert.equal(app.store.db.prepare('SELECT COUNT(*) c FROM agent_runs WHERE tenant_id=?').get(wsA.data.id).c,runsPerTenant);
+  assert.equal(app.store.db.prepare('SELECT COUNT(*) c FROM agent_runs WHERE tenant_id=?').get(wsB.data.id).c,runsPerTenant);
+ }finally{await new Promise(resolve=>app.server.close(resolve));app.store.close();await rm(directory,{recursive:true,force:true});}
+});
+
+// --- Webhook burst (Part 42) ---------------------------------------------------------------
+// Real HTTP delivery volume against the actual `/api/webhooks/meta/whatsapp` route (never a
+// direct function call), across two real tenants, proving `webhook_events`' existing
+// UNIQUE(source,external_event_id) constraint (src/runtime/webhook-events.js) holds under a
+// real concurrent burst — not just the two-request race already covered elsewhere.
+
+test('Webhook burst: 120 concurrent WhatsApp deliveries across two tenants — correct per-tenant routing, real duplicate ids collapse to one, no cross-tenant leakage',async()=>{
+ const key32=randomBytes(32).toString('hex');
+ const webhookSecret='burst-webhook-secret';
+ const {app,call,cleanup}=await harness({INTEGRATION_ENCRYPTION_KEY:key32,META_WEBHOOK_SECRET:webhookSecret});
+ try{
+  const sessionA=await signupAndVerify(call,app,{username:'burst_owner_a',email:'burst-a@example.com'});
+  const wsA=await call('/api/workspaces',{companyName:'Burst Tenant A'},sessionA);
+  const sessionB=await signupAndVerify(call,app,{username:'burst_owner_b',email:'burst-b@example.com'});
+  const wsB=await call('/api/workspaces',{companyName:'Burst Tenant B'},sessionB);
+  saveCredentials(app.store.db,{INTEGRATION_ENCRYPTION_KEY:key32},'meta',{accessToken:'user-token',expiresAt:new Date(Date.now()+3600000).toISOString(),extra:{pageAccessToken:'page-token'},metadata:{whatsapp:{phoneNumberId:'phone-burst-a',businessAccountId:'waba-a',displayPhoneNumber:'+9665phonea'}}},null,wsA.data.id);
+  saveCredentials(app.store.db,{INTEGRATION_ENCRYPTION_KEY:key32},'meta',{accessToken:'user-token',expiresAt:new Date(Date.now()+3600000).toISOString(),extra:{pageAccessToken:'page-token'},metadata:{whatsapp:{phoneNumberId:'phone-burst-b',businessAccountId:'waba-b',displayPhoneNumber:'+9665phoneb'}}},null,wsB.data.id);
+  const rawFor=(phoneNumberId,msgId,fromSuffix)=>JSON.stringify({entry:[{changes:[{value:{metadata:{phone_number_id:phoneNumberId},contacts:[{profile:{name:'Customer '+fromSuffix}}],messages:[{id:msgId,from:'96650'+String(fromSuffix).padStart(7,'0'),type:'text',text:{body:'burst message '+fromSuffix}}]}}]}]});
+  const sign=body=>'sha256='+createHmac('sha256',webhookSecret).update(body).digest('hex');
+  const send=raw=>call('/api/webhooks/meta/whatsapp',raw,null,{headers:{'x-hub-signature-256':sign(raw)}});
+  const perTenant=50;
+  const requests=[];
+  // Tenant B uses a disjoint phone-number range (+1000) so any cross-tenant leakage would show
+  // up as an unexpected overlap in the phone sets asserted below, not as coincidental reuse.
+  for(let i=0;i<perTenant;i++)requests.push(send(rawFor('phone-burst-a','wamid.burst.a.'+i,i)));
+  for(let i=0;i<perTenant;i++)requests.push(send(rawFor('phone-burst-b','wamid.burst.b.'+i,i+1000)));
+  // Real duplicate redeliveries (the same provider event id sent twice) — a genuine, common
+  // real-world case (the provider retries on a slow/ambiguous response) — must collapse to
+  // exactly one stored event each, never a duplicate lead.
+  for(let i=0;i<20;i++)requests.push(send(rawFor('phone-burst-a','wamid.burst.a.'+i,i)));
+  const startedAt=Date.now();
+  const results=await Promise.all(requests);
+  const elapsedMs=Date.now()-startedAt;
+  for(const r of results)assert.equal(r.status,200,'every real, correctly signed delivery must be accepted');
+  assert.ok(elapsedMs<15000,`120-event burst took ${elapsedMs}ms — unreasonably slow for pilot scale`);
+
+  const eventsA=app.store.db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source='meta'").get(wsA.data.id).c;
+  const eventsB=app.store.db.prepare("SELECT COUNT(*) c FROM webhook_events WHERE tenant_id=? AND source='meta'").get(wsB.data.id).c;
+  assert.equal(eventsA,perTenant,'the 20 duplicate redeliveries must never create additional stored events');
+  assert.equal(eventsB,perTenant);
+
+  const leadsA=(await call('/api/crm',null,sessionA,{method:'GET'})).data.leads;
+  const leadsB=(await call('/api/crm',null,sessionB,{method:'GET'})).data.leads;
+  assert.equal(leadsA.length,perTenant);
+  assert.equal(leadsB.length,perTenant);
+  assert.ok(leadsA.every(l=>l.phone.startsWith('+96650')),'sanity: real per-tenant lead data');
+  assert.equal(new Set([...leadsA.map(l=>l.phone),...leadsB.map(l=>l.phone)]).size,perTenant*2,'tenant A and tenant B used disjoint phone ranges in this test — any overlap in the combined set would mean cross-tenant leakage, not coincidence');
  }finally{await cleanup();}
 });

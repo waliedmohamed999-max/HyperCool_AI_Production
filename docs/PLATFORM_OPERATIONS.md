@@ -55,3 +55,9 @@ Phase 4C-5 built for identity events) — `PLATFORM_TENANT_SUSPENDED`,
 `isPlatformAdmin` field is true; a direct navigation by anyone else shows a clear "platform
 admin only" message rather than a blank page, and every underlying route is independently
 gated server-side regardless of what the frontend shows (Part 58).
+
+**Reachable with zero workspaces of your own** — a Platform Admin is not required to own or
+belong to any tenant. `app.js`'s `render()` treats `#platform` as workspace-independent
+specifically when `auth.isPlatformAdmin` is true (never by hash alone — see
+`docs/WORKSPACE_SELECTION.md`'s Phase 4C-7 section for the real bug this distinction fixes),
+so the dashboard renders directly instead of the workspace-selection gate.
