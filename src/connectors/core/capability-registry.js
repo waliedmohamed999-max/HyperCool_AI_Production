@@ -43,7 +43,10 @@ export const CANONICAL_CAPABILITIES=Object.freeze([
  {id:'memory.read',category:'CUSTOM',descriptionEn:'Read agent memory',descriptionAr:'قراءة ذاكرة الوكيل'},
  {id:'memory.propose',category:'CUSTOM',descriptionEn:'Propose a memory write for review',descriptionAr:'اقتراح كتابة ذاكرة للمراجعة'},
  {id:'analytics.read',category:'ANALYTICS',descriptionEn:'Read platform analytics',descriptionAr:'قراءة تحليلات المنصة'},
- {id:'content.write',category:'CUSTOM',descriptionEn:'Draft internal content',descriptionAr:'كتابة محتوى داخلي مسوّدة'}
+ {id:'content.write',category:'CUSTOM',descriptionEn:'Draft internal content',descriptionAr:'كتابة محتوى داخلي مسوّدة'},
+ // Phase 6D, Part 51 — added centrally (not invented ad-hoc for a demo) to back the real
+ // Acme ERP Builder proof connector's GET /invoices action and invoice.created trigger.
+ {id:'accounting.invoices.read',category:'ACCOUNTING',descriptionEn:'Read invoices',descriptionAr:'قراءة الفواتير'}
 ]);
 
 const CANONICAL_IDS=new Set(CANONICAL_CAPABILITIES.map(c=>c.id));

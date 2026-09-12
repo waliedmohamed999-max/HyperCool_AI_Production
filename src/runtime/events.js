@@ -21,7 +21,12 @@ export const EVENT_TYPES=[
  // stopFollowups() already runs synchronously in the same call, so no agent needs to react
  // to this to make opt-out effective; it exists for observability/audit and so a future
  // handler (e.g. cross-channel opt-out propagation) has a real event to subscribe to.
- 'CUSTOMER_OPTED_OUT'
+ 'CUSTOMER_OPTED_OUT',
+ // Phase 6D, Part 44/51/54 — a real, explicit, reviewed addition (never invented silently for
+ // a demo): backs the real `accounting.invoices.read`/write capability category and the Acme
+ // ERP Builder proof connector's `invoice_created` webhook trigger. No existing event type
+ // (ORDER_*, QUOTE_*, ...) is semantically an invoice — this is genuinely new, not a reuse.
+ 'INVOICE_CREATED'
 ];
 
 // Multi-Tenant Phase 2 (spec Part 10 — Event Bus isolation). `tenant_id` is a real,

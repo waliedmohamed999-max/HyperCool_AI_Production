@@ -64,10 +64,10 @@ const salesDecision=(over={})=>({status:'OK',action:'REPLY',rationale:'ok',verif
 
 // --- ToolDefinition ----------------------------------------------------------------------
 
-test('ToolDefinition: seeded exclusively from the real Tool Registry — 28 tools, Canva/salla_syncOrders honestly NOT_IMPLEMENTED',()=>{
+test('ToolDefinition: seeded exclusively from the real Tool Registry — 29 tools, Canva/salla_syncOrders honestly NOT_IMPLEMENTED',()=>{
  const {store}=fixture();try{
   const tools=listToolDefinitions(store.db);
-  assert.equal(tools.length,28);
+  assert.equal(tools.length,29); // Phase 6D added get_invoices (the generic, capability-only proof tool)
   const canva=getToolDefinition(store.db,'canva_generateAsset');
   assert.equal(canva.isAvailable,false);
   const salla=getToolDefinition(store.db,'salla_syncOrders');

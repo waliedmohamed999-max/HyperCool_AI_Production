@@ -10,7 +10,7 @@ import {getConnectionOrNull} from '../../integrations/connections.js';
 import {getCredentialForRuntime} from '../../integrations/vault.js';
 import {createApproval} from '../../runtime/approvals.js';
 import {recordAudit} from '../../audit.js';
-import {getConnector} from '../registry.js';
+import {resolveConnectorDynamic} from '../dynamic/registry.js';
 
 class ConnectorRuntimeError extends Error {
  constructor(code,message){super(message||code);this.code=code;}
@@ -28,7 +28,7 @@ class ConnectorRuntimeError extends Error {
  * `authorize(session,[...])`. This function re-checks only what it alone can know: that the
  * connection genuinely belongs to the claimed tenant and the action genuinely exists.
  */
-export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,connectorSlug,connectionId,actionId,input={},actor,correlationId=randomUUID(),resolveConnector=getConnector,resolver,transport}) {
+export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,connectorSlug,connectionId,actionId,input={},actor,correlationId=randomUUID(),resolveConnector=(slug,opts)=>resolveConnectorDynamic(db,slug,opts),resolver,transport}) {
  if(!actor?.id)throw new ConnectorRuntimeError('ACTOR_REQUIRED','A real actor is required to execute a connector action');
  // 1. Tenant validation — reuses the exact same central check the agent runtime uses (Part 17/18
  // of Phase 4C-7), so a suspended/trial-expired tenant can never execute a connector action either.
@@ -36,9 +36,18 @@ export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,conn
  const blockReason=tenantOperationalBlockReason(tenant);
  if(blockReason)return {status:'BLOCKED',errorCode:blockReason,correlationId};
 
- // 2. Connector manifest. `resolveConnector` defaults to the real, shared registry — tests
- // inject a test-only connector here rather than mutating the real one.
- const entry=resolveConnector(connectorSlug);
+ // IDOR-safe: getConnectionOrNull is already tenant-scoped (never returns another tenant's row
+ // even by the right id). Fetched early (Phase 6D, Part 45) so a dynamic connector resolution
+ // can honor this connection's own PINNED connector_version — the version-not-found/mismatch
+ // check itself stays at step 4 below, in the same relative error precedence as before
+ // (CONNECTOR_NOT_FOUND still short-circuits before CONNECTION_NOT_FOUND).
+ const rawConnection=getConnectionOrNull(db,connectionId,tenantId);
+
+ // 2. Connector manifest. `resolveConnector` defaults to dynamic DB resolution (Phase 6D),
+ // which itself delegates to the real, shared static registry for BUILT_IN/AI_PROVIDER
+ // connectors (Salla/Anthropic/OpenAI) — behaviorally identical to Phase 6A/6B/6C. Tests inject
+ // a test-only connector here rather than mutating the real one.
+ const entry=resolveConnector(connectorSlug,{connectorVersion:rawConnection?.connectorVersion??null});
  if(!entry)return {status:'ERROR',errorCode:'CONNECTOR_NOT_FOUND',correlationId};
  const {manifest,adapter}=entry;
 
@@ -46,9 +55,8 @@ export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,conn
  const action=manifest.actions.find(a=>a.slug===actionId||a.id===actionId);
  if(!action)return {status:'ERROR',errorCode:'ACTION_NOT_FOUND',correlationId};
 
- // 4. Connection validation — IDOR-safe: getConnectionOrNull is already tenant-scoped (never
- // returns another tenant's row even by the right id), and must belong to THIS connector.
- const connection=getConnectionOrNull(db,connectionId,tenantId);
+ // 4. Connection validation — must belong to THIS connector.
+ const connection=rawConnection;
  if(!connection||connection.integrationDefinitionId!==manifest.slug)
   return {status:'ERROR',errorCode:'CONNECTION_NOT_FOUND',correlationId};
 
@@ -127,14 +135,14 @@ export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,conn
  * enforces for actions, and updates the connection's real status/lastHealthCheck exactly like
  * the existing health system already does (Part 47 requires it be read-only — never a POST).
  */
-export async function checkConnectorHealth({db,env,fetcher=fetch,tenantId,connectorSlug,connectionId,resolver,transport,resolveConnector=getConnector}) {
+export async function checkConnectorHealth({db,env,fetcher=fetch,tenantId,connectorSlug,connectionId,resolver,transport,resolveConnector=(slug,opts)=>resolveConnectorDynamic(db,slug,opts)}) {
  const tenant=getTenant(db,tenantId);
  const blockReason=tenantOperationalBlockReason(tenant);
  if(blockReason)return {status:'BLOCKED',errorCode:blockReason};
- const entry=resolveConnector(connectorSlug);
+ const connection=getConnectionOrNull(db,connectionId,tenantId);
+ const entry=resolveConnector(connectorSlug,{connectorVersion:connection?.connectorVersion??null});
  if(!entry)return {status:'ERROR',errorCode:'CONNECTOR_NOT_FOUND'};
  const {manifest,adapter}=entry;
- const connection=getConnectionOrNull(db,connectionId,tenantId);
  if(!connection||connection.integrationDefinitionId!==manifest.slug)return {status:'ERROR',errorCode:'CONNECTION_NOT_FOUND'};
  let credential=null;
  try{credential=getCredentialForRuntime(db,env,connectionId,tenantId);}catch{credential=null;}

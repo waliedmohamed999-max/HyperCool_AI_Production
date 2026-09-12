@@ -89,6 +89,11 @@ export function validateOutboundUrl(rawUrl,{allowHttp=false,allowedHosts=null}={
  if(url.username||url.password)throw new ConnectorHttpError(CODE.SSRF_BLOCKED,'URL must not contain embedded credentials');
  const hostname=url.hostname.toLowerCase().replace(/\.$/,''); // Part 22 — strip a trailing-dot FQDN bypass attempt ("localhost.")
  if(hostname==='localhost'||hostname==='metadata.google.internal')throw new ConnectorHttpError(CODE.SSRF_BLOCKED,`blocked hostname: ${hostname}`);
+ // A hostname that is ITSELF a literal IP (e.g. a Builder admin typing "127.0.0.1" or
+ // "169.254.169.254" directly as a base URL) is validated synchronously right here — no DNS
+ // resolution is needed for this case, so this check is available to synchronous, save-time
+ // callers (the Integration Builder, Part 85) and not only the async request-time safeFetch path.
+ if(isIP(hostname))validateIpLiteral(hostname);
  // Part 31 — exact hostname boundary match only; never endsWith()/includes() (that would let
  // "evilvendor.com" pass an "vendor.com" allowlist).
  if(allowedHosts && allowedHosts.length && !allowedHosts.some(h=>h.toLowerCase()===hostname))

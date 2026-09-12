@@ -10,7 +10,7 @@ import {getCredentialForRuntime} from '../../integrations/vault.js';
 import {storeWebhookEvent,markWebhookEventProcessed} from '../../runtime/webhook-events.js';
 import {recordAudit} from '../../audit.js';
 import {applyMapping,safeLookup,MappingError} from '../core/mapping.js';
-import {getConnector} from '../registry.js';
+import {resolveConnectorDynamic} from '../dynamic/registry.js';
 
 export class WebhookError extends Error {
  constructor(status,code,message){super(message||code);this.status=status;this.code=code;}
@@ -79,7 +79,7 @@ const MAX_BODY_BYTES=1024*1024; // Part 17 — 1MB ceiling, matching the platfor
  * function never builds a second one. `resolveConnector` defaults to the real registry; tests
  * inject a test-only connector (Acme) the same way `executeConnectorAction` already does.
  */
-export async function processGenericWebhook({db,env,eventBus,publicId,rawBody,headers={},resolveConnector=getConnector}) {
+export async function processGenericWebhook({db,env,eventBus,publicId,rawBody,headers={},resolveConnector=slug=>resolveConnectorDynamic(db,slug)}) {
  // `rawBody` matches this codebase's existing webhook convention (rawBody(req) in
  // application.js returns a UTF-8 string) — normalized to a Buffer here ONCE, so HMAC
  // verification (Part 11) always runs against the exact real bytes, not a re-decoded copy.

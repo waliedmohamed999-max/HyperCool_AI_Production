@@ -17,6 +17,8 @@ import {publishLinkedInPost} from './linkedin-publishing.js';
 import {resolveLinkedInAccessToken} from './linkedin-oauth.js';
 import {createEscalation} from './escalations.js';
 import {isEnabled,featureDisabled} from './feature-flags.js';
+import {getConnectionOrNull} from '../integrations/connections.js';
+import {executeConnectorAction} from '../connectors/core/runtime.js';
 
 export function integrationStatus(env,db=null) {
  // A Meta/WhatsApp OAuth connection (see runtime/meta-oauth.js) counts as configured too —
@@ -136,7 +138,14 @@ const TOOL_METADATA={
  canva_generateAsset:{description:'Generate a visual asset via Canva Connect.',inputSchema:obj({brief:string},['brief']),minLevel:'L1',
   category:'Content',riskLevel:'LOW',actionType:'EXTERNAL_SEND',integrationSlug:'canva',requiresConnection:true,isReadOnly:false,capability:'design.generate',isAvailable:false},
  salla_syncOrders:{description:'Pull new orders / abandoned carts from Salla.',inputSchema:obj({}),minLevel:'L1',
-  category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:'salla',requiresConnection:true,isReadOnly:true,capability:'orders.read',isAvailable:false}
+  category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:'salla',requiresConnection:true,isReadOnly:true,capability:'orders.read',isAvailable:false},
+ // Universal Integration Platform (Phase 6D, Part 59) — the real proof that a Tool can be
+ // GENERIC (no fixed `integrationSlug`, resolved purely by capability — see
+ // tool-assignments.js's resolveGenericCapabilityTool) and still discover ANY compatible
+ // connection automatically, built-in or Builder-published alike, with zero per-connector
+ // branch anywhere in this file or the Agent Runtime.
+ get_invoices:{description:'List invoices from whichever accounting system this tenant has connected.',inputSchema:obj({}),minLevel:'L0',
+  category:'Accounting',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:true,isReadOnly:true,capability:'accounting.invoices.read'}
 };
 /** Static metadata only — no store/env/handler required. Used to seed `tool_definitions` at boot (src/runtime/tool-definitions.js) and by anything else that needs the catalog without a live registry instance. */
 export function listToolMetadata() {
@@ -189,6 +198,18 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
  // approval/scheduling path (including a real agent run) without ever creating a real post.
  function testModeEnabled() { return env.SOCIAL_PUBLISHING_TEST_MODE==='true'; }
  const HANDLERS={
+  // Phase 6D, Part 60 — the generic tool's handler doesn't know the provider in advance
+  // (resolveGenericCapabilityTool picked whichever connection actually matched); it looks up
+  // THIS connection's real connector slug, then executes through the exact same
+  // ConnectorRuntime pipeline (tenant/capability/health/approval/audit) every other connector
+  // action already goes through — no special-casing for any specific connector here.
+  get_invoices:async(input,ctx)=>{
+   if(!ctx.connectionId)return {status:'INTEGRATION_REQUIRED'};
+   const connection=getConnectionOrNull(db,ctx.connectionId,ctx.tenantId);
+   if(!connection)return {status:'INTEGRATION_REQUIRED'};
+   const result=await executeConnectorAction({db,env,fetcher,tenantId:ctx.tenantId,connectorSlug:connection.integrationDefinitionId,connectionId:connection.id,actionId:'get_invoices',input:{},actor:ctx.actor});
+   return result.status==='OK'?result.output:result;
+  },
   get_products:(input,ctx)=>listProducts(db,ctx.tenantId),
   get_product:({productId},ctx)=>listProducts(db,ctx.tenantId).find(p=>p.id===productId)||{status:'NO_DATA'},
   get_current_price:({productId},ctx)=>{const p=listProducts(db,ctx.tenantId).find(x=>x.id===productId);return p?{price:p.price,syncedAt:p.syncedAt,source:p.price?.source||null}:{status:'NO_DATA'};},

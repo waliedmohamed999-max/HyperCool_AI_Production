@@ -60,13 +60,20 @@ function hydrate(row) {
   lastHealthCheck:row.last_health_check,lastSuccessAt:row.last_success_at,lastErrorAt:row.last_error_at,
   lastErrorCode:row.last_error_code,lastErrorMessageSafe:row.last_error_message_safe,
   isDefault:!!row.is_default,createdAt:row.created_at,updatedAt:row.updated_at,
-  webhookPublicId:row.webhook_public_id||null
+  webhookPublicId:row.webhook_public_id||null,connectorVersion:row.connector_version??null
  };
 }
 /** Creates a new, empty (NOT_CONFIGURED) connection — never with a credential attached; that's the Vault's job. */
 export function createConnection(db,{integrationDefinitionId,name,connectedBy=null},tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
- if(!getIntegrationDefinition(db,integrationDefinitionId))fail(400,'تكامل غير معروف');
+ const definition=getIntegrationDefinition(db,integrationDefinitionId);
+ if(!definition)fail(400,'تكامل غير معروف');
+ // Universal Integration Platform (Phase 6D, Part 41) — a DISABLED connector blocks new
+ // connections outright; a DRAFT one was never published and is therefore never tenant-visible
+ // in the first place (getTenantCatalog filters it out) — this is the one enforcement point a
+ // tenant's own createConnection call can never bypass regardless of how it learned the slug.
+ if(definition.status==='DISABLED')fail(400,'هذا التكامل معطَّل حاليًا من قِبل مسؤول المنصة (DISABLED)');
+ if(definition.status==='DRAFT')fail(400,'هذا التكامل لا يزال مسودة ولم يُنشر بعد');
  const id=randomUUID(),now=new Date().toISOString();
  const isDefault=db.prepare('SELECT COUNT(*) n FROM integration_connections WHERE tenant_id=? AND integration_definition_id=?').get(resolvedTenantId,integrationDefinitionId).n===0?1:0;
  db.prepare(`INSERT INTO integration_connections (id,tenant_id,integration_definition_id,name,status,connected_by,is_default,created_at,updated_at)

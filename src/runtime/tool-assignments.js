@@ -3,6 +3,7 @@ import {fail} from '../auth.js';
 import {getToolDefinition} from './tool-definitions.js';
 import {getConnectionOrNull,resolveProviderAccount} from '../integrations/connections.js';
 import {connectionGrantsCapability} from './capability-map.js';
+import {listCompatibleConnections} from '../connectors/dynamic/compatibility.js';
 
 // AgentToolAssignment — Multi-Tenant Phase 4B (Part 7-12). Tenant-scoped, OPT-IN
 // refinements layered on top of the existing default-allow Tool Registry (runtime/tools.js):
@@ -55,7 +56,14 @@ export function upsertAssignment(db,tenantId,agentId,toolSlug,{enabled,connectio
  if(connectionId!==undefined && connectionId!==null) {
   const connection=getConnectionOrNull(db,connectionId,tenantId);
   if(!connection)fail(400,'الاتصال غير موجود لهذه المنشأة');
-  if(connection.integrationDefinitionId!==tool.integrationSlug)fail(400,`CONNECTION_PROVIDER_MISMATCH: هذه الأداة تتطلب اتصال ${tool.integrationSlug}`);
+  // Phase 6D, Part 35/59 — a GENERIC tool (no fixed provider) is validated by CAPABILITY, not
+  // a fixed slug match; every pre-6D, real-`integrationSlug` tool keeps the exact original check.
+  if(!tool.integrationSlug && tool.capability) {
+   if(!listCompatibleConnections(db,tenantId,tool.capability).some(c=>c.id===connection.id))
+    fail(400,`CONNECTION_CAPABILITY_MISSING: هذه الأداة تتطلب اتصالًا يمنح القدرة ${tool.capability}`);
+  } else if(connection.integrationDefinitionId!==tool.integrationSlug) {
+   fail(400,`CONNECTION_PROVIDER_MISMATCH: هذه الأداة تتطلب اتصال ${tool.integrationSlug}`);
+  }
  }
  const now=new Date().toISOString();
  const existing=db.prepare('SELECT * FROM agent_tool_assignments WHERE tenant_id=? AND agent_id=? AND tool_slug=?').get(tenantId,agentId,toolSlug);
@@ -112,6 +120,24 @@ const DEGRADED_OK_STATUSES=new Set(['CONNECTED','DEGRADED']);
 // which resolves to the exact same pass-through default as "no assignment row exists" (see
 // module doc comment) — zero risk to any existing fixture or deployment that hasn't run the
 // new migrations yet.
+function resolveGenericCapabilityTool(db,tenantId,assignment,tool) {
+ const candidates=listCompatibleConnections(db,tenantId,tool.capability);
+ if(assignment.connectionId) {
+  // An explicit pin is validated against the REAL candidate set (capability-granted,
+  // healthy) — never against a fixed provider slug, since a generic tool has none.
+  const pinned=candidates.find(c=>c.id===assignment.connectionId);
+  if(!pinned) {
+   const stillExists=getConnectionOrNull(db,assignment.connectionId,tenantId);
+   if(!stillExists)return {blocked:true,reason:'CONNECTION_NOT_FOUND',assignmentId:assignment.id,tool};
+   return {blocked:true,reason:'CONNECTION_CAPABILITY_MISSING',assignmentId:assignment.id,connectionId:assignment.connectionId,tool};
+  }
+  return {connectionId:pinned.id,assignmentId:assignment.id,connection:pinned,tool};
+ }
+ if(!tool.requiresConnection)return {connectionId:null,assignmentId:assignment.id,tool};
+ if(candidates.length===0)return {connectionId:null,assignmentId:assignment.id,tool};
+ if(candidates.length>1)return {blocked:true,reason:'CONNECTION_SELECTION_REQUIRED',connections:candidates,assignmentId:assignment.id,tool};
+ return {connectionId:candidates[0].id,assignmentId:assignment.id,connection:candidates[0],tool};
+}
 export function resolveToolConnection(db,{tenantId,agentId,toolSlug}) {
  const tool=getToolDefinition(db,toolSlug);
  if(!tool)return {blocked:true,reason:'UNKNOWN_TOOL'};
@@ -119,6 +145,12 @@ export function resolveToolConnection(db,{tenantId,agentId,toolSlug}) {
   const assignment=getAssignment(db,tenantId,agentId,toolSlug);
   if(!assignment)return {connectionId:null,assignmentId:null,tool};
   if(!assignment.enabled)return {blocked:true,reason:'TOOL_DISABLED',assignmentId:assignment.id,tool};
+  // Phase 6D, Part 35/59 — a GENERIC tool (no fixed provider, declared by capability alone)
+  // resolves ANY of the tenant's connections whose connector manifest grants that capability —
+  // built-in or dynamic (Builder-published) alike, with zero per-connector branch here. Every
+  // pre-6D tool still has a real `tool.integrationSlug` and takes the ORIGINAL path below,
+  // completely unchanged.
+  if(!tool.integrationSlug && tool.capability)return resolveGenericCapabilityTool(db,tenantId,assignment,tool);
   // An EXPLICIT connection_id on the assignment is always validated (provider match, health)
   // regardless of `requiresConnection` — an operator who deliberately pinned a specific
   // connection means it to be used and checked, even for a tool whose provider also supports
