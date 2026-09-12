@@ -9,7 +9,7 @@ import {escape,button,badge,empty,metric,skeleton,tabs,drawer,promptDrawer,table
 import {t,getLocale} from '../i18n.js';
 
 const $=s=>document.querySelector('#control-center '+s);
-let apiClient,currentAuth,summary=null,onboardingStatus=null,renderGeneration=0;
+let apiClient,currentAuth,summary=null,onboardingStatus=null,catalogBySlug=new Map(),renderGeneration=0;
 let filters={status:'all',query:''};
 
 const AGENT_STATUS_VARIANT={READY:'CONNECTED',PARTIAL:'DEGRADED',BLOCKED:'ERROR',DISABLED:'DISCONNECTED'};
@@ -55,8 +55,8 @@ export async function renderControlCenter({api:client,auth}){
  if(!visible)return;
  const generation=++renderGeneration;
  $('#cc-summary').innerHTML=skeleton(t('common.loading'));
- let data;
- try{[data,onboardingStatus]=await Promise.all([api('/api/control-center/summary'),api('/api/onboarding').catch(()=>null)]);}
+ let data,catalog;
+ try{[data,onboardingStatus,catalog]=await Promise.all([api('/api/control-center/summary'),api('/api/onboarding').catch(()=>null),api('/api/integrations/catalog').catch(()=>[])]);}
  catch(error){
   if(staleGuard(generation))return;
   $('#cc-summary').innerHTML=empty(t('controlCenter.loadFailed'),error.message);
@@ -64,6 +64,10 @@ export async function renderControlCenter({api:client,auth}){
  }
  if(staleGuard(generation))return;
  summary=data;
+ // Universal Integration Platform (Phase 6D) — the Integrations tab reads the same data-driven
+ // catalog the Integration Builder publishes to (GET /api/integrations/catalog); a brand-new
+ // Builder-published connector needs zero change here to start appearing and being connectable.
+ catalogBySlug=new Map((catalog||[]).map(c=>[c.slug,c]));
  renderTrialBanner();
  renderKpis();
  renderAttention();
@@ -124,16 +128,24 @@ function selectTab(index){document.querySelectorAll('#cc-tabs [role=tab]')[index
 
 // --- Integrations tab ------------------------------------------------------------------
 
+/** Universal Integration Platform (Phase 6D) — data-driven marketplace: cards are grouped by
+ * real `category` (from the same catalog the Integration Builder publishes to), never a
+ * hardcoded per-provider list. A DISABLED dynamic connector (still has `status` from the
+ * summary) is shown greyed-out with an honest note rather than silently disappearing while it
+ * still has a live connection to manage. */
 function renderIntegrationsTab(){
  const container=document.getElementById('cc-panel-integrations');
  if(summary.integrations.providers.length===0){container.innerHTML=empty(t('controlCenter.noIntegrations'));return;}
- container.innerHTML='<div class="grid" id="cc-integration-cards"></div>';
- const grid=container.querySelector('#cc-integration-cards');
+ const categories=[...new Set(summary.integrations.providers.map(p=>p.category))];
+ container.innerHTML=categories.map(cat=>`<h4>${escape(cat)}</h4><div class="grid" data-category="${escape(cat)}"></div>`).join('');
  for(const provider of summary.integrations.providers){
+  const grid=container.querySelector(`[data-category="${CSS.escape(provider.category)}"]`);
   const card=document.createElement('article');card.className='card';
   const healthy=provider.connections.filter(c=>['CONNECTED','DEGRADED'].includes(c.status)).length;
-  card.innerHTML=`<div class="meta"><span>${escape(provider.category)}</span>${provider.isAvailable?badge(CONNECTION_MODE_LABEL(provider.connectionMode),provider.connectionMode):badge(t('controlCenter.unavailable'),'ERROR')}</div>
+  const disabledByPlatform=provider.status==='DISABLED';
+  card.innerHTML=`<div class="meta"><span>${escape(provider.category)}</span>${disabledByPlatform?badge(t('controlCenter.providerStatus.DISABLED'),'ERROR'):provider.isAvailable?badge(CONNECTION_MODE_LABEL(provider.connectionMode),provider.connectionMode):badge(t('controlCenter.unavailable'),'ERROR')}</div>
    <h3>${escape(getLocale()==='en'?provider.nameEn:provider.nameAr)}</h3>
+   ${provider.capabilities?.length?`<p class="kpi-context" dir="ltr">${provider.capabilities.map(escape).join(' · ')}</p>`:''}
    <p>${provider.connections.length?t('controlCenter.connectionsSummary',{healthy,total:provider.connections.length}):t('controlCenter.noConnectionYet')}</p>`;
   const actions=document.createElement('div');actions.className='report-actions';
   if(provider.connections.length){
@@ -144,6 +156,8 @@ function renderIntegrationsTab(){
    const add=button(provider.slug==='salla'?t('controlCenter.addStore'):t('controlCenter.addConnection'),{variant:'primary',iconName:'plus'});
    add.onclick=()=>startAddConnection(provider);
    actions.append(add);
+  } else if(disabledByPlatform){
+   const note=document.createElement('p');note.className='kpi-context';note.textContent=t('controlCenter.providerStatus.DISABLED');actions.append(note);
   } else if(!provider.isAvailable){
    const note=document.createElement('p');note.className='kpi-context';note.textContent=t('controlCenter.notAvailableNote');actions.append(note);
   } else if(provider.connectionMode==='SINGLE' && provider.connections.length){
@@ -152,15 +166,61 @@ function renderIntegrationsTab(){
   card.append(actions);grid.append(card);
  }
 }
-/** Honest add-connection gating (Phase 4C-2 Part 10/73): Salla's real multi-store OAuth and
- * Anthropic/OpenAI's real API-key flow are the ONLY backend-supported "add" paths today — a
- * SINGLE-mode provider that already has one connection never offers "add another", and an
- * UNAVAILABLE provider (Canva) never offers anything at all. */
+/** Honest add-connection gating (Phase 4C-2 Part 10/73, extended Phase 6D): Salla's real
+ * multi-store OAuth and Anthropic/OpenAI's real API-key flow keep their own dedicated paths; any
+ * OTHER published connector (built-in or a dynamic/Builder one) falls through to the generic
+ * rule already here — a SINGLE-mode provider that already has one connection never offers "add
+ * another", a DISABLED one never offers anything, and an UNAVAILABLE provider (Canva) doesn't
+ * either. */
 function canAddConnection(provider){
- if(!provider.isAvailable)return false;
+ if(!provider.isAvailable||provider.status==='DISABLED')return false;
  if(provider.slug==='salla')return true;
  if(['anthropic','openai'].includes(provider.slug))return true;
  return provider.connections.length===0 && provider.connectionMode!=='UNAVAILABLE';
+}
+/** Generic Connection UI (Phase 6D) — the ONE add-connection form every dynamic/Builder-
+ * published connector uses, driven entirely by the real authType the catalog reports. Secret
+ * fields are read once synchronously to submit and never stored anywhere client-side (no
+ * localStorage/sessionStorage) — the same discipline the existing Anthropic/OpenAI flow above
+ * already follows. */
+function startGenericConnect(provider){
+ const catalogEntry=catalogBySlug.get(provider.slug);
+ const authType=catalogEntry?.authType;
+ // Only a real GENERIC_REST/Builder-published connector's auth type is handled by this generic
+ // form (Part 5) — a built-in OAuth2 provider (whatsapp/meta/microsoft365/x/linkedin) with zero
+ // connections yet has no generic "add" path in this pass (each has its own dedicated OAuth
+ // start route, not surfaced from this particular button today) — say so honestly rather than
+ // attempting a doomed generic-credential call that would just 400.
+ if(!['API_KEY','BEARER_TOKEN','BASIC','NONE'].includes(authType)){toastError(t('controlCenter.notAvailableNote'));return;}
+ promptDrawer(t('controlCenter.addConnection'),node=>{
+  const nameInput=document.createElement('input');nameInput.name='name';nameInput.required=true;nameInput.maxLength=100;nameInput.value=getLocale()==='en'?provider.nameEn:provider.nameAr;
+  const nameLabel=document.createElement('label');nameLabel.textContent=t('controlCenter.connectionNameLabel');nameLabel.append(nameInput);
+  node.append(nameLabel);
+  let secretInput=null,secondInput=null;
+  if(authType==='API_KEY'){
+   secretInput=document.createElement('input');secretInput.type='password';secretInput.required=true;secretInput.autocomplete='off';
+   const label=document.createElement('label');label.textContent=t('controlCenter.apiKeyLabel');label.append(secretInput);node.append(label);
+  } else if(authType==='BEARER_TOKEN'){
+   secretInput=document.createElement('input');secretInput.type='password';secretInput.required=true;secretInput.autocomplete='off';
+   const label=document.createElement('label');label.textContent=t('controlCenter.tokenLabel');label.append(secretInput);node.append(label);
+  } else if(authType==='BASIC'){
+   secretInput=document.createElement('input');secretInput.required=true;secretInput.autocomplete='off';
+   const label=document.createElement('label');label.textContent=t('controlCenter.usernameLabel');label.append(secretInput);node.append(label);
+   secondInput=document.createElement('input');secondInput.type='password';secondInput.autocomplete='off';
+   const label2=document.createElement('label');label2.textContent=t('controlCenter.passwordLabel');label2.append(secondInput);node.append(label2);
+  } else {
+   const note=document.createElement('p');note.className='kpi-context';note.textContent=t('controlCenter.connectNoAuth');node.append(note);
+  }
+  return {value:()=>({name:nameInput.value.trim(),secret:secretInput?.value,second:secondInput?.value}),focus:()=>nameInput.focus()};
+ },{confirmLabel:t('common.save')}).then(async result=>{
+  if(!result)return;
+  try{
+   const connection=await api('/api/integrations/connections',{integrationDefinitionId:provider.slug,name:result.name});
+   const credentialBody=authType==='API_KEY'?{apiKey:result.secret}:authType==='BEARER_TOKEN'?{token:result.secret}:authType==='BASIC'?{username:result.secret,password:result.second}:{};
+   await api(`/api/integrations/connections/${connection.id}/generic-credential`,credentialBody,'PUT');
+   toastAndRefresh(t('controlCenter.connectionAdded'));
+  }catch(error){toastError(error.message);}
+ });
 }
 function startAddConnection(provider){
  if(provider.slug==='salla'){
@@ -192,7 +252,14 @@ function startAddConnection(provider){
     toastAndRefresh(t('controlCenter.connectionAdded'));
    }catch(error){toastError(error.message);}
   });
+  return;
  }
+ // Any other published connector — built-in (whatsapp/meta/microsoft365/x/linkedin keep their
+ // own OAuth "Manage" flow already surfaced via openProviderDrawer once connected, so this only
+ // ever fires for a provider with zero connections and no dedicated flow above) or a dynamic
+ // Builder-published one — uses the ONE Generic Connection UI, keyed off the real authType the
+ // catalog reports. Zero per-provider branch is added here for a new Builder connector.
+ startGenericConnect(provider);
 }
 
 // --- AI Providers tab -------------------------------------------------------------------

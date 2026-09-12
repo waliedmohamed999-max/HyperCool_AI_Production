@@ -44,12 +44,20 @@ function buildToolsSummary(db,env,tenantId) {
  }
  return {total:definitions.length,available:definitions.filter(t=>t.isAvailable!==false).length,unavailable:definitions.filter(t=>t.isAvailable===false).length,statusCounts};
 }
-/** Integrations summary: real `IntegrationDefinition` catalog + real, tenant-scoped connections per provider, honest `connectionMode` (Phase 4B.1) — never inventing multi-connection support a provider doesn't actually have. */
+/** Integrations summary: real `IntegrationDefinition` catalog + real, tenant-scoped connections
+ * per provider, honest `connectionMode` (Phase 4B.1) — never inventing multi-connection support
+ * a provider doesn't actually have. Universal Integration Platform (Phase 6D, Part 39/40): a
+ * DRAFT connector (never yet published by a Platform Admin) is excluded outright — it must
+ * never be visible to any tenant, catalog-only or otherwise. A DISABLED one still appears (an
+ * existing connection must remain manageable/visible in Health) but carries its real `status`
+ * so the frontend can honestly grey out "add a new connection" without a second isAvailable
+ * concept drifting from it. */
 function buildIntegrationsSummary(db,tenantId) {
- const definitions=listIntegrationDefinitions(db);
+ const definitions=listIntegrationDefinitions(db).filter(d=>d.status!=='DRAFT');
  const providers=definitions.map(def=>{
   const connections=listConnections(db,{integrationDefinitionId:def.slug},tenantId);
   return {slug:def.slug,nameAr:def.nameAr,nameEn:def.nameEn,category:def.category,isAvailable:def.isAvailable,connectionMode:def.connectionMode,
+   status:def.status,capabilities:def.capabilities,isSystem:def.isSystem,
    connections:connections.map(c=>({id:c.id,name:c.name,status:c.status,isDefault:c.isDefault,externalAccountName:c.externalAccountName,lastHealthCheck:c.lastHealthCheck,lastSuccessAt:c.lastSuccessAt,lastErrorAt:c.lastErrorAt,lastErrorCode:c.lastErrorCode,lastErrorMessageSafe:c.lastErrorMessageSafe,scopes:c.scopes}))};
  });
  const allConnections=providers.flatMap(p=>p.connections);

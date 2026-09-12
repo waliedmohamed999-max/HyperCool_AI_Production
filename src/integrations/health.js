@@ -5,6 +5,7 @@ import {testMicrosoftConnection} from '../runtime/microsoft-graph.js';
 import {testXConnection} from '../runtime/x-publishing.js';
 import {testLinkedInConnection} from '../runtime/linkedin-publishing.js';
 import {getCredentialForRuntime} from './vault.js';
+import {checkConnectorHealth} from '../connectors/core/runtime.js';
 
 // Connection Health — Multi-Tenant Phase 4A, Part 15/16/17. Reuses the EXACT same read-only,
 // side-effect-free test functions this codebase already had (connectors.js's
@@ -47,7 +48,19 @@ export async function testConnectionHealth(connection,{store,env,fetcher}) {
   if(provider==='microsoft365')return normalize(await testMicrosoftConnection({store,env,fetcher}));
   if(provider==='x')return normalize(await testXConnection({store,env,fetcher}));
   if(provider==='linkedin')return normalize(await testLinkedInConnection({store,env,fetcher}));
-  return {status:'NOT_CONFIGURED',checkedAt:new Date().toISOString(),warnings:[],errors:['NOT_IMPLEMENTED'],safeMessage:'لا يوجد فحص اتصال آلي لهذا التكامل بعد'};
+  // Universal Integration Platform (Phase 6D) — any connector NOT covered by the legacy,
+  // per-provider checks above (a dynamic/GENERIC_REST connector published via the Integration
+  // Builder, e.g. Acme ERP) reuses the EXACT SAME ConnectorRuntime health pipeline the Agent
+  // tool path already goes through (SSRF-safe outbound, tenant/connection-scoped) — never a
+  // second, weaker health implementation just for this HTTP route.
+  const dynamicResult=await checkConnectorHealth({db:store.db,env,tenantId:connection.tenantId,connectorSlug:provider,connectionId:connection.id});
+  const dynamicStatus=dynamicResult.status==='OK'?'CONNECTED':dynamicResult.status==='NOT_CONFIGURED'?'NOT_CONFIGURED':dynamicResult.status==='DEGRADED'?'DEGRADED':'ERROR';
+  return {
+   status:dynamicStatus,checkedAt:new Date().toISOString(),
+   warnings:dynamicStatus==='DEGRADED'?[dynamicResult.errorCode]:[],
+   errors:dynamicStatus==='ERROR'?[dynamicResult.errorCode]:[],
+   safeMessage:dynamicResult.errorCode||null
+  };
  } catch(error) {
   return {status:'ERROR',checkedAt:new Date().toISOString(),warnings:[],errors:[error.code||'HEALTH_CHECK_FAILED'],safeMessage:error.code||'HEALTH_CHECK_FAILED'};
  }
