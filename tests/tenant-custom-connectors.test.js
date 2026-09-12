@@ -115,6 +115,15 @@ test('Forbidden capability prefixes (platform./security./admin./permissions.*) a
  } finally { await cleanup(); }
 });
 
+test('A genuinely unknown (never-registered) capability is rejected — a tenant can never invent a capability string outside the canonical registry',async()=>{
+ const {db,env,owner,tenantId,cleanup}=await harness();
+ try{
+  throwsWithCode(()=>createTenantConnectorDraft(db,env,owner,tenantId,{...draftInput(),capabilities:['made_up.not_real_capability']}),'UNKNOWN_CAPABILITY');
+  const draft=createTenantConnectorDraft(db,env,owner,tenantId,draftInput());
+  throwsWithCode(()=>upsertTenantConnectorAction(db,env,tenantId,draft.id,{slug:'x',nameAr:'x',nameEn:'x',httpMethod:'GET',pathTemplate:'/x',requiredCapability:'made_up.not_real_capability',actionType:'READ',riskLevel:'LOW'}),'UNKNOWN_CAPABILITY');
+ } finally { await cleanup(); }
+});
+
 test('SSRF/HTTPS-only base URL policy applies to tenant custom connectors with NO relaxation (no allowHttp escape hatch)',async()=>{
  const {db,env,owner,tenantId,cleanup}=await harness();
  try{

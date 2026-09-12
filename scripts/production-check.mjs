@@ -57,9 +57,17 @@ warn('DATA_DIR set explicitly', !!env.DATA_DIR, env.DATA_DIR ? env.DATA_DIR : 'u
 
 // Phase 6F, Part 81 — Universal Integration Platform production readiness. Never a secret
 // VALUE, only presence/completeness — same discipline as every other check above.
+//
+// Phase 6G update: the Draft->Submit->Review->Approve/Reject/Request-Changes workflow, per-
+// tenant limits, forbidden-capability/SSRF/write-approval policy are now REAL (see
+// src/connectors/dynamic/tenant-custom.js, docs/TENANT_CUSTOM_CONNECTORS.md) — the flag
+// genuinely gates a real code path today, unlike Phase 6F's own honest "gates nothing" note.
 const tenantCustomConnectorsEnabled = env.ENABLE_TENANT_CUSTOM_CONNECTORS === 'true';
-info('ENABLE_TENANT_CUSTOM_CONNECTORS', `${tenantCustomConnectorsEnabled} (default false)${tenantCustomConnectorsEnabled ? ' — WARNING: no tenant-facing custom-connector creation endpoint exists yet (Phase 6F deferred the full governance workflow); this flag currently gates nothing real' : ''}`);
-if (tenantCustomConnectorsEnabled) warn('Tenant custom connector governance implemented', false, 'flag is on but Draft->Review->Approve workflow, per-tenant limits, and capability/event/write policy are NOT implemented (see docs/TENANT_CUSTOM_CONNECTORS.md) — do not rely on this flag for anything in production yet');
+info('ENABLE_TENANT_CUSTOM_CONNECTORS', `${tenantCustomConnectorsEnabled} (default false)${tenantCustomConnectorsEnabled ? ' — real Draft/Review/Approve governance is implemented (Phase 6G); still missing: a Platform-Admin UI to change MAX_CUSTOM_CONNECTORS_PER_TENANT per-tenant (env-wide only today) and a failed/rejected-history view for the tenant' : ''}`);
+if (tenantCustomConnectorsEnabled) {
+ const maxCustom = Number(env.MAX_CUSTOM_CONNECTORS_PER_TENANT);
+ info('MAX_CUSTOM_CONNECTORS_PER_TENANT', Number.isFinite(maxCustom) && maxCustom > 0 ? String(maxCustom) : '3 (default)');
+}
 
 const zidVars = ['ZID_CLIENT_ID', 'ZID_CLIENT_SECRET', 'ZID_REDIRECT_URI'];
 const zidPresent = zidVars.filter(v => !!env[v]);
@@ -71,6 +79,20 @@ else info('Zid OAuth', zidPresent.length === zidVars.length ? 'fully configured'
 // wide to validate here beyond INTEGRATION_ENCRYPTION_KEY (already checked above), which is
 // what protects every one of those per-connection secrets at rest.
 info('Dynamic connector webhook security', 'per-connection, Vault-encrypted (no platform-wide webhook secret env var exists or is needed)');
+// Phase 6G — Webhook Console operational readiness: URL/secret rotation and Safe Reprocess all
+// reuse INTEGRATION_ENCRYPTION_KEY (already validated above) and the same per-connection Vault
+// row; nothing platform-wide to configure beyond that.
+info('Webhook Console operations (rotation/reprocess)', 'ready — reuses INTEGRATION_ENCRYPTION_KEY and the per-connection Vault, no separate configuration');
+
+// Phase 6G, Part 18-24 — the Generic OAuth2 Framework. A Platform-Admin-authored GENERIC_REST
+// OAuth2 connector references its real client id/secret only by ENV VAR NAME
+// (clientIdEnvKey/clientSecretEnvKey, stored on the connector definition — never a value this
+// script could discover ahead of time without opening the tenant database, which this
+// env-only checker deliberately never does, matching every other check above). A connector
+// whose referenced env vars are missing fails safely and honestly at connect time
+// (GENERIC_OAUTH2_NOT_CONFIGURED) rather than silently — this is an architectural guarantee,
+// not something this script can additionally verify from env alone.
+info('Generic OAuth2 Framework (Phase 6G)', 'ready — each connector references its client id/secret by env var NAME only; a missing referenced var fails safely at connect time (GENERIC_OAUTH2_NOT_CONFIGURED), never silently');
 
 console.log('\n=== HyperCool Production Config Check ===\n');
 let hasBlocker = false;
