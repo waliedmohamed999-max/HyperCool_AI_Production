@@ -4,7 +4,14 @@
 import {randomUUID} from 'node:crypto';
 import {getIntegrationDefinition,listIntegrationDefinitions} from '../../integrations/definitions.js';
 import {listActionsForDefinition,upsertAction as storeUpsertAction,deleteAction as storeDeleteAction,listTriggersForDefinition,upsertTrigger as storeUpsertTrigger,deleteTrigger as storeDeleteTrigger,saveVersionSnapshot,listVersionSnapshotsForDefinition,getVersionSnapshot} from './store.js';
-import {hydrateAndValidate} from './hydrate.js';
+import {
+ getDraftMeta,hasDraftOverlay,createDraftMeta,updateDraftMeta,deleteDraftOverlay,
+ listDraftActionsForDefinition,upsertDraftAction,deleteDraftAction,
+ listDraftTriggersForDefinition,upsertDraftTrigger,deleteDraftTrigger
+} from './draft-store.js';
+import {hydrateAndValidate,buildRawManifest} from './hydrate.js';
+import {validateRestManifest} from '../generic-rest/manifest.js';
+import {validateWebhookManifest} from '../generic-webhook/manifest.js';
 import {isKnownCapability} from '../core/capability-registry.js';
 import {validateOutboundUrl} from '../core/ssrf.js';
 
@@ -109,6 +116,11 @@ export function updateDraftConnector(db,env,actorUser,id,patch) {
   if(authType==='API_KEY' && !patch.auth.headerName)fail(400,'INVALID_AUTH_TYPE','API_KEY يتطلب headerName حقيقيًا');
   if(authType==='OAUTH2')validateOAuth2Config(patch.auth,fail);
  }
+ // Phase 6H, Part 1-2 — Safe Published Version Lifecycle: while a parallel draft workspace
+ // exists for this (still fully PUBLISHED, still fully live) connector, an edit here targets
+ // the DRAFT overlay, never the live row — the live row (serving every brand-new connection
+ // today) is completely untouched until the draft is actually published (see publishConnector).
+ if(hasDraftOverlay(db,id)) { updateDraftMeta(db,id,patch); return getDefinitionById(db,id); }
  const now=new Date().toISOString();
  db.prepare(`UPDATE integration_definitions SET name_ar=COALESCE(?,name_ar),name_en=COALESCE(?,name_en),description_ar=COALESCE(?,description_ar),description_en=COALESCE(?,description_en),category=COALESCE(?,category),capabilities=COALESCE(?,capabilities),rest_config=COALESCE(?,rest_config),auth_config=COALESCE(?,auth_config),updated_at=? WHERE id=?`)
   .run(patch.nameAr||null,patch.nameEn||null,patch.descriptionAr||null,patch.descriptionEn||null,patch.category?.toLowerCase()||null,
@@ -144,64 +156,114 @@ export function upsertActionForConnector(db,env,actorUser,definitionId,action) {
  const definition=requireEditableDefinition(db,definitionId);
  if(!action.slug||!action.pathTemplate||!action.requiredCapability)fail(400,'INVALID_ACTION','slug/pathTemplate/requiredCapability مطلوبة');
  if(!isKnownCapability(action.requiredCapability))fail(400,'UNKNOWN_CAPABILITY',`القدرة غير معروفة: ${action.requiredCapability}`);
- const declaredCapabilities=definition.capabilities||[];
+ // Phase 6H — while drafting, capabilities are validated against the DRAFT's OWN declared
+ // capabilities (which may already differ from the live ones being edited toward), never the
+ // live definition's currently-published capability list.
+ const overlay=getDraftMeta(db,definitionId);
+ const declaredCapabilities=(overlay?overlay.capabilities:definition.capabilities)||[];
  if(!declaredCapabilities.includes(action.requiredCapability))
   fail(400,'CAPABILITY_NOT_DECLARED',`القدرة ${action.requiredCapability} لم تُعلَن بعد في خطوة Capabilities لهذا الـConnector`);
- return storeUpsertAction(db,definitionId,action);
+ return overlay?upsertDraftAction(db,definitionId,action):storeUpsertAction(db,definitionId,action);
 }
 export function deleteActionForConnector(db,env,actorUser,definitionId,actionId) {
  requirePlatformAdmin(env,actorUser);
  requireEditableDefinition(db,definitionId);
- storeDeleteAction(db,definitionId,actionId);
+ if(hasDraftOverlay(db,definitionId))deleteDraftAction(db,definitionId,actionId);
+ else storeDeleteAction(db,definitionId,actionId);
 }
 export function listActions(db,env,actorUser,definitionId) {
  requirePlatformAdmin(env,actorUser);
  requireOwnDefinition(db,definitionId);
- return listActionsForDefinition(db,definitionId);
+ return hasDraftOverlay(db,definitionId)?listDraftActionsForDefinition(db,definitionId):listActionsForDefinition(db,definitionId);
 }
 
 export function upsertTriggerForConnector(db,env,actorUser,definitionId,trigger) {
  requirePlatformAdmin(env,actorUser);
  requireEditableDefinition(db,definitionId);
  if(!trigger.slug||!trigger.normalizedEventType||!trigger.mappingDefinition)fail(400,'INVALID_TRIGGER','slug/normalizedEventType/mappingDefinition مطلوبة');
- return storeUpsertTrigger(db,definitionId,trigger);
+ return hasDraftOverlay(db,definitionId)?upsertDraftTrigger(db,definitionId,trigger):storeUpsertTrigger(db,definitionId,trigger);
 }
 export function deleteTriggerForConnector(db,env,actorUser,definitionId,triggerId) {
  requirePlatformAdmin(env,actorUser);
  requireEditableDefinition(db,definitionId);
- storeDeleteTrigger(db,definitionId,triggerId);
+ if(hasDraftOverlay(db,definitionId))deleteDraftTrigger(db,definitionId,triggerId);
+ else storeDeleteTrigger(db,definitionId,triggerId);
 }
 export function listTriggers(db,env,actorUser,definitionId) {
  requirePlatformAdmin(env,actorUser);
  requireOwnDefinition(db,definitionId);
- return listTriggersForDefinition(db,definitionId);
+ return hasDraftOverlay(db,definitionId)?listDraftTriggersForDefinition(db,definitionId):listTriggersForDefinition(db,definitionId);
 }
 
 // --- Test / Preview (Part 73/74/83) -----------------------------------------------------------
 
-/** Validates the CURRENT draft state without publishing — the same real validator publish uses. */
+/** Runs the exact same manifest validator (`validateRestManifest`/`validateWebhookManifest`)
+ * publish itself uses, sourced from a DRAFT OVERLAY's own data (Phase 6H) rather than the live
+ * DB rows — never touches the live tables, so this can safely be called at any point while
+ * drafting without risking the currently-published version. */
+function validateOverlayManifest(db,definition,overlay) {
+ const draftActions=listDraftActionsForDefinition(db,definition.id);
+ const draftTriggers=listDraftTriggersForDefinition(db,definition.id);
+ const draftDefinitionShape={...definition,nameAr:overlay.nameAr,nameEn:overlay.nameEn,category:overlay.category,
+  descriptionAr:overlay.descriptionAr,descriptionEn:overlay.descriptionEn,capabilities:overlay.capabilities,
+  restConfig:overlay.restConfig,authConfig:overlay.authConfig};
+ const raw=buildRawManifest(db,draftDefinitionShape,{overrideActions:draftActions,overrideTriggers:draftTriggers});
+ if(draftTriggers.length)return validateWebhookManifest(raw);
+ return validateRestManifest(raw);
+}
+/** Validates the CURRENT draft state without publishing — the same real validator publish uses.
+ * Phase 6H — when a parallel draft workspace exists, this validates THAT workspace's content;
+ * the live, currently-published manifest is completely unaffected either way. */
 export function validateConnectorDraft(db,env,actorUser,definitionId) {
  requirePlatformAdmin(env,actorUser);
  const definition=requireOwnDefinition(db,definitionId);
+ const overlay=getDraftMeta(db,definitionId);
+ if(overlay)return {ok:true,manifest:validateOverlayManifest(db,definition,overlay)};
  const {manifest}=hydrateAndValidate(db,definition.slug);
  return {ok:true,manifest};
 }
 
 // --- Publish / Disable (Part 37/38/40/41) ------------------------------------------------------
 
+/** Phase 6H, Part 3 — publishing a draft workspace: the overlay's manifest is validated FIRST,
+ * against a raw manifest built purely from overlay data (Part 2/5 — never touches the live
+ * tables while validating, so a validation failure leaves the still-live, still-serving-new-
+ * connections version completely untouched). Only once valid do the live
+ * `integration_definitions` fields and `connector_actions`/`connector_triggers` rows get
+ * replaced with the draft's content — the draft simply BECOMES the new live version, and the
+ * overlay is discarded. New connections created after this point resolve the new version
+ * immediately (Part 3: "new connections default to v3"); every connection already pinned to the
+ * OLD version keeps resolving its own untouched immutable snapshot (unaffected, exactly as
+ * every other publish already guarantees — Policy B). */
+function publishFromOverlay(db,actorUser,definition,overlay) {
+ const manifest=validateOverlayManifest(db,definition,overlay);
+ const now=new Date().toISOString();
+ db.prepare(`UPDATE integration_definitions SET name_ar=?,name_en=?,category=?,description_ar=?,description_en=?,capabilities=?,rest_config=?,auth_config=?,updated_at=? WHERE id=?`)
+  .run(overlay.nameAr,overlay.nameEn,overlay.category,overlay.descriptionAr,overlay.descriptionEn,JSON.stringify(overlay.capabilities),overlay.restConfig?JSON.stringify(overlay.restConfig):null,overlay.authConfig?JSON.stringify(overlay.authConfig):null,now,definition.id);
+ for(const existing of listActionsForDefinition(db,definition.id))storeDeleteAction(db,definition.id,existing.id);
+ for(const action of listDraftActionsForDefinition(db,definition.id))storeUpsertAction(db,definition.id,action);
+ for(const existing of listTriggersForDefinition(db,definition.id))storeDeleteTrigger(db,definition.id,existing.id);
+ for(const trigger of listDraftTriggersForDefinition(db,definition.id))storeUpsertTrigger(db,definition.id,triggerToUpsertInput(trigger));
+ deleteDraftOverlay(db,definition.id);
+ return manifest;
+}
 export function publishConnector(db,env,actorUser,definitionId) {
  requirePlatformAdmin(env,actorUser);
  const definition=requireOwnDefinition(db,definitionId);
  if(definition.isSystem)fail(400,'SYSTEM_CONNECTOR_READONLY','موصلات النظام منشورة بالفعل ولا تُنشر من هنا');
  if(definition.status==='DISABLED')fail(400,'CONNECTOR_DISABLED','أعد تفعيل الموصل قبل نشر تعديلات جديدة عليه');
+ const overlay=getDraftMeta(db,definitionId);
  // Part 37/38 — the exact same real validator (validateManifest/validateRestManifest/
  // validateWebhookManifest) that runtime resolution itself uses. A publish blocker here is
  // IDENTICAL to a runtime failure — never a separate, weaker Builder-only check.
- const {manifest}=hydrateAndValidate(db,definition.slug);
+ const manifest=overlay?publishFromOverlay(db,actorUser,definition,overlay):hydrateAndValidate(db,definition.slug).manifest;
+ // Re-read: publishFromOverlay may have just replaced the live row's fields above.
+ const fresh=getDefinitionById(db,definitionId);
  // Part 109 (policy B): the FIRST publish uses the version already set at draft creation (1);
- // every SUBSEQUENT publish (editing an already-published definition) bumps it — a real, new,
- // immutable snapshot every time, never silently mutating the previous one.
- const newVersion=definition.publishedAt?definition.version+1:definition.version;
+ // every SUBSEQUENT publish (editing an already-published definition, OR publishing a Phase 6H
+ // draft workspace) bumps it — a real, new, immutable snapshot every time, never silently
+ // mutating the previous one.
+ const newVersion=fresh.publishedAt?fresh.version+1:fresh.version;
  const now=new Date().toISOString();
  db.prepare('UPDATE integration_definitions SET status=?,version=?,is_available=1,published_at=?,updated_at=? WHERE id=?')
   .run('PUBLISHED',newVersion,now,now,definitionId);
@@ -318,16 +380,29 @@ export function listConnectorsForBuilder(db,env,actorUser) {
 }
 
 /** One connector's full Builder view: definition + its actions/triggers/dependency counts — the
- * shape the wizard's Review step and the connector detail screen both read from. */
+ * shape the wizard's Review step and the connector detail screen both read from.
+ *
+ * Phase 6H, Part 1/4 — when a parallel draft workspace exists, the Basics/Auth/Capabilities/
+ * Actions/Webhooks tabs show and edit the DRAFT content (what a Platform Admin actively drafting
+ * "v3" wants to see) while `liveVersion`/`status` still honestly report that the definition is
+ * `PUBLISHED` and serving every brand-new connection with its OWN, completely untouched, live
+ * content — `hasDraft`/`draftMeta` tell the UI to render the "you are editing a draft; v{live}
+ * keeps serving new connections" banner. */
 export function getConnectorForBuilder(db,env,actorUser,id) {
  requirePlatformAdmin(env,actorUser);
  const definition=requireOwnDefinition(db,id);
  const deps=db.prepare('SELECT COUNT(*) c FROM integration_connections WHERE integration_definition_id=?').get(definition.slug).c;
  const tenants=db.prepare('SELECT COUNT(DISTINCT tenant_id) c FROM integration_connections WHERE integration_definition_id=?').get(definition.slug).c;
+ const overlay=definition.isSystem?null:getDraftMeta(db,id);
  return {
-  ...definition,connectionsCount:deps,tenantsCount:tenants,
-  actions:definition.isSystem?[]:listActionsForDefinition(db,id),
-  triggers:definition.isSystem?[]:listTriggersForDefinition(db,id)
+  ...definition,
+  ...(overlay?{nameAr:overlay.nameAr,nameEn:overlay.nameEn,category:overlay.category,descriptionAr:overlay.descriptionAr,descriptionEn:overlay.descriptionEn,capabilities:overlay.capabilities,restConfig:overlay.restConfig,authConfig:overlay.authConfig}:{}),
+  connectionsCount:deps,tenantsCount:tenants,
+  actions:definition.isSystem?[]:(overlay?listDraftActionsForDefinition(db,id):listActionsForDefinition(db,id)),
+  triggers:definition.isSystem?[]:(overlay?listDraftTriggersForDefinition(db,id):listTriggersForDefinition(db,id)),
+  hasDraft:!!overlay,
+  liveVersion:definition.version,
+  liveStatus:definition.status
  };
 }
 
@@ -385,9 +460,14 @@ function describeVersionChange(version,snapshots) {
  if(diff.connectionMode.changed)parts.push('وضع الاتصال');
  return parts.length?`تغييرات في: ${parts.join('، ')}`:'تعديلات طفيفة';
 }
-/** Part 2 — the Versions tab's list: every real, permanent snapshot plus (Part 4) a synthetic
- * "working copy" row while a new draft version is being prepared. `connectionsPinned` is a
- * live COUNT, never an estimate. */
+/** Part 2/4 — the Versions tab's list: every real, permanent snapshot plus (Part 1) a synthetic
+ * DRAFT row while a parallel draft workspace exists. `connectionsPinned` is a live COUNT, never
+ * an estimate. Status labels, exactly as Part 4 requires:
+ *  - `LIVE` — the one version currently serving every brand-new connection (the definition's
+ *    real, current `version`, while `status==='PUBLISHED'`).
+ *  - `PREVIOUS` — an older, still-immutable, still-resolvable-by-pin snapshot.
+ *  - `DRAFT` — the in-progress draft workspace (Phase 6H), if one exists; never counted as a
+ *    real version until actually published. */
 export function listConnectorVersions(db,env,actorUser,definitionId) {
  requirePlatformAdmin(env,actorUser);
  const definition=requireOwnDefinition(db,definitionId);
@@ -395,13 +475,13 @@ export function listConnectorVersions(db,env,actorUser,definitionId) {
  const snapshots=listVersionSnapshotsForDefinition(db,definitionId);
  const rows=snapshots.map(s=>({
   version:s.version,
-  status:(s.version===definition.version && definition.status==='PUBLISHED')?'PUBLISHED':'ARCHIVED',
+  status:(s.version===definition.version && definition.status==='PUBLISHED')?'LIVE':'PREVIOUS',
   publishedAt:s.publishedAt,publishedByUserId:s.publishedByUserId,
   connectionsPinned:db.prepare('SELECT COUNT(*) c FROM integration_connections WHERE integration_definition_id=? AND connector_version=?').get(definition.slug,s.version).c,
   changeType:describeVersionChange(s.version,snapshots)
  }));
- if(definition.status==='DRAFT' && definition.publishedAt)
-  rows.push({version:definition.version+1,status:'DRAFT',publishedAt:null,publishedByUserId:null,connectionsPinned:0,changeType:'نسخة عمل قيد الإعداد'});
+ if(hasDraftOverlay(db,definitionId))
+  rows.push({version:definition.version+1,status:'DRAFT',publishedAt:null,publishedByUserId:null,connectionsPinned:0,changeType:'نسخة عمل قيد الإعداد — لا تؤثر على النسخة المنشورة الحالية'});
  return rows;
 }
 /** Part 3 — a real diff between two already-published snapshots. */
@@ -413,19 +493,37 @@ export function getVersionDiff(db,env,actorUser,definitionId,fromVersion,toVersi
  if(!from||!to)fail(404,'VERSION_NOT_FOUND','أحد الإصدارين غير موجود');
  return {fromVersion:Number(fromVersion),toVersion:Number(toVersion),diff:computeManifestDiff(from,to)};
 }
-/** Part 4 — "Create New Draft Version": flips the LIVE row back to DRAFT so further edits
- * accumulate toward the NEXT publish, WITHOUT touching the already-immutable current snapshot.
- * Every connection currently pinned to the current version is completely unaffected — a pinned
- * resolution (`resolveConnectorDynamic`) only ever checks the definition's `status` for the
- * DISABLED case, never for DRAFT — so a live tenant's pinned connection keeps executing exactly
- * as before while a Platform Admin drafts the next version. New connections simply cannot be
- * started until the next publish (the same rule that already applies to any DRAFT connector). */
+/** Part 1-4 (Phase 6H, Safe Published Version Lifecycle) — "Create New Draft Version": creates a
+ * genuinely PARALLEL draft workspace (`connector_draft_meta`/`connector_draft_actions`/
+ * `connector_draft_triggers` — see draft-store.js), seeded from the current live content, so a
+ * Platform Admin can edit "v3" while the LIVE `integration_definitions` row + `connector_actions`/
+ * `connector_triggers` — serving v2 to every brand-new connection exactly as before — are NEVER
+ * touched until the draft is actually published (`publishFromOverlay`). Unlike the Phase 6G
+ * version of this function, `status` stays `PUBLISHED` throughout — Part 1's explicit
+ * requirement that "draft v3 must not hide/disable currently published connector". */
 export function createDraftVersion(db,env,actorUser,definitionId) {
  requirePlatformAdmin(env,actorUser);
  const definition=requireOwnDefinition(db,definitionId);
  if(definition.isSystem)fail(400,'SYSTEM_CONNECTOR_READONLY','لا يمكن إنشاء نسخة مسودة لموصل نظامي');
  if(definition.status!=='PUBLISHED')fail(400,'NOT_PUBLISHED','يمكن إنشاء نسخة مسودة جديدة فقط من موصل منشور حاليًا');
- db.prepare("UPDATE integration_definitions SET status='DRAFT',updated_at=? WHERE id=?").run(new Date().toISOString(),definitionId);
+ if(hasDraftOverlay(db,definitionId))fail(409,'DRAFT_ALREADY_EXISTS','يوجد بالفعل نسخة مسودة قيد الإعداد لهذا الموصل');
+ createDraftMeta(db,definitionId,{
+  nameAr:definition.nameAr,nameEn:definition.nameEn,category:definition.category,
+  descriptionAr:definition.descriptionAr,descriptionEn:definition.descriptionEn,
+  capabilities:definition.capabilities,restConfig:definition.restConfig,authConfig:definition.authConfig
+ });
+ for(const action of listActionsForDefinition(db,definitionId))upsertDraftAction(db,definitionId,action);
+ for(const trigger of listTriggersForDefinition(db,definitionId))upsertDraftTrigger(db,definitionId,triggerToUpsertInput(trigger));
+ return getConnectorForBuilder(db,env,actorUser,definitionId);
+}
+/** Part 1 (implicit) — discards an in-progress draft workspace without publishing it, e.g. if a
+ * Platform Admin decides not to go through with "v3" after all. The live, published version is
+ * (as always in this design) completely unaffected either way. */
+export function discardDraftVersion(db,env,actorUser,definitionId) {
+ requirePlatformAdmin(env,actorUser);
+ const definition=requireOwnDefinition(db,definitionId);
+ if(!hasDraftOverlay(db,definitionId))fail(400,'NO_DRAFT','لا توجد نسخة مسودة قيد الإعداد لهذا الموصل');
+ deleteDraftOverlay(db,definitionId);
  return getDefinitionById(db,definitionId);
 }
 

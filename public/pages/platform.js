@@ -379,10 +379,14 @@ async function openConnectorWizard(summary){
  try{capabilityRegistry=await apiClient('/api/platform/capabilities');}catch{capabilityRegistry=[];}
 
  const node=document.createElement('div');
+ // Phase 6H, Part 1/4 — a persistent, always-visible banner (never buried in one tab) so a
+ // Platform Admin editing a draft never forgets the LIVE version keeps serving new connections
+ // completely unaffected the whole time.
+ const draftBanner=document.createElement('div');draftBanner.hidden=true;
  const basicPanel=document.createElement('div'),actionsPanel=document.createElement('div'),
        webhooksPanel=document.createElement('div'),healthPanel=document.createElement('div'),
        versionsPanel=document.createElement('div'),reviewPanel=document.createElement('div');
- node.append(basicPanel,actionsPanel,webhooksPanel,healthPanel,versionsPanel,reviewPanel);
+ node.append(draftBanner,basicPanel,actionsPanel,webhooksPanel,healthPanel,versionsPanel,reviewPanel);
  // Item 7 — the numbered steps stay visible in every tab label even though steps 1-3 share one
  // panel (the Builder's create call is atomic — see the Basics panel's own doc comment) — a
  // Platform Admin always sees where they are in the full 8-step flow.
@@ -401,7 +405,21 @@ async function openConnectorWizard(summary){
   if(!definitionId){paintBasic();gateOtherTabs();return;}
   try{detail=await apiClient(`/api/platform/connectors/${definitionId}`);}
   catch(error){toastError(error.message);return;}
+  paintDraftBanner();
   paintBasic();paintActions();paintWebhooks();paintHealth();paintVersions();paintReview();gateOtherTabs();
+ }
+ function paintDraftBanner(){
+  draftBanner.hidden=!detail?.hasDraft;
+  if(!detail?.hasDraft)return;
+  draftBanner.innerHTML=`<p class="notice">${escape(t('platform.builder.draftBanner',{version:detail.liveVersion}))}</p>`;
+  const discard=button(t('platform.builder.discardDraft'),{variant:'ghost'});
+  discard.onclick=async()=>{
+   const confirmed=await promptDrawer(t('platform.builder.discardDraft'),n=>{n.innerHTML=`<p>${escape(t('platform.builder.discardDraftConfirm'))}</p>`;},{confirmLabel:t('platform.builder.discardDraft')});
+   if(!confirmed)return;
+   try{await apiClient(`/api/platform/connectors/${definitionId}/versions/discard`,{},'POST');toast(t('platform.actionSucceeded'));await reload();}
+   catch(error){toastError(error.message);}
+  };
+  draftBanner.append(discard);
  }
  function gateOtherTabs(){
   const disabled=!definitionId;
@@ -624,7 +642,7 @@ async function openConnectorWizard(summary){
    [t('platform.builder.versions.version'),t('platform.builder.versions.status'),t('platform.builder.versions.publishedAt'),t('platform.builder.versions.connectionsPinned'),t('platform.builder.versions.changeType'),t('platform.builder.versions.diff')],
    versions.map(v=>[
     escape(v.version),
-    badge(t('platform.builder.versions.statusValue.'+v.status)||v.status,v.status==='PUBLISHED'?'CONNECTED':v.status==='DRAFT'?'PENDING':'DISCONNECTED'),
+    badge(t('platform.builder.versions.statusValue.'+v.status)||v.status,v.status==='LIVE'?'CONNECTED':v.status==='DRAFT'?'PENDING':'DISCONNECTED'),
     v.publishedAt?new Date(v.publishedAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA'):'—',
     escape(v.connectionsPinned),
     escape(v.changeType),
@@ -639,7 +657,7 @@ async function openConnectorWizard(summary){
    versionsPanel.querySelector(`[data-diff-btn="${v.version}"]`).append(diffButton);
   }
   const actionsHost=versionsPanel.querySelector('#versions-actions');
-  if(detail.status==='PUBLISHED'){
+  if(detail.status==='PUBLISHED' && !detail.hasDraft){
    const draftButton=button(t('platform.builder.versions.createDraftVersion'),{variant:'primary'});
    draftButton.onclick=async()=>{
     const confirmed=await promptDrawer(t('platform.builder.versions.createDraftVersion'),n=>{n.innerHTML=`<p>${escape(t('platform.builder.versions.createDraftVersionConfirm'))}</p>`;},{confirmLabel:t('platform.builder.versions.createDraftVersion')});

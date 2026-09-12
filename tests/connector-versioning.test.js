@@ -11,10 +11,12 @@ import {storeCredential} from '../src/integrations/vault.js';
 import {upsertAssignment} from '../src/runtime/tool-assignments.js';
 import {installToolDefinitions} from '../src/runtime/tool-definitions.js';
 import {
- createDraftConnector,upsertActionForConnector,publishConnector,updateDraftConnector,
- listConnectorVersions,getVersionDiff,createDraftVersion,getConnectorDependencies
+ createDraftConnector,upsertActionForConnector,deleteActionForConnector,listActions,publishConnector,updateDraftConnector,
+ listConnectorVersions,getVersionDiff,createDraftVersion,discardDraftVersion,getConnectorDependencies,getConnectorForBuilder
 } from '../src/connectors/dynamic/builder.js';
 import {getConnectionVersionInfo,previewVersionMigration,migrateConnectionVersion,rollbackConnectionVersion} from '../src/connectors/dynamic/connection-versions.js';
+import {getIntegrationDefinition} from '../src/integrations/definitions.js';
+import {getTenantCatalog} from '../src/connectors/dynamic/builder.js';
 
 // Phase 6G, Part 2-8 — Full Versioning UI backend: version list/diff, "create new draft
 // version while the published one stays live", safe connection migration/rollback.
@@ -63,7 +65,7 @@ function draftInput() {
  };
 }
 
-test('Version list: v1 published, v2 created via draft-version + edit + republish — v1 ARCHIVED, v2 PUBLISHED, real connectionsPinned counts',async()=>{
+test('Version list: v1 LIVE, v2 drafted+published — v1 becomes PREVIOUS, v2 becomes LIVE, real connectionsPinned counts',async()=>{
  const {db,env,admin,owner,tenantId,cleanup}=await harness();
  try{
   const def=createDraftConnector(db,env,admin,draftInput());
@@ -77,20 +79,59 @@ test('Version list: v1 published, v2 created via draft-version + edit + republis
   updateConnection(db,conn.id,{status:'CONNECTED',connectorVersion:1},tenantId);
 
   const drafted=createDraftVersion(db,env,admin,def.id);
-  assert.equal(drafted.status,'DRAFT');
-  assert.equal(drafted.version,1,'still v1 until the NEXT publish — never silently bumped just by drafting');
+  // Phase 6H, Part 1 — status stays PUBLISHED the whole time: the draft must never hide/disable
+  // the currently-published connector.
+  assert.equal(drafted.status,'PUBLISHED');
+  assert.equal(drafted.hasDraft,true);
+  assert.equal(drafted.liveVersion,1,'still v1 until the NEXT publish — never silently bumped just by drafting');
   updateDraftConnector(db,env,admin,def.id,{descriptionAr:'v2 desc'});
+  // The action to edit now lives in the DRAFT overlay (a fresh copy, its own id) — never the
+  // still-live one — so it must be looked up via the overlay-aware `listActions`, not the raw
+  // live-table `listActionsForDefinition`.
+  const draftAction=listActions(db,env,admin,def.id)[0];
+  deleteActionForConnector(db,env,admin,def.id,draftAction.id);
   upsertActionForConnector(db,env,admin,def.id,{slug:'get_invoices',nameAr:'ف',nameEn:'Invoices',httpMethod:'GET',pathTemplate:'/v2/invoices',requiredCapability:'accounting.invoices.read',actionType:'READ',riskLevel:'LOW'});
   const v2=publishConnector(db,env,admin,def.id);
   assert.equal(v2.version,2);
 
   const versions=listConnectorVersions(db,env,admin,def.id);
   assert.equal(versions.length,2);
-  assert.equal(versions[0].version,1);assert.equal(versions[0].status,'ARCHIVED');assert.equal(versions[0].connectionsPinned,1);
-  assert.equal(versions[1].version,2);assert.equal(versions[1].status,'PUBLISHED');assert.equal(versions[1].connectionsPinned,0);
+  assert.equal(versions[0].version,1);assert.equal(versions[0].status,'PREVIOUS');assert.equal(versions[0].connectionsPinned,1);
+  assert.equal(versions[1].version,2);assert.equal(versions[1].status,'LIVE');assert.equal(versions[1].connectionsPinned,0);
   assert.match(versions[1].changeType,/الإجراءات/);
  } finally { await cleanup(); }
 });
+
+test('Safe Published Version Lifecycle (Phase 6H): v2 stays LIVE and fully connectable for NEW connections while v3 drafts; drafting never mutates the live tables',async()=>{
+ const {db,env,admin,owner,tenantId,cleanup}=await harness();
+ try{
+  const def=createDraftConnector(db,env,admin,draftInput());
+  upsertActionForConnector(db,env,admin,def.id,{slug:'get_invoices',nameAr:'ف',nameEn:'Invoices',httpMethod:'GET',pathTemplate:'/invoices',requiredCapability:'accounting.invoices.read',actionType:'READ',riskLevel:'LOW'});
+  publishConnector(db,env,admin,def.id); // v1 == LIVE
+
+  const before=listActionsForDefinitionRaw(db,def.id);
+  createDraftVersion(db,env,admin,def.id);
+  // Edit the DRAFT heavily — new name, new capability-declared action — while v1 stays live.
+  updateDraftConnector(db,env,admin,def.id,{nameAr:'اسم v2 مسودة'});
+  upsertActionForConnector(db,env,admin,def.id,{slug:'get_invoices',nameAr:'ف',nameEn:'Invoices',httpMethod:'GET',pathTemplate:'/BROKEN/should-never-appear-live',requiredCapability:'accounting.invoices.read',actionType:'READ',riskLevel:'LOW'});
+
+  // The LIVE tables (what getTenantCatalog / a brand-new connection / resolveConnectorDynamic
+  // actually read) must be BYTE-FOR-BYTE unaffected while the draft is in progress.
+  const afterDraftEdits=listActionsForDefinitionRaw(db,def.id);
+  assert.deepEqual(before,afterDraftEdits,'editing the draft overlay must never mutate the live connector_actions rows');
+  const liveDefinition=getIntegrationDefinition(db,'acme_v');
+  assert.equal(liveDefinition.status,'PUBLISHED');
+  assert.equal(liveDefinition.nameAr,'أكمي','the live definition row\'s own name must be untouched by the draft edit');
+  assert.equal(getTenantCatalog(db,tenantId).find(c=>c.slug==='acme_v')?.nameAr,'أكمي','the tenant marketplace must keep showing the LIVE name, not the draft one');
+
+  // A tenant can still create a BRAND NEW connection against the LIVE (v1) connector while v3 drafts.
+  const conn=createConnection(db,{integrationDefinitionId:'acme_v',name:'new-during-draft'},tenantId);
+  assert.ok(conn.id,'new connections must remain possible while a draft is in progress — Part 1');
+  } finally { await cleanup(); }
+});
+function listActionsForDefinitionRaw(db,definitionId) {
+ return db.prepare('SELECT slug,path_template,name_ar FROM connector_actions WHERE connector_definition_id=? ORDER BY slug').all(definitionId);
+}
 
 test('Version diff: shows the real path change between v1 and v2, no secrets',async()=>{
  const {db,env,admin,cleanup}=await harness();
@@ -171,9 +212,10 @@ test('Safe migration REFUSES when the target version would break an active tool 
   // requiring one — so re-declare a DIFFERENT capability rather than none, to prove regression
   // detection (not just "manifest happens to be invalid").
   updateDraftConnector(db,env,admin,def.id,{capabilities:['commerce.orders.read']});
-  // The one action must still declare a capability the definition has — swap it too.
-  const {deleteActionForConnector}=await import('../src/connectors/dynamic/builder.js');
-  deleteActionForConnector(db,env,admin,def.id,(await import('../src/connectors/dynamic/store.js')).listActionsForDefinition(db,def.id)[0].id);
+  // The one action must still declare a capability the definition has — swap it too. Its id now
+  // lives in the DRAFT overlay (looked up via the overlay-aware `listActions`), never the
+  // still-live one.
+  deleteActionForConnector(db,env,admin,def.id,listActions(db,env,admin,def.id)[0].id);
   upsertActionForConnector(db,env,admin,def.id,{slug:'get_orders',nameAr:'ط',nameEn:'Orders',httpMethod:'GET',pathTemplate:'/orders',requiredCapability:'commerce.orders.read',actionType:'READ',riskLevel:'LOW'});
   publishConnector(db,env,admin,def.id);
 

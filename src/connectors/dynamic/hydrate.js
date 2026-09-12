@@ -12,16 +12,20 @@ import {validateWebhookManifest} from '../generic-webhook/manifest.js';
 
 function fail(status,code,message){const e=new Error(message||code);e.status=status;e.code=code;throw e;}
 
-/** Builds the raw manifest object hydrate() functions elsewhere expect, from real DB rows. */
-export function buildRawManifest(db,definition) {
- const actions=listActionsForDefinition(db,definition.id).filter(a=>a.isEnabled).map(a=>({
+/** Builds the raw manifest object hydrate() functions elsewhere expect, from real DB rows.
+ * Phase 6H — `overrideActions`/`overrideTriggers` (already-hydrated-shape arrays, e.g. from the
+ * Safe Published Version Lifecycle's parallel draft-overlay tables) let a caller build a raw
+ * manifest for a DRAFT workspace's own actions/triggers instead of the live ones, without a
+ * second copy of this function's own field-mapping logic. */
+export function buildRawManifest(db,definition,{overrideActions=null,overrideTriggers=null}={}) {
+ const actions=(overrideActions||listActionsForDefinition(db,definition.id)).filter(a=>a.isEnabled).map(a=>({
   id:`${definition.slug}.${a.slug}`,slug:a.slug,nameAr:a.nameAr,nameEn:a.nameEn,description:a.description,
   requiredCapability:a.requiredCapability,riskLevel:a.riskLevel,actionType:a.actionType,
   inputSchema:a.inputSchema,outputSchema:a.outputSchema,idempotencyPolicy:a.idempotencyPolicy,
   requiresApprovalDefault:a.requiresApprovalDefault===null?undefined:a.requiresApprovalDefault,
   rest:{httpMethod:a.httpMethod,pathTemplate:a.pathTemplate,queryMapping:a.queryMapping,headerMapping:a.headerMapping,bodyMapping:a.bodyMapping,responseMapping:a.responseMapping,maxResponseBytes:a.maxResponseBytes}
  }));
- const triggers=listTriggersForDefinition(db,definition.id).filter(t=>t.isEnabled).map(t=>({
+ const triggers=(overrideTriggers||listTriggersForDefinition(db,definition.id)).filter(t=>t.isEnabled).map(t=>({
   id:`${definition.slug}.${t.slug}`,slug:t.slug,name:t.name,eventType:t.eventType,
   payloadSchema:t.payloadSchema,eventIdPath:t.eventIdPath,timestampPath:t.timestampPath,mappingDefinition:t.mappingDefinition,
   authentication:t.authentication,normalizedEventType:t.normalizedEventType,eventIdPolicy:t.eventIdPolicy,

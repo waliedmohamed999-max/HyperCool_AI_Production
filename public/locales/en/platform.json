@@ -188,16 +188,19 @@
    "changeType": "Change type",
    "diff": "Diff",
    "statusValue": {
-    "PUBLISHED": "Published",
+    "LIVE": "Published",
     "DRAFT": "Draft (working copy)",
-    "ARCHIVED": "Archived"
+    "PREVIOUS": "Archived"
    },
    "compareToPrevious": "Compare to previous",
    "createDraftVersion": "Create new draft version",
    "createDraftVersionConfirm": "This connector will move back to Draft so you can work on the next version — the current published version and every connection pinned to it are completely unaffected.",
    "diffTitle": "Differences between version {from} and version {to}",
    "noDifferences": "No meaningful differences."
-  }
+  },
+  "draftBanner": "You are editing a draft of the next version — the currently published version (v{version}) keeps serving every new connection completely unaffected.",
+  "discardDraft": "Discard Draft",
+  "discardDraftConfirm": "Every edit in this draft will be permanently deleted. The currently published version is never affected."
  },
  "customConnectors": {
   "pendingTitle": "Tenant connectors awaiting review",

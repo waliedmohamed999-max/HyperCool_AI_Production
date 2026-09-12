@@ -11,6 +11,7 @@ import {installKnowledge,listMemory,saveMemory,proposeMemoryUpdate,listProducts,
 import {connectionStatus,importSalla,ConnectorError,testAnthropicConnection,testOpenAIConnection,testSallaConnection} from './connectors.js';
 import {processGenericWebhook} from './connectors/generic-webhook/webhook.js';
 import {installDynamicConnectorTables} from './connectors/dynamic/store.js';
+import {installDraftOverlayTables} from './connectors/dynamic/draft-store.js';
 import {resolveConnectorDynamic} from './connectors/dynamic/registry.js';
 import {listCompatibleConnections} from './connectors/dynamic/compatibility.js';
 import {
@@ -18,7 +19,7 @@ import {
  upsertTriggerForConnector,deleteTriggerForConnector,validateConnectorDraft,publishConnector,
  disableConnector,reactivateConnector,getConnectorDependencies,listConnectorsForBuilder,
  getConnectorForBuilder,getTenantCatalog,cloneConnectorDefinition,exportConnectorDefinition,
- importConnectorDefinition,listConnectorVersions,getVersionDiff,createDraftVersion
+ importConnectorDefinition,listConnectorVersions,getVersionDiff,createDraftVersion,discardDraftVersion
 } from './connectors/dynamic/builder.js';
 import {getConnectionVersionInfo,previewVersionMigration,migrateConnectionVersion,rollbackConnectionVersion} from './connectors/dynamic/connection-versions.js';
 import {
@@ -201,6 +202,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installIntegrationConnections(store.db);
   installCredentialsVault(store.db);
   installDynamicConnectorTables(store.db); // Phase 6D — persistent Connector Definition actions/triggers/versions
+  installDraftOverlayTables(store.db); // Phase 6H — parallel draft workspace (Safe Published Version Lifecycle)
   installOAuthStates(store.db);
   installCredentials(store.db);
   migrateLegacyIntegrationCredentials(store.db,env); // one-time-per-row copy into the new connection+vault model
@@ -841,6 +843,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const drafted=createDraftVersion(store.db,env,session.user,platformConnectorVersionDraft[1]);
         recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_VERSION_CREATED',itemId:drafted.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
         return send(200,drafted);
+      }
+      // Phase 6H, Part 1 (implicit) — discard an in-progress draft workspace without publishing.
+      const platformConnectorVersionDiscard=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/versions\/discard$/);
+      if(platformConnectorVersionDiscard && req.method==='POST') {
+        const discarded=discardDraftVersion(store.db,env,session.user,platformConnectorVersionDiscard[1]);
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_DRAFT_VERSION_DISCARDED',itemId:discarded.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,discarded);
       }
       // Phase 6G, Part 41 — Connector Analytics (Platform Admin, cross-tenant).
       const platformConnectorAnalytics=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/analytics$/);
