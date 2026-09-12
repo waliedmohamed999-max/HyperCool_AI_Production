@@ -7,6 +7,7 @@
 // or not-configured state is rendered as a real empty state, never a placeholder number.
 import {escape,button,badge,empty,metric,skeleton,tabs,drawer,promptDrawer,table,toast as showToast} from '../components/ui/index.js';
 import {t,getLocale} from '../i18n.js';
+import {openConnectorWizardBySlug} from './platform.js';
 
 const $=s=>document.querySelector('#control-center '+s);
 let apiClient,currentAuth,summary=null,onboardingStatus=null,catalogBySlug=new Map(),renderGeneration=0;
@@ -139,9 +140,21 @@ function selectTab(index){document.querySelectorAll('#cc-tabs [role=tab]')[index
  * still has a live connection to manage. */
 function renderIntegrationsTab(){
  const container=document.getElementById('cc-panel-integrations');
- if(summary.integrations.providers.length===0){container.innerHTML=empty(t('controlCenter.noIntegrations'));return;}
+ container.innerHTML='';
+ // Item 3 — a Platform Admin (never a tenant owner/operator/reviewer) sees a direct entry
+ // point into the EXISTING Integration Builder right from where they'd naturally look for a
+ // new integration — never a second Builder, just a real navigation to the one that exists.
+ if(currentAuth?.isPlatformAdmin){
+  const header=document.createElement('div');header.className='report-section-head';
+  const addIntegration=button(t('controlCenter.addIntegration'),{variant:'primary',iconName:'plus'});
+  addIntegration.onclick=()=>{location.hash='#platform';setTimeout(()=>document.getElementById('pf-connectors')?.scrollIntoView({behavior:'smooth',block:'start'}),120);};
+  header.append(addIntegration);container.append(header);
+ }
+ if(summary.integrations.providers.length===0){container.append(Object.assign(document.createElement('div'),{innerHTML:empty(t('controlCenter.noIntegrations'))}));return;}
  const categories=[...new Set(summary.integrations.providers.map(p=>p.category))];
- container.innerHTML=categories.map(cat=>`<h4>${escape(cat)}</h4><div class="grid" data-category="${escape(cat)}"></div>`).join('');
+ const categoriesHost=document.createElement('div');
+ categoriesHost.innerHTML=categories.map(cat=>`<h4>${escape(cat)}</h4><div class="grid" data-category="${escape(cat)}"></div>`).join('');
+ container.append(categoriesHost);
  for(const provider of summary.integrations.providers){
   const grid=container.querySelector(`[data-category="${CSS.escape(provider.category)}"]`);
   const card=document.createElement('article');card.className='card';
@@ -166,6 +179,13 @@ function renderIntegrationsTab(){
    const note=document.createElement('p');note.className='kpi-context';note.textContent=t('controlCenter.notAvailableNote');actions.append(note);
   } else if(provider.connectionMode==='SINGLE' && provider.connections.length){
    const note=document.createElement('p');note.className='kpi-context';note.textContent=t('controlCenter.singleConnectionNote');actions.append(note);
+  }
+  // Item 20 — a Platform Admin sees this on EVERY connector card (system or dynamic, connected
+  // or not); a tenant owner/operator/reviewer never does (Item 21's visibility rule).
+  if(currentAuth?.isPlatformAdmin){
+   const manageDefinition=button(t('controlCenter.manageIntegrationDefinition'),{variant:'ghost'});
+   manageDefinition.onclick=()=>{location.hash='#platform';openConnectorWizardBySlug(provider.slug);};
+   actions.append(manageDefinition);
   }
   card.append(actions);grid.append(card);
  }

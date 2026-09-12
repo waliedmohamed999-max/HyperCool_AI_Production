@@ -208,7 +208,12 @@ export function listConnectorsForBuilder(db,env,actorUser) {
  requirePlatformAdmin(env,actorUser);
  return listIntegrationDefinitions(db).map(d=>{
   const deps=db.prepare('SELECT COUNT(*) c FROM integration_connections WHERE integration_definition_id=?').get(d.slug).c;
-  return {...d,connectionsCount:deps};
+  // Real, cheap counts for the Builder landing table's Actions/Webhooks columns (Part 5) — a
+  // system connector (Salla/Zid/...) has zero rows in these tables by design (its actions live
+  // in code, not connector_actions/connector_triggers), so this honestly reports 0 for those.
+  const actionsCount=db.prepare('SELECT COUNT(*) c FROM connector_actions WHERE connector_definition_id=?').get(d.id).c;
+  const triggersCount=db.prepare('SELECT COUNT(*) c FROM connector_triggers WHERE connector_definition_id=?').get(d.id).c;
+  return {...d,connectionsCount:deps,actionsCount,triggersCount};
  });
 }
 

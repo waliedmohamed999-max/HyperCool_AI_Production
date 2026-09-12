@@ -408,6 +408,9 @@ test('listConnectorsForBuilder includes both system (built-in) and dynamic conne
   assert.ok(acme);
   assert.equal(acme.isSystem,false);
   assert.equal(acme.connectionsCount,1);
+  assert.equal(salla.actionsCount,0,'a system connector has zero rows in connector_actions by design — its actions live in code');
+  assert.equal(acme.actionsCount,1);
+  assert.equal(acme.triggersCount,1);
  }finally{await cleanup();}
 });
 

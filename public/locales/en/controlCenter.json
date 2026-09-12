@@ -23,6 +23,8 @@
   "manage": "Manage",
   "addStore": "Connect a Salla Store",
   "addConnection": "Add Connection",
+  "addIntegration": "Add Integration",
+  "manageIntegrationDefinition": "Manage Integration",
   "notAvailableNote": "Not available yet",
   "singleConnectionNote": "Supports one connection currently",
   "unavailable": "Unavailable",

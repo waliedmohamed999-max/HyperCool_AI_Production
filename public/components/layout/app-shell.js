@@ -72,7 +72,13 @@ export function installShell(){
   nav.setAttribute('aria-label',t('navigation.appPages'));
   const groupKeyByLabel={overview:'navigation.operationsGroup',content:'navigation.aiOperationsGroup',integrations:'navigation.systemGroup'};
   for(const [key,el] of groupSpans)el.textContent=t(groupKeyByLabel[key]);
-  for(const link of nav.querySelectorAll('a')){const id=link.hash.slice(1);link.querySelector('.nav-icon').innerHTML=icon(ROUTE_ICONS[id]);link.querySelector('span:last-child').textContent=routeTitle(id);}
+  // Integration Builder discoverability — `data-route-key` lets a SECOND nav link point at the same real page
+  // (`href`, used for actual navigation/icon lookup) while showing its own distinct label
+  // (e.g. "Integration Builder" linking to `#platform`, alongside the original "HyperCool
+  // Platform" link) — never a second page, never a second ROUTE_ICONS/ROUTE_KEYS entry (which
+  // would need a matching `[data-page]` element or `installShell`'s own header-building loop
+  // above would throw on boot).
+  for(const link of nav.querySelectorAll('a')){const hashId=link.hash.slice(1),labelId=link.dataset.routeKey||hashId;link.querySelector('.nav-icon').innerHTML=icon(ROUTE_ICONS[hashId]);link.querySelector('span:last-child').textContent=routeTitle(labelId);}
   rail.querySelectorAll('[data-rail]').forEach((b,i)=>{const [key,iconName,labelKey]=RAIL_GROUPS[i];const label=t(labelKey);b.setAttribute('aria-label',label);b.title=label;b.innerHTML=icon(iconName);});
   aside.querySelector('.local').textContent=`${t('common.appName')} · ${t('navigation.workspace')}`;
   menuButton.setAttribute('aria-label',t('navigation.mainMenu'));

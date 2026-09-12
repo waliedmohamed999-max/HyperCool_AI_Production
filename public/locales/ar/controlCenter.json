@@ -23,6 +23,8 @@
   "manage": "إدارة",
   "addStore": "ربط متجر Salla",
   "addConnection": "إضافة اتصال",
+  "addIntegration": "إضافة تكامل جديد",
+  "manageIntegrationDefinition": "إدارة التكامل",
   "notAvailableNote": "غير متاح حاليًا",
   "singleConnectionNote": "يدعم اتصالًا واحدًا حاليًا",
   "unavailable": "غير متاح",

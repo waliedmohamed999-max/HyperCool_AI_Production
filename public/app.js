@@ -68,14 +68,33 @@ function showPage(page){
   navLinks.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+page));
   window.scrollTo(0,0);
 }
+// Item 17 — this app's nav links only ever toggled DOM visibility; they never refetched a
+// page's own data, so publishing a new connector in the Integration Builder and then clicking
+// straight to Control Center → Integrations (same tab, no reload) showed stale data until the
+// next full login/render(). Real, but small and targeted: only these two pages currently have
+// a "did something change elsewhere" problem worth solving this way — every other page already
+// gets a fresh render() on login, and neither `renderControlCenter` nor `renderPlatformPage`
+// needs this treatment to stay correct (both already guard reentrancy with their own
+// `renderGeneration`/staleGuard, so calling either again here is always safe, never a race).
+function refetchPageIfNeeded(page){
+  if(page==='control-center')renderControlCenter({api,auth}).catch(error=>message(error.message,'error'));
+  else if(page==='platform')renderPlatformPage({api,auth}).catch(error=>message(error.message,'error'));
+}
 navLinks.forEach(a=>a.addEventListener('click',event=>{
   const page=a.getAttribute('href').slice(1);
   if(page==='users' && auth.user?.role!=='owner')return;
   event.preventDefault();
   if(location.hash!==a.getAttribute('href'))history.pushState(null,'',a.getAttribute('href'));
   showPage(page);
+  refetchPageIfNeeded(page);
 }));
-window.addEventListener('popstate',()=>showPage(currentPage()));
+window.addEventListener('popstate',()=>{const page=currentPage();showPage(page);refetchPageIfNeeded(page);});
+// The "Integration Builder" sidebar entry shares #platform's real route (never a second page,
+// see app-shell.js's `data-route-key`) but should visibly land the admin ON the Builder
+// section, not wherever the page happened to scroll before.
+document.getElementById('nav-integration-builder')?.addEventListener('click',()=>{
+  setTimeout(()=>document.getElementById('pf-connectors')?.scrollIntoView({behavior:'smooth',block:'start'}),80);
+});
 // A same-tab navigation INTO or OUT OF the standalone recovery/invite flows (e.g. clicking
 // "Forgot password?" from the login screen) needs a full `render()` cycle, not just
 // `showPage()` — those flows force auth-panel/protected/session-bar hidden directly (see
@@ -84,7 +103,7 @@ window.addEventListener('popstate',()=>showPage(currentPage()));
 // so this only needs to handle the "entering" direction.
 window.addEventListener('hashchange',()=>{
   if(isInviteRoute()||isRecoveryRoute()||isNewWorkspaceRoute())render().catch(error=>message(error.message,'error'));
-  else showPage(currentPage());
+  else {const page=currentPage();showPage(page);refetchPageIfNeeded(page);}
 });
 const roles=new Proxy({},{get:(_,role)=>t('navigation.role'+role.charAt(0).toUpperCase()+role.slice(1))});
 let viewData=new Map();

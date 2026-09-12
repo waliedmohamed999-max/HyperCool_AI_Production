@@ -16,31 +16,51 @@ function staleGuard(generation){return generation!==renderGeneration;}
 
 export function installPlatformPage(){
  const root=document.querySelector('[data-page="platform"] #platform');
- root.innerHTML=`<div id="pf-overview" class="kpi-grid"></div><div id="pf-directory"></div><div id="pf-connectors"></div>`;
+ root.innerHTML=`<div id="pf-integration-card"></div><div id="pf-overview" class="kpi-grid"></div><div id="pf-directory"></div><div id="pf-connectors"></div>`;
 }
 
 export async function renderPlatformPage({api:client,auth}){
  apiClient=client;currentAuth=auth;
- const navLink=document.querySelector('#nav-platform');
  const visible=!!auth.isPlatformAdmin;
- navLink.hidden=!visible;
+ document.querySelector('#nav-platform').hidden=!visible;
+ document.querySelector('#nav-integration-builder').hidden=!visible;
  // Someone navigating straight to #platform's URL without the nav link (never authorized
  // either way — every real route this page calls is independently gated server-side, Part
  // 58) still sees a clear, honest message instead of a blank page.
- if(!visible){$('#pf-overview').innerHTML='';$('#pf-directory').innerHTML=empty(t('platform.notPlatformAdmin'));return;}
+ if(!visible){$('#pf-integration-card').innerHTML='';$('#pf-overview').innerHTML='';$('#pf-directory').innerHTML=empty(t('platform.notPlatformAdmin'));$('#pf-connectors').innerHTML='';return;}
  const generation=++renderGeneration;
  $('#pf-overview').innerHTML=skeleton(t('common.loading'));
- let overview,directory;
- try{[overview,directory]=await Promise.all([apiClient('/api/platform/overview'),apiClient('/api/platform/tenants')]);}
+ let overview,directory,connectors;
+ try{[overview,directory,connectors]=await Promise.all([apiClient('/api/platform/overview'),apiClient('/api/platform/tenants'),apiClient('/api/platform/connectors')]);}
  catch(error){
   if(staleGuard(generation))return;
   $('#pf-overview').innerHTML=empty(t('controlCenter.loadFailed'),error.message);
   return;
  }
  if(staleGuard(generation))return;
+ renderIntegrationPlatformCard(connectors);
  renderOverview(overview);
  renderDirectory(directory);
- renderConnectorsSection();
+ renderConnectorsSection(connectors);
+}
+/** Item 25 — a prominent, always-visible summary card for the whole Integration Platform,
+ * with real counts from the SAME connector list the Builder table below renders (one fetch,
+ * two views — never a second, divergent computation). */
+function renderIntegrationPlatformCard(connectors){
+ const counts={total:connectors.length,published:connectors.filter(c=>c.status==='PUBLISHED').length,draft:connectors.filter(c=>c.status==='DRAFT').length,disabled:connectors.filter(c=>c.status==='DISABLED').length};
+ const host=$('#pf-integration-card');
+ host.innerHTML=`<article class="card pf-integration-card">
+  <div class="row-between"><h3>${escape(t('platform.builder.dashboardCardTitle'))}</h3></div>
+  <div class="kpi-grid">
+   ${['total','published','draft','disabled'].map(k=>`<div class="kpi-card"><span class="kpi-label">${escape(t('platform.builder.dashboardCard.'+k))}</span><strong class="kpi-value">${counts[k]}</strong></div>`).join('')}
+  </div>
+  <div class="report-actions"></div>
+ </article>`;
+ const manage=button(t('platform.builder.manageIntegrations'),{variant:'secondary'});
+ manage.onclick=()=>document.getElementById('pf-connectors').scrollIntoView({behavior:'smooth'});
+ const add=button(t('platform.builder.newConnector'),{variant:'primary',iconName:'plus'});
+ add.onclick=()=>openConnectorWizard(null);
+ host.querySelector('.report-actions').append(manage,add);
 }
 
 function renderOverview(overview){
@@ -154,37 +174,80 @@ const RISK_LEVELS=['LOW','MEDIUM','HIGH'];
 const AUTH_TYPES=['API_KEY','BEARER_TOKEN','BASIC','NONE'];
 const WEBHOOK_AUTH_TYPES=['HMAC','HEADER_TOKEN','SHARED_SECRET','NONE'];
 
-async function renderConnectorsSection(){
+let lastConnectorsList=[],connectorsFilter='ALL';
+/** The Builder landing page (item 5): a prominent create action, status tabs, and a full,
+ * real-data table — `connectors` is the SAME list `renderPlatformPage` already fetched once
+ * (shared with the dashboard card above), never a second, divergent fetch. */
+function renderConnectorsSection(connectors){
+ lastConnectorsList=connectors;
  const host=$('#pf-connectors');
- host.innerHTML=`<div class="report-section-head"><h3>${escape(t('platform.builder.sectionTitle'))}</h3></div><p class="kpi-context">${escape(t('platform.builder.sectionHint'))}</p><div id="pf-connectors-list">${skeleton(t('common.loading'))}</div>`;
+ host.innerHTML=`<div class="report-section-head"><h3>${escape(t('platform.builder.sectionTitle'))}</h3></div>
+  <p class="kpi-context">${escape(t('platform.builder.sectionHint'))}</p>
+  <div id="pf-connectors-tabs"></div>
+  <div id="pf-connectors-list"></div>`;
  const newButton=button(t('platform.builder.newConnector'),{variant:'primary',iconName:'plus'});
  newButton.onclick=()=>openConnectorWizard(null);
  host.querySelector('.report-section-head').append(newButton);
- let list;
- try{list=await apiClient('/api/platform/connectors');}
- catch(error){host.querySelector('#pf-connectors-list').innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
- paintConnectorsList(host.querySelector('#pf-connectors-list'),list);
+ const tabsHost=host.querySelector('#pf-connectors-tabs');
+ const filterPanels=['ALL','DRAFT','PUBLISHED','DISABLED'].map(()=>{const el=document.createElement('div');el.hidden=true;return el;});
+ tabsHost.append(...filterPanels);
+ const {select}=tabs(tabsHost,[
+  [t('platform.builder.filters.all'),filterPanels[0]],
+  [t('platform.builder.filters.draft'),filterPanels[1]],
+  [t('platform.builder.filters.published'),filterPanels[2]],
+  [t('platform.builder.filters.disabled'),filterPanels[3]]
+ ]);
+ const statusByIndex=['ALL','DRAFT','PUBLISHED','DISABLED'];
+ tabsHost.querySelectorAll('[role=tab]').forEach((tabButton,index)=>{tabButton.addEventListener('click',()=>{connectorsFilter=statusByIndex[index];paintConnectorsList(host.querySelector('#pf-connectors-list'),lastConnectorsList);});});
+ select(statusByIndex.indexOf(connectorsFilter)===-1?0:statusByIndex.indexOf(connectorsFilter));
+ paintConnectorsList(host.querySelector('#pf-connectors-list'),connectors);
 }
 function paintConnectorsList(container,list){
- if(!list.length){container.innerHTML=empty(t('common.noResults'));return;}
+ const filtered=connectorsFilter==='ALL'?list:list.filter(c=>c.status===connectorsFilter);
+ const noCustomIntegrationsYet=connectorsFilter==='ALL' && list.every(c=>c.isSystem);
+ if(!filtered.length){
+  container.innerHTML=noCustomIntegrationsYet?empty(t('platform.builder.emptyState'),t('platform.builder.emptyStateHint')):empty(t('common.noResults'));
+  if(noCustomIntegrationsYet){
+   const createButton=button(t('platform.builder.newConnector'),{variant:'primary',iconName:'plus'});
+   createButton.onclick=()=>openConnectorWizard(null);
+   container.querySelector('.empty')?.append(createButton);
+  }
+  return;
+ }
  container.innerHTML=table(
-  [t('platform.builder.table.name'),t('platform.builder.table.slug'),t('platform.builder.table.status'),t('platform.builder.table.version'),t('platform.builder.table.connections'),t('platform.builder.table.type'),t('platform.builder.table.actions')],
-  list.map(c=>[
-   escape(getLocale()==='en'?c.nameEn:c.nameAr),
-   `<span dir="ltr">${escape(c.slug)}</span>`,
+  [t('platform.builder.table.name'),t('platform.builder.table.category'),t('platform.builder.table.auth'),t('platform.builder.table.capabilities'),t('platform.builder.table.actionsCount'),t('platform.builder.table.webhooksCount'),t('platform.builder.table.status'),t('platform.builder.table.version'),t('platform.builder.table.connections'),t('platform.builder.table.updated'),t('platform.builder.table.actions')],
+  filtered.map(c=>[
+   `${escape(getLocale()==='en'?c.nameEn:c.nameAr)} <span dir="ltr" class="kpi-context">${escape(c.slug)}</span>`,
+   escape(c.category),
+   escape(c.authConfig?.type||c.authType),
+   `<span dir="ltr">${(c.capabilities||[]).map(escape).join(', ')||'—'}</span>`,
+   escape(c.actionsCount??0),
+   escape(c.triggersCount??0),
    badge(t('platform.builder.status.'+c.status)||c.status,c.status==='PUBLISHED'?'CONNECTED':c.status==='DRAFT'?'PENDING':'DISCONNECTED'),
    escape(c.version),
    escape(c.connectionsCount),
-   c.isSystem?escape(t('platform.builder.type.system')):escape(t('platform.builder.type.dynamic')),
+   c.updatedAt?new Date(c.updatedAt).toLocaleDateString(getLocale()==='en'?'en-US':'ar-SA'):'—',
    `<span data-row-actions="${escape(c.id)}"></span>`
   ])
  );
- for(const c of list){
+ for(const c of filtered){
   const cell=container.querySelector(`[data-row-actions="${CSS.escape(c.id)}"]`);
   const manage=button(t('platform.builder.manage'),{variant:'secondary'});
   manage.onclick=()=>openConnectorWizard(c);
   cell.append(manage);
  }
+}
+/** Cross-page shortcut (item 20/M): the Control Center's "إدارة التكامل" button imports this
+ * directly rather than depending on the Builder table already being rendered — it fetches the
+ * one real definition it needs and opens the SAME wizard, whether or not this page has loaded
+ * its own list yet. */
+export async function openConnectorWizardBySlug(slug){
+ if(!apiClient)return;
+ let list;
+ try{list=await apiClient('/api/platform/connectors');}catch(error){toastError(error.message);return;}
+ const summary=list.find(c=>c.slug===slug);
+ if(!summary){toastError(t('platform.builder.notFound'));return;}
+ openConnectorWizard(summary);
 }
 
 /** `summary` is a row from listConnectorsForBuilder (or null for a brand-new connector) — the
@@ -207,12 +270,15 @@ async function openConnectorWizard(summary){
  const basicPanel=document.createElement('div'),actionsPanel=document.createElement('div'),
        webhooksPanel=document.createElement('div'),healthPanel=document.createElement('div'),reviewPanel=document.createElement('div');
  node.append(basicPanel,actionsPanel,webhooksPanel,healthPanel,reviewPanel);
+ // Item 7 — the numbered steps stay visible in every tab label even though steps 1-3 share one
+ // panel (the Builder's create call is atomic — see the Basics panel's own doc comment) — a
+ // Platform Admin always sees where they are in the full 8-step flow.
  const tabBar=tabs(node,[
-  [t('platform.builder.tabBasic')+' / '+t('platform.builder.tabAuth')+' / '+t('platform.builder.tabCapabilities'),basicPanel],
-  [t('platform.builder.tabActions'),actionsPanel],
-  [t('platform.builder.tabWebhooks'),webhooksPanel],
-  [t('platform.builder.tabHealth'),healthPanel],
-  [t('platform.builder.tabReview'),reviewPanel]
+  [`${t('platform.builder.tabBasic')} / ${t('platform.builder.tabAuth')} / ${t('platform.builder.tabCapabilities')}`,basicPanel],
+  [`4. ${t('platform.builder.tabActions')}`,actionsPanel],
+  [`5. ${t('platform.builder.tabWebhooks')}`,webhooksPanel],
+  [`6. ${t('platform.builder.tabHealth')}`,healthPanel],
+  [`7-8. ${t('platform.builder.tabReview')}`,reviewPanel]
  ]);
  const dialog=drawer(summary?(getLocale()==='en'?summary.nameEn:summary.nameAr):t('platform.builder.wizardTitleNew'),node);
  let detail=summary?null:{actions:[],triggers:[],restConfig:null,authConfig:null,capabilities:[]};
@@ -233,6 +299,7 @@ async function openConnectorWizard(summary){
  function paintBasic(){
   const d=detail||{};
   basicPanel.innerHTML=`
+   <h4>${escape(t('platform.builder.stepBasicInfo'))}</h4>
    <label>${escape(t('platform.builder.fields.slug'))}<input name="slug" dir="ltr" ${definitionId?'disabled':''} value="${escape(d.slug||'')}" required pattern="[a-z][a-z0-9_-]*" maxlength="60"></label>
    <label>${escape(t('platform.builder.fields.nameAr'))}<input name="nameAr" value="${escape(d.nameAr||'')}" required maxlength="100"></label>
    <label>${escape(t('platform.builder.fields.nameEn'))}<input name="nameEn" dir="ltr" value="${escape(d.nameEn||'')}" required maxlength="100"></label>
@@ -242,8 +309,11 @@ async function openConnectorWizard(summary){
    <label>${escape(t('platform.builder.fields.connectionMode'))}<select name="connectionMode" ${definitionId?'disabled':''}>${['SINGLE','MULTI'].map(m=>`<option value="${m}" ${d.connectionMode===m?'selected':''}>${escape(t('controlCenter.connectionMode.'+m))}</option>`).join('')}</select></label>
    <label>${escape(t('platform.builder.fields.baseUrl'))}<input name="baseUrl" dir="ltr" value="${escape(d.restConfig?.baseUrl||'')}" required placeholder="https://api.example.com"></label>
    <label class="check"><input type="checkbox" name="allowHttp" ${d.restConfig?.allowHttp?'checked':''}> ${escape(t('platform.builder.fields.allowHttp'))}</label>
+   <h4>${escape(t('platform.builder.stepAuth'))}</h4>
    <label>${escape(t('platform.builder.fields.authType'))}<select name="authType" ${definitionId?'disabled':''}>${AUTH_TYPES.map(a=>`<option value="${a}" ${(d.authConfig?.type||'API_KEY')===a?'selected':''}>${escape(a)}</option>`).join('')}</select></label>
    <label data-header-name-row>${escape(t('platform.builder.fields.headerName'))}<input name="headerName" dir="ltr" value="${escape(d.authConfig?.headerName||'X-Api-Key')}"></label>
+   <p class="notice">${escape(t('platform.builder.oauthNote'))}</p>
+   <h4>${escape(t('platform.builder.stepCapabilities'))}</h4>
    <fieldset><legend>${escape(t('platform.builder.fields.capabilities'))}</legend>
     ${capabilityRegistry.map(c=>`<label class="check"><input type="checkbox" name="cap" value="${escape(c.id)}" ${(d.capabilities||[]).includes(c.id)?'checked':''}> <span dir="ltr">${escape(c.id)}</span> — ${escape(getLocale()==='en'?c.descriptionEn:c.descriptionAr)}</label>`).join('')}
    </fieldset>

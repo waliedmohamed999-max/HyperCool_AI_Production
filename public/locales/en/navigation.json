@@ -11,6 +11,7 @@
   "onboarding": { "title": "Guided Setup", "description": "Finish configuring this existing workspace step by step — never creates a new workspace, never depends on email." },
   "account": { "title": "Account Settings", "description": "Your personal identity on HyperCool — username, email, and password." },
   "platform": { "title": "HyperCool Platform", "description": "A central view over every tenant — platform admin only." },
+  "integrationBuilder": { "title": "Integration Builder" },
   "audit": { "title": "Operations Log", "description": "A documented record of what happened and who did it." },
   "users": { "title": "Team Accounts", "description": "Manage team members, roles, permissions, and system access." },
   "workspace": "Workspace",
