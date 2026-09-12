@@ -1,5 +1,13 @@
 # Universal Integration Platform — Integration Builder (Phase 6D)
 
+> **Phase 6G update**: the wizard gained an 8th step, **Versions** (list/diff/"Create New Draft
+> Version" — see `docs/CONNECTOR_VERSION_MANAGEMENT.md`), and the Basics/Auth panel gained a full
+> **OAUTH2** auth-type option (authorizeUrl/tokenUrl/scopes/PKCE/client-auth-method/identity-
+> endpoint/client-credential-env-var-references — see `docs/GENERIC_OAUTH2.md`) so a Platform
+> Admin can define a brand-new working OAuth2 connector without any code change. The Platform
+> page also gained a "Pending Custom Connectors" review queue for Tenant Custom Connector drafts
+> (`docs/TENANT_CUSTOM_CONNECTORS.md`).
+
 > **Phase 6F update**: a dedicated "Integration Builder" sidebar entry now links straight here
 > (see `docs/INTEGRATION_PLATFORM_COMPLETE.md`); the landing table gained Adapter/Auth/
 > Capabilities/Action-count/Webhook-count/Updated columns plus status tabs (All/Draft/

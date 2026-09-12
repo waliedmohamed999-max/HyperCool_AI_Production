@@ -1,5 +1,13 @@
 # Universal Integration Platform — Data-Driven Marketplace (Phase 6D)
 
+> **Phase 6G update**: `getTenantCatalog` is now genuinely tenant-scoped, not just status-
+> filtered — a Tenant Custom Connector (`docs/TENANT_CUSTOM_CONNECTORS.md`) only ever appears in
+> its OWNING tenant's own catalog, never any other tenant's, even once `PUBLISHED`/`APPROVED`.
+> Every connection card's real `authType`/`connectorVersion`/`healthView` (display status + token
+> expiry) now flows through `buildIntegrationsSummary` too, and the "Add Store"/generic-OAuth
+> eligibility check is driven by a real `supportsGenericOAuth` flag instead of a hardcoded
+> `['salla','zid']` frontend slug set (`docs/GENERIC_OAUTH2.md`).
+
 > **Phase 6E update**: Zid (`docs/ZID_CONNECTOR.md`) is the first real, external, first-party
 > BUILT_IN connector proven through this exact catalog with zero frontend changes — it is seeded
 > (never Builder-authored) and appears in `GET /api/integrations/catalog` and the Control Center

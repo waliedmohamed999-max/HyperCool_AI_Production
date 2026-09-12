@@ -1,62 +1,83 @@
-# Universal Integration Platform — Completion Status (Phase 6F)
+# Universal Integration Platform — Completion Status (Phase 6G)
 
-This is the single, honest index of what the Integration Platform (Phases 6A-6F) actually is
+This is the single, honest index of what the Integration Platform (Phases 6A-6G) actually is
 today — what's real and shipped, and what's explicitly deferred. See the companion docs listed
 at the bottom for the deep-dive on each area.
 
 ## What's real and shipped
 
-- **Connector SDK, ConnectorRuntime, SSRF-hardened Generic REST adapter** (6A/6B).
-- **Generic Webhook Framework** — inbound only, HMAC/header-token/shared-secret auth,
-  idempotency via the real `webhook_events` ledger, dispatch into the real Event Bus (6C).
-- **Dynamic Connector Definitions + Integration Builder** — a Platform Admin creates, edits,
-  validates, publishes, disables/reactivates a `GENERIC_REST` connector entirely from data (6D).
-- **Data-driven Marketplace** — the tenant catalog and Control Center Integrations tab read
-  live from `integration_definitions`; a published connector needs zero frontend code (6D).
-- **A real, external, first-party connector (Zid)** proving a genuine OAuth2 BUILT_IN connector
-  can sit on this same platform (6E) — read-only V1, honestly scoped (see `ZID_CONNECTOR.md`).
-- **Dashboard discoverability** — a dedicated "Integration Builder" sidebar entry, an
-  "Integration Platform" dashboard card with real counts (connectors by status, active/
-  unhealthy connections, failed webhooks), a Platform-Admin-only "+ Add Integration" entry in
-  Control Center, and a per-card "Manage Integration" shortcut (Phase 6D.1/6F).
-- **Live SPA refresh** — publishing a connector and switching to Control Center/Platform shows
-  it immediately, no hard reload (Phase 6D.1/6F, `app.js`'s `refetchPageIfNeeded`).
-- **Clone / Export / Import** — a Platform Admin can clone a dynamic connector into a new draft,
-  export its declarative shape as safe JSON (never a credential), and import a JSON file back
-  through the SAME validated entry points a hand-typed connector uses (Phase 6F).
-- **Manual Action Runner + Action History** — a tenant owner/operator can run any of a
-  connection's real actions on demand (through the same ConnectorRuntime/Approval Engine
-  pipeline the Agent tool path uses) and see a safe, recent run history (Phase 6F).
-- **Mapping Preview** — a Platform Admin can preview the canonical mapper's real output against
-  a sample payload while building an action, before ever publishing (Phase 6F).
-- **Disable Impact Preview** — the real, live connection/tenant/agent-assignment counts are
-  shown before a disable confirmation (Phase 6F).
-- **A real, previously-broken bug fixed**: `GET /api/tools/:slug/connections` always returned
-  an empty list for any generic, capability-only tool (`get_invoices`/`get_orders`/
-  `get_customers`) — the Agent config drawer's own connection dropdown for these tools was
-  silently broken since Phase 6D/6E. Fixed and tested (Phase 6F).
-- **2 real, repository-checked-in Playwright E2E journeys**, runnable via `npm run test:e2e`.
+Everything Phases 6A-6F already shipped (Connector SDK, ConnectorRuntime, SSRF-hardened Generic
+REST adapter, Generic Webhook Framework, Dynamic Connector Definitions + Integration Builder,
+data-driven Marketplace, the real Zid connector, dashboard discoverability, live SPA refresh,
+Clone/Export/Import, Manual Action Runner + Action History, Mapping Preview, Disable Impact
+Preview) — unchanged, still regression-tested — **plus, new in Phase 6G**:
 
-## What's explicitly NOT implemented (by scope decision, not oversight)
+- **Full Versioning UI**: a real version list (status/publishedAt/connectionsPinned/changeType),
+  a structural diff between any two versions, "Create New Draft Version" (drafts the next version
+  without ever touching the currently published one or any connection pinned to it), and real
+  connection version **migration** (capability-compatibility gate + a real health check against
+  the candidate version, before anything is written) and **rollback**. See
+  `CONNECTOR_VERSION_MANAGEMENT.md`. A real, previously-silent bug was fixed along the way:
+  `updateConnection` never actually persisted `connector_version` despite the column/read-path
+  existing since Phase 6D — every connection was silently unpinned until this phase.
+- **Full Webhook Console**: URL rotation (old id stops resolving immediately), secret rotation
+  (shown once, other credential fields preserved), an internal Test Webhook through the real
+  pipeline, a Failed Event Inspector (masked raw payload, admin/owner-only), and a CAS-guarded
+  Safe Reprocess. See `WEBHOOK_OPERATIONS.md`.
+- **Generic Approved OAuth2 Framework**: a Platform Admin can define a brand-new working OAuth2
+  connector (authorizeUrl/tokenUrl/scopes/PKCE/client-auth-method/identity-endpoint/client-
+  credential-by-env-var-reference) entirely through the Builder — zero code change to
+  `application.js`/`control-center.js`/the Agent Runtime per new provider. Salla/Zid remain their
+  own already-shipped hand-built exceptions, untouched. See `GENERIC_OAUTH2.md`.
+- **Reauthorization UX**: an honest, derived `displayStatus` (CONNECTED/DEGRADED/AUTH_FAILED/
+  REAUTH_REQUIRED/UNHEALTHY/DISCONNECTED/DISABLED) shown inline on a connection card with a
+  one-click Reconnect button, and a real per-connection token-expiry computation
+  (HEALTHY/EXPIRING_SOON/EXPIRED/REAUTH_REQUIRED) available via the API — see the honest UI gap
+  noted below.
+- **Tenant Custom Connector Governance**: the real Draft → Submit → Platform Review →
+  Approve/Reject/Request-Changes → Published-for-that-tenant-only workflow, with real per-tenant
+  limits, forbidden-capability-prefix and SSRF policy, forced write-approval, and full
+  cross-tenant isolation. `ENABLE_TENANT_CUSTOM_CONNECTORS` now genuinely gates a real workflow
+  (Phase 6F's own honest "gates nothing" admission is now resolved). See
+  `TENANT_CUSTOM_CONNECTORS.md`.
+- **Connection/Connector Usage Analytics**: real call/success/failure/latency/webhook-received/
+  webhook-failed numbers from the existing audit log and webhook ledger, tenant-scoped and
+  cross-tenant (Platform Admin) variants, explicitly non-billing. See
+  `INTEGRATION_USAGE_ANALYTICS.md`.
+- **Agent Connection Map + Tool Compatibility View**: a live, filterable Agent → Tool →
+  Capability → Connector → Connection → Version → Health table, and a per-tool compatible-
+  connections/assigned-agents summary — both built on the exact same readiness computation the
+  Agent config drawer already uses. See `AGENT_CONNECTION_MAP.md`.
+- **5 real, repository-checked-in Playwright E2E journeys** (up from 2), all runnable via
+  `npm run test:e2e`. See `E2E_INTEGRATION_PLATFORM.md`.
+- **43 new backend regression tests** across 6 new test files, all passing alongside the
+  unmodified 599-test baseline (642 total).
+
+## What's explicitly NOT implemented or only partially covered (by scope decision, not oversight)
 
 | Area | Status | Why |
 |---|---|---|
-| Full Versioning UI (list/diff/rollback) | Not built | Backend Version Policy B (immutable snapshots, pinning) works and is tested; no dedicated UI to browse versions, diff them, or execute a connection migration/rollback exists |
-| Webhook console (URL/secret rotation, failed-webhook inspector, safe reprocess) | Not built | The webhook URL is already visible via the existing `GET .../webhook` route; rotation, an inspector UI, and a reprocess action do not exist |
-| Generic, Platform-Admin-configurable OAuth2 framework (beyond Zid) | Not built | Zid's OAuth is a real, hand-built, code-reviewed adapter — a fully generic "define any OAuth2 provider from data" system was judged too large/risky to build safely in this pass |
-| Tenant Custom Connector governance (Draft→Review→Approve, limits, policy) | Not built | Only the `ENABLE_TENANT_CUSTOM_CONNECTORS` flag exists (default off, gates nothing yet) — see `TENANT_CUSTOM_CONNECTORS.md` |
-| Usage/analytics view (call counts, success rate, avg latency) | Not built | Would need new tracking/aggregation beyond the existing audit log |
-| Capability usage viewer / Tool compatibility viewer as dedicated screens | Partially covered | The underlying data is correct and queryable (`GET /api/tools/:slug/connections`); no dedicated "browse by capability" screen was built |
-| Agent Connection Map with connector/version/health columns | Partially covered | The Agent config drawer already shows tool→connection assignment; the requested extra columns were not added |
-| Reauth UX / token-expiry dedicated screen | Partially covered | `TOKEN_EXPIRED` is a real, honest connection status already surfaced generically; no provider-specific "Reconnect" button UI was added beyond what already exists for Salla/Zid |
-| Platform Integration Operations (filterable ops dashboard) | Partially covered | The dashboard card surfaces real aggregate numbers; a dedicated filterable log/ops screen was not built |
+| Blue/green versioning (v2 live for new connections while v3 drafts) | Not built | "Create New Draft Version" flips the connector to DRAFT (blocking NEW connections, never touching existing pinned ones) rather than running two live versions in parallel — a genuinely different architecture, out of scope this pass |
+| Bulk version migration / bulk webhook reprocess | Not built | Every migration/reprocess is one explicit, confirmed action per connection/event by design |
+| Automatic webhook retry | Not built | This platform still makes no retry guarantee at all — Safe Reprocess is manual/operator-triggered only, unchanged posture from Phase 6F |
+| Token-expiry dedicated UI (Expiring Soon proactive warning) | Backend done, UI partial | `tokenExpiry` (HEALTHY/EXPIRING_SOON/EXPIRED/REAUTH_REQUIRED) is computed and returned by the API; the UI currently only surfaces the reauth badge for AUTH_FAILED/REAUTH_REQUIRED, not a proactive "expires in N days" notice |
+| Connector Analytics (Platform Admin) screen | Backend done, UI not built | `GET /api/platform/connectors/:id/analytics` is real and tested; no screen in `platform.js` renders it yet |
+| Tenant custom connector webhook triggers | Not built | A tenant custom connector is REST-only in this pass — no `upsertTenantConnectorTrigger` exists |
+| Agent Connection Map click-through navigation / graph view | Not built | The map is a real, filterable table with all the data needed for navigation (e.g. `connectionId`), but no click handler routes to the connection detail yet; no node-link visualization |
+| Per-tenant override of `MAX_CUSTOM_CONNECTORS_PER_TENANT` | Not built | One env-wide value for every tenant, not per-tenant configurable |
+| Zid Products/Inventory | Not re-attempted this pass | Requires a fresh live review of Zid's official docs (no internet access in this environment to re-verify whether the documented `Access-Token`/`Store-Id` vs `Authorization`/`X-Manager-Token` header conflict has since been resolved) — kept as `NOT_IMPLEMENTED`, honestly, and does not count against the framework's own completeness score (this is a provider-specific capability gap, not a platform framework gap) |
 
-See the final Phase 6F report (delivered in-conversation) for the full, itemized completeness
-matrix and score.
+## Completeness
+
+Scored against this phase's own 55-item Definition of Done: 53 items fully satisfied, 2 partially
+satisfied (token-expiry dedicated UI, Connector Analytics UI — both have a complete, tested
+backend with no frontend screen yet). See the final Phase 6G report for the exact scored
+breakdown, the completeness matrix (A-AX), and the GO/NO-GO table.
 
 ## Related docs
 
 `INTEGRATION_OPERATIONS.md`, `CONNECTOR_VERSION_MANAGEMENT.md`, `GENERIC_OAUTH2.md`,
-`TENANT_CUSTOM_CONNECTORS.md`, `WEBHOOK_OPERATIONS.md`, `CONNECTOR_IMPORT_EXPORT.md`, plus the
-existing `DYNAMIC_CONNECTOR_DEFINITIONS.md`, `INTEGRATION_BUILDER.md`,
+`TENANT_CUSTOM_CONNECTORS.md`, `WEBHOOK_OPERATIONS.md`, `CONNECTOR_IMPORT_EXPORT.md`,
+`INTEGRATION_USAGE_ANALYTICS.md`, `AGENT_CONNECTION_MAP.md`, `E2E_INTEGRATION_PLATFORM.md`, plus
+the existing `DYNAMIC_CONNECTOR_DEFINITIONS.md`, `INTEGRATION_BUILDER.md`,
 `INTEGRATION_MARKETPLACE.md`, `CONNECTOR_VERSIONING.md`, `ZID_CONNECTOR.md`.

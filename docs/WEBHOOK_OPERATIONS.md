@@ -1,51 +1,87 @@
-# Webhook Operations — Status (Phase 6F)
+# Webhook Operations (Phase 6G status)
 
 The Generic Webhook Framework itself (inbound processing, HMAC/header-token/shared-secret auth,
 idempotency, Event Bus dispatch) is real and fully documented in
-`docs/GENERIC_WEBHOOK_FRAMEWORK.md`. This document covers the **operational tooling** around it
-that Phase 6F's spec asked for — what's real, what isn't.
+`docs/GENERIC_WEBHOOK_FRAMEWORK.md`. Phase 6F documented the operational tooling around it as
+**not built** — rotation, test events, a failed-event inspector, and safe reprocess. **Phase 6G
+built all of it**, in `src/connectors/generic-webhook/operations.js`.
 
-## What's real
+## What's real now
 
-- **Webhook URL visibility**: `GET /api/integrations/connections/:id/webhook` (Phase 6C) returns
-  the connection's real, unguessable webhook URL and its declared triggers — already used by the
-  Builder/marketplace flow, unchanged this phase.
-- **Idempotency**: the real `webhook_events` table's `UNIQUE(source, external_event_id)`
-  constraint — a genuine DB-level guarantee, not an in-memory set — proven safe under real
-  concurrent delivery in `tests/webhook-burst.test.js`.
-- **Failure visibility (aggregate only)**: the Integration Platform dashboard card now shows a
-  real, live, platform-wide count of `webhook_events` rows with `status='FAILED'`
-  (`buildPlatformOverview`'s new `failedWebhooks` field, Phase 6F).
+- **Webhook Console** (`getWebhookConsoleView`): the real webhook URL, public id, per-trigger
+  auth type, last received/processed timestamps, and a real failed-event count — one live read,
+  no invented numbers.
+- **Public ID rotation** (`rotateWebhookUrl` / `rotateWebhookPublicId` in `connections.js`): the
+  connection's `webhook_public_id` column is unconditionally replaced. The OLD value simply stops
+  matching any row the moment this happens — `getConnectionByPublicId` does an exact lookup, so
+  there is no grace window and nothing further to revoke; this matches the platform's existing
+  "a rotated/removed credential takes effect immediately" convention everywhere else.
+- **Secret rotation** (`rotateWebhookSecret`): generates a fresh, cryptographically random secret
+  and merges it into the connection's EXISTING Vault credential (`storeCredential` is a full
+  replace, so every other field — e.g. the connector's own primary `apiKey` — is explicitly
+  preserved here rather than silently dropped). The new secret is returned to the caller **once**;
+  no route ever exposes it again afterward, and the UI shows it in a read-only field with an
+  explicit "shown once, copy it now" notice.
+- **Test Webhook** (`sendTestWebhookEvent`): reuses the exact same `processGenericWebhook`
+  pipeline a real external delivery goes through — auth, mapping, idempotency, Event Bus dispatch
+  — never a second, looser "preview" implementation. The synthetic event id is namespaced
+  (`__internalTest:true` marker in the payload) so it can never be confused with — or collide
+  with — a genuine delivery, and the UI/response both label it `internalTest: true` rather than
+  implying a provider actually sent it.
+- **Failed Webhook Inspector** (`listFailedWebhookEventsForConnection` /
+  `getFailedWebhookEventDetail`): the list is safe metadata only (time, trigger, external event
+  id, error code, status, correlation id) — no raw payload by default (Part 14). The detail view,
+  gated to Platform Admin OR the tenant owner of that exact connection (never a bare "operator"
+  role, and never any other tenant's), shows the raw payload with a best-effort mask over
+  sensitive-looking key names (`token`, `secret`, `password`, `api_key`, `authorization`, `card`,
+  `cvv`, `iban`) — a courtesy on top of, never a substitute for, the route-level authorization
+  check.
+- **Raw payload retention, but only for genuine failures**: `webhook_events` gained a nullable
+  `raw_payload` column, populated **only** on the mapping-failure path (`generic-webhook/
+  webhook.js`) — the success path (`PROCESSED`/`DUPLICATE`) still never persists it, unchanged
+  from Phase 6C's own deliberate design. This is what makes Safe Reprocess possible without
+  changing the platform's existing low-retention posture for the 99% happy path.
+- **Safe Reprocess** (`reprocessFailedWebhookEvent`): re-runs mapping+dispatch against the
+  ORIGINAL stored payload of the EXACT SAME event (same identity — never a new row, never a
+  re-fetch from the provider). Guarded by an atomic, CAS-style `FAILED -> REPROCESSING` status
+  transition (`transitionWebhookEventStatus`, a single `UPDATE ... WHERE status=?` whose affected-
+  row count IS the lock) — two concurrent "Reprocess" clicks can never both proceed, and a second
+  attempt on an already-`PROCESSED` event is refused (`NOT_REPROCESSABLE`), never silently
+  re-dispatched.
+- **UI**: the Connection page's "Advanced" drawer Webhook tab — URL/secret rotation, send test
+  event, view failed events with a per-row Reprocess button (disabled when no raw payload was
+  retained, e.g. for an event that failed before this phase).
 
-## What's NOT built (deferred)
+## Proven by
 
-- **Webhook URL rotation** — there is no endpoint or UI action to rotate a connection's
-  `webhook_public_id`. The old URL never becomes invalid because nothing ever changes it.
-- **Webhook secret rotation** — there is no endpoint or UI action to rotate the HMAC/token
-  secret stored in a connection's Vault credential. Changing it today means manually re-storing
-  a new credential through the existing generic-credential route (which was designed for initial
-  connection, not secret rotation specifically — it works, but isn't labeled or flowed as a
-  "rotate" action).
-- **Test Event / sample delivery** — there is no "send an internal sample event through the same
-  pipeline" action; the only way to exercise a webhook trigger today is a real, correctly-signed
-  HTTP POST to the real URL (as every automated test in this codebase already does).
-- **Failed webhook inspector** — there is no screen listing individual failed `webhook_events`
-  rows (timestamp, connector, trigger, error code, correlation id) — only the aggregate COUNT
-  exists (see above).
-- **Safe reprocess** — there is no action to explicitly re-run a FAILED webhook event's mapping/
-  dispatch using its already-stored idempotency row.
-- **Documented retry semantics**: this platform makes NO retry guarantee at all today — a failed
-  webhook delivery is recorded as FAILED and nothing automatically retries it. It is explicitly
-  **not** exactly-once, **not** at-least-once by platform retry (idempotency only protects
-  against the SENDER retrying the same delivery, which this platform then correctly collapses to
-  one processed event) — if the sender never retries a delivery that failed on this platform's
-  side, that event is simply lost until a future "safe reprocess" feature exists.
+- `tests/webhook-console.test.js` (7 tests): console view, URL rotation (old id genuinely stops
+  resolving), secret rotation (other credential fields survive; old signature fails, new one
+  works), a real test event through the actual pipeline, the failed inspector's masking, Safe
+  Reprocess (including the CAS guard against a double reprocess), cross-tenant isolation.
+- `tests/e2e/webhook-operations-journey.e2e.mjs` — a full real-browser journey: real webhook URL,
+  a validly-signed event PROCESSED, rotate the public ID (old URL 404s, new one works), rotate the
+  secret (old signature 401s, new one works). 13/13 checks pass.
 
-## Why deferred
+## Still NOT built (honestly deferred)
 
-Rotation and reprocessing both touch security-sensitive state (a secret used for signature
-verification; re-triggering a real Event Bus dispatch that may already have downstream side
-effects) — building them correctly needs careful design of exactly when the OLD credential/URL
-stops being honored and what "safe" reprocessing means for an event that may have already
-partially propagated. Given this phase's overall scope, this was judged lower priority than the
-discoverability, Builder-completeness, and Manual Action Runner work that was completed instead.
+- **No bulk/scheduled reprocess** — every reprocess is one explicit, confirmed click per event;
+  there is no "reprocess all failed events for this connection" batch action.
+- **No retry/backoff policy at all** — this platform still makes **no retry guarantee**. A failed
+  delivery is recorded as `FAILED` (with its payload now retained) and nothing automatically
+  retries it; Safe Reprocess is a manual, operator-triggered action, never an automatic background
+  job. This is unchanged from Phase 6F's own honest statement and remains true.
+- **No webhook delivery log beyond the existing `webhook_events` ledger** — there is no separate
+  "delivery attempts" or "retry history" table; the ledger's own `status` transitions
+  (`RECEIVED -> PROCESSED|FAILED -> REPROCESSING -> PROCESSED|FAILED`) are the only history kept.
+- **Secret rotation does not verify the operator has updated the sender** — rotating immediately
+  invalidates the old signature (no grace window), which is the secure default, but there is no
+  "test the new secret before committing" dry-run step; an operator must rotate, then re-configure
+  the sending platform, then optionally use Test Webhook to confirm.
+
+## Why the remaining gaps were deferred
+
+Bulk reprocess and automatic retry both touch real business-side-effect risk at a different scale
+than a single, explicitly confirmed action — a batch or automatic retry that fires against
+already-partially-propagated downstream state needs its own careful design (idempotency at the
+Event Bus consumer level, not just at this ledger's level) that was judged out of scope alongside
+everything else this phase already shipped.
