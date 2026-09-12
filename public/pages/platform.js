@@ -16,7 +16,7 @@ function staleGuard(generation){return generation!==renderGeneration;}
 
 export function installPlatformPage(){
  const root=document.querySelector('[data-page="platform"] #platform');
- root.innerHTML=`<div id="pf-integration-card"></div><div id="pf-overview" class="kpi-grid"></div><div id="pf-directory"></div><div id="pf-connectors"></div>`;
+ root.innerHTML=`<div id="pf-integration-card"></div><div id="pf-overview" class="kpi-grid"></div><div id="pf-directory"></div><div id="pf-pending-custom"></div><div id="pf-connectors"></div>`;
 }
 
 export async function renderPlatformPage({api:client,auth}){
@@ -42,6 +42,54 @@ export async function renderPlatformPage({api:client,auth}){
  renderOverview(overview);
  renderDirectory(directory);
  renderConnectorsSection(connectors);
+ renderPendingCustomConnectors();
+}
+/** Phase 6G, Part 35 — Platform Review queue for Tenant Custom Connector drafts. A separate
+ * fetch (not part of the Promise.all above) so a slow/erroring pending-list never blocks the
+ * rest of this already-critical page from rendering. */
+async function renderPendingCustomConnectors(){
+ const host=$('#pf-pending-custom');
+ let pending;
+ try{pending=await apiClient('/api/platform/custom-connectors/pending');}catch{host.innerHTML='';return;}
+ if(!pending.length){host.innerHTML='';return;}
+ host.innerHTML=`<h3>${escape(t('platform.customConnectors.pendingTitle'))}</h3>
+  <div class="grid">${pending.map(p=>`<div class="card" data-pending="${escape(p.id)}">
+   <strong>${escape(getLocale()==='en'?p.nameEn:p.nameAr)}</strong> <span dir="ltr" class="kpi-context">${escape(p.slug)}</span>
+   <p>${escape(t('platform.customConnectors.baseUrl'))}: <span dir="ltr">${escape(p.restConfig?.baseUrl||'—')}</span></p>
+   <p>${escape(t('platform.customConnectors.capabilities'))}: <span dir="ltr">${(p.capabilities||[]).join(', ')||'—'}</span></p>
+   <div class="report-actions" data-pending-actions></div>
+  </div>`).join('')}</div>`;
+ for(const p of pending){
+  const cell=host.querySelector(`[data-pending="${CSS.escape(p.id)}"] [data-pending-actions]`);
+  const view=button(t('platform.customConnectors.viewFull'),{variant:'secondary'});
+  view.onclick=()=>openConnectorWizard(p);
+  const approve=button(t('platform.customConnectors.approve'),{variant:'primary'});
+  approve.onclick=async()=>{
+   const confirmed=await promptDrawer(t('platform.customConnectors.approve'),n=>{n.innerHTML=`<p>${escape(t('platform.customConnectors.approveConfirm',{name:getLocale()==='en'?p.nameEn:p.nameAr}))}</p>`;},{confirmLabel:t('platform.customConnectors.approve')});
+   if(!confirmed)return;
+   try{await apiClient(`/api/platform/custom-connectors/${p.id}/review`,{decision:'APPROVE'},'POST');toast(t('platform.actionSucceeded'));renderPendingCustomConnectors();}
+   catch(error){toastError(error.message);}
+  };
+  const requestChanges=button(t('platform.customConnectors.requestChanges'),{variant:'secondary'});
+  requestChanges.onclick=async()=>{
+   const notes=await promptDrawer(t('platform.customConnectors.requestChanges'),n=>{
+    const textarea=document.createElement('textarea');textarea.name='notes';textarea.required=true;textarea.rows=3;
+    const label=document.createElement('label');label.textContent=t('platform.customConnectors.notesLabel');label.append(textarea);n.append(label);
+    return {value:()=>textarea.value.trim(),focus:()=>textarea.focus()};
+   },{confirmLabel:t('platform.customConnectors.requestChanges')});
+   if(!notes)return;
+   try{await apiClient(`/api/platform/custom-connectors/${p.id}/review`,{decision:'REQUEST_CHANGES',notes},'POST');toast(t('platform.actionSucceeded'));renderPendingCustomConnectors();}
+   catch(error){toastError(error.message);}
+  };
+  const reject=button(t('platform.customConnectors.reject'),{variant:'danger'});
+  reject.onclick=async()=>{
+   const confirmed=await promptDrawer(t('platform.customConnectors.reject'),n=>{n.innerHTML=`<p>${escape(t('platform.customConnectors.rejectConfirm'))}</p>`;},{confirmLabel:t('platform.customConnectors.reject')});
+   if(!confirmed)return;
+   try{await apiClient(`/api/platform/custom-connectors/${p.id}/review`,{decision:'REJECT'},'POST');toast(t('platform.actionSucceeded'));renderPendingCustomConnectors();}
+   catch(error){toastError(error.message);}
+  };
+  cell.append(view,approve,requestChanges,reject);
+ }
 }
 /** Item 2/25 — a prominent, always-visible summary card for the whole Integration Platform.
  * Connector counts come from the SAME list the Builder table below renders (one fetch, two
@@ -174,7 +222,7 @@ async function openTenantDetail(tenant){
 
 const HTTP_METHODS=['GET','POST','PUT','PATCH','DELETE'];
 const RISK_LEVELS=['LOW','MEDIUM','HIGH'];
-const AUTH_TYPES=['API_KEY','BEARER_TOKEN','BASIC','NONE'];
+const AUTH_TYPES=['API_KEY','BEARER_TOKEN','BASIC','NONE','OAUTH2'];
 const WEBHOOK_AUTH_TYPES=['HMAC','HEADER_TOKEN','SHARED_SECRET','NONE'];
 
 let lastConnectorsList=[],connectorsFilter='ALL';
@@ -332,8 +380,9 @@ async function openConnectorWizard(summary){
 
  const node=document.createElement('div');
  const basicPanel=document.createElement('div'),actionsPanel=document.createElement('div'),
-       webhooksPanel=document.createElement('div'),healthPanel=document.createElement('div'),reviewPanel=document.createElement('div');
- node.append(basicPanel,actionsPanel,webhooksPanel,healthPanel,reviewPanel);
+       webhooksPanel=document.createElement('div'),healthPanel=document.createElement('div'),
+       versionsPanel=document.createElement('div'),reviewPanel=document.createElement('div');
+ node.append(basicPanel,actionsPanel,webhooksPanel,healthPanel,versionsPanel,reviewPanel);
  // Item 7 — the numbered steps stay visible in every tab label even though steps 1-3 share one
  // panel (the Builder's create call is atomic — see the Basics panel's own doc comment) — a
  // Platform Admin always sees where they are in the full 8-step flow.
@@ -342,7 +391,8 @@ async function openConnectorWizard(summary){
   [`4. ${t('platform.builder.tabActions')}`,actionsPanel],
   [`5. ${t('platform.builder.tabWebhooks')}`,webhooksPanel],
   [`6. ${t('platform.builder.tabHealth')}`,healthPanel],
-  [`7-8. ${t('platform.builder.tabReview')}`,reviewPanel]
+  [`7. ${t('platform.builder.tabVersions')}`,versionsPanel],
+  [`8. ${t('platform.builder.tabReview')}`,reviewPanel]
  ]);
  const dialog=drawer(summary?(getLocale()==='en'?summary.nameEn:summary.nameAr):t('platform.builder.wizardTitleNew'),node);
  let detail=summary?null:{actions:[],triggers:[],restConfig:null,authConfig:null,capabilities:[]};
@@ -351,11 +401,11 @@ async function openConnectorWizard(summary){
   if(!definitionId){paintBasic();gateOtherTabs();return;}
   try{detail=await apiClient(`/api/platform/connectors/${definitionId}`);}
   catch(error){toastError(error.message);return;}
-  paintBasic();paintActions();paintWebhooks();paintHealth();paintReview();gateOtherTabs();
+  paintBasic();paintActions();paintWebhooks();paintHealth();paintVersions();paintReview();gateOtherTabs();
  }
  function gateOtherTabs(){
   const disabled=!definitionId;
-  [actionsPanel,webhooksPanel,healthPanel,reviewPanel].forEach(panel=>{
+  [actionsPanel,webhooksPanel,healthPanel,versionsPanel,reviewPanel].forEach(panel=>{
    if(disabled)panel.innerHTML=empty(t('platform.builder.createFirst'));
   });
  }
@@ -376,21 +426,41 @@ async function openConnectorWizard(summary){
    <h4>${escape(t('platform.builder.stepAuth'))}</h4>
    <label>${escape(t('platform.builder.fields.authType'))}<select name="authType" ${definitionId?'disabled':''}>${AUTH_TYPES.map(a=>`<option value="${a}" ${(d.authConfig?.type||'API_KEY')===a?'selected':''}>${escape(a)}</option>`).join('')}</select></label>
    <label data-header-name-row>${escape(t('platform.builder.fields.headerName'))}<input name="headerName" dir="ltr" value="${escape(d.authConfig?.headerName||'X-Api-Key')}"></label>
-   <p class="notice">${escape(t('platform.builder.oauthNote'))}</p>
+   <div data-oauth2-fields>
+    <p class="notice">${escape(t('platform.builder.oauth2Note'))}</p>
+    <label>${escape(t('platform.builder.fields.authorizeUrl'))}<input name="authorizeUrl" dir="ltr" value="${escape(d.authConfig?.authorizeUrl||'')}" placeholder="https://provider.example.com/oauth/authorize"></label>
+    <label>${escape(t('platform.builder.fields.tokenUrl'))}<input name="tokenUrl" dir="ltr" value="${escape(d.authConfig?.tokenUrl||'')}" placeholder="https://provider.example.com/oauth/token"></label>
+    <label>${escape(t('platform.builder.fields.scopes'))}<input name="scopes" dir="ltr" value="${escape((d.authConfig?.scopes||[]).join(' '))}" placeholder="read_orders read_customers"></label>
+    <label>${escape(t('platform.builder.fields.identityEndpoint'))}<input name="identityEndpoint" dir="ltr" value="${escape(d.authConfig?.identityEndpoint||'')}" placeholder="https://provider.example.com/me (optional)"></label>
+    <label>${escape(t('platform.builder.fields.clientAuthMethod'))}<select name="clientAuthMethod">${['body','basic'].map(m=>`<option value="${m}" ${(d.authConfig?.clientAuthMethod||'body')===m?'selected':''}>${escape(m)}</option>`).join('')}</select></label>
+    <label class="check"><input type="checkbox" name="pkce" ${d.authConfig?.pkce?'checked':''}> ${escape(t('platform.builder.fields.pkce'))}</label>
+    <label>${escape(t('platform.builder.fields.clientIdEnvKey'))}<input name="clientIdEnvKey" dir="ltr" value="${escape(d.authConfig?.clientIdEnvKey||'')}" placeholder="ACME_CLIENT_ID"></label>
+    <label>${escape(t('platform.builder.fields.clientSecretEnvKey'))}<input name="clientSecretEnvKey" dir="ltr" value="${escape(d.authConfig?.clientSecretEnvKey||'')}" placeholder="ACME_CLIENT_SECRET"></label>
+    <p class="kpi-context">${escape(t('platform.builder.oauthNote'))}</p>
+   </div>
    <h4>${escape(t('platform.builder.stepCapabilities'))}</h4>
    <fieldset><legend>${escape(t('platform.builder.fields.capabilities'))}</legend>
     ${capabilityRegistry.map(c=>`<label class="check"><input type="checkbox" name="cap" value="${escape(c.id)}" ${(d.capabilities||[]).includes(c.id)?'checked':''}> <span dir="ltr">${escape(c.id)}</span> — ${escape(getLocale()==='en'?c.descriptionEn:c.descriptionAr)}</label>`).join('')}
    </fieldset>
    <div class="report-actions" id="basic-actions"></div>`;
   const authSelect=basicPanel.querySelector('[name=authType]');
-  const syncHeaderRow=()=>{basicPanel.querySelector('[data-header-name-row]').hidden=authSelect.value!=='API_KEY';};
+  const syncHeaderRow=()=>{
+   basicPanel.querySelector('[data-header-name-row]').hidden=authSelect.value!=='API_KEY';
+   basicPanel.querySelector('[data-oauth2-fields]').hidden=authSelect.value!=='OAUTH2';
+  };
   authSelect.onchange=syncHeaderRow;syncHeaderRow();
   const saveButton=button(definitionId?t('platform.builder.saveChanges'):t('platform.builder.createDraft'),{variant:'primary'});
   saveButton.onclick=async()=>{
    const val=name=>basicPanel.querySelector(`[name=${name}]`).value.trim();
    const caps=[...basicPanel.querySelectorAll('[name=cap]:checked')].map(el=>el.value);
    const auth=authSelect.value==='API_KEY'?{type:'API_KEY',headerName:val('headerName')||'X-Api-Key'}
-    :authSelect.value==='NONE'?{type:'NONE',allowNone:true}:{type:authSelect.value};
+    :authSelect.value==='NONE'?{type:'NONE',allowNone:true}
+    :authSelect.value==='OAUTH2'?{
+     type:'OAUTH2',authorizeUrl:val('authorizeUrl'),tokenUrl:val('tokenUrl'),
+     scopes:val('scopes')?val('scopes').split(/\s+/).filter(Boolean):[],
+     identityEndpoint:val('identityEndpoint')||undefined,clientAuthMethod:basicPanel.querySelector('[name=clientAuthMethod]').value,
+     pkce:basicPanel.querySelector('[name=pkce]').checked,clientIdEnvKey:val('clientIdEnvKey'),clientSecretEnvKey:val('clientSecretEnvKey')
+    }:{type:authSelect.value};
    const payload={nameAr:val('nameAr'),nameEn:val('nameEn'),category:val('category')||'custom',descriptionAr:val('descriptionAr'),descriptionEn:val('descriptionEn'),
     capabilities:caps,rest:{baseUrl:val('baseUrl'),allowHttp:basicPanel.querySelector('[name=allowHttp]').checked},auth};
    try{
@@ -537,6 +607,68 @@ async function openConnectorWizard(summary){
    }catch(error){toastError(error.message);}
   };
   healthPanel.querySelector('#health-actions').append(save);
+ }
+
+ // Phase 6G, Part 2-4 — Versions tab: every real, permanent snapshot plus a synthetic "working
+ // copy" row while a new draft version is being prepared, real connectionsPinned counts, and a
+ // "Create New Draft Version" action that never touches the currently published snapshot.
+ async function paintVersions(){
+  if(!definitionId)return;
+  if(detail.isSystem){versionsPanel.innerHTML=empty(t('platform.builder.systemReadonlyNote'));return;}
+  versionsPanel.innerHTML=skeleton(t('common.loading'));
+  let versions;
+  try{versions=await apiClient(`/api/platform/connectors/${definitionId}/versions`);}
+  catch(error){versionsPanel.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+  versionsPanel.innerHTML=`<div id="versions-table"></div><div id="versions-diff"></div><div class="report-actions" id="versions-actions"></div>`;
+  versionsPanel.querySelector('#versions-table').innerHTML=table(
+   [t('platform.builder.versions.version'),t('platform.builder.versions.status'),t('platform.builder.versions.publishedAt'),t('platform.builder.versions.connectionsPinned'),t('platform.builder.versions.changeType'),t('platform.builder.versions.diff')],
+   versions.map(v=>[
+    escape(v.version),
+    badge(t('platform.builder.versions.statusValue.'+v.status)||v.status,v.status==='PUBLISHED'?'CONNECTED':v.status==='DRAFT'?'PENDING':'DISCONNECTED'),
+    v.publishedAt?new Date(v.publishedAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA'):'—',
+    escape(v.connectionsPinned),
+    escape(v.changeType),
+    `<span data-diff-btn="${v.version}"></span>`
+   ])
+  );
+  const publishedVersions=versions.filter(v=>v.status!=='DRAFT').map(v=>v.version);
+  for(const v of versions){
+   if(v.status==='DRAFT'||v.version===Math.min(...publishedVersions))continue;
+   const diffButton=button(t('platform.builder.versions.compareToPrevious'),{variant:'ghost'});
+   diffButton.onclick=()=>showVersionDiff(v.version-1,v.version);
+   versionsPanel.querySelector(`[data-diff-btn="${v.version}"]`).append(diffButton);
+  }
+  const actionsHost=versionsPanel.querySelector('#versions-actions');
+  if(detail.status==='PUBLISHED'){
+   const draftButton=button(t('platform.builder.versions.createDraftVersion'),{variant:'primary'});
+   draftButton.onclick=async()=>{
+    const confirmed=await promptDrawer(t('platform.builder.versions.createDraftVersion'),n=>{n.innerHTML=`<p>${escape(t('platform.builder.versions.createDraftVersionConfirm'))}</p>`;},{confirmLabel:t('platform.builder.versions.createDraftVersion')});
+    if(!confirmed)return;
+    try{await apiClient(`/api/platform/connectors/${definitionId}/versions/draft`,{},'POST');toast(t('common.savedSuccessfully'));await reload();refreshConnectorsListInBackground();}
+    catch(error){toastError(error.message);}
+   };
+   actionsHost.append(draftButton);
+  }
+ }
+ async function showVersionDiff(from,to){
+  const host=versionsPanel.querySelector('#versions-diff');
+  host.innerHTML=skeleton(t('common.loading'));
+  try{
+   const {diff}=await apiClient(`/api/platform/connectors/${definitionId}/versions/diff?from=${from}&to=${to}`);
+   const lines=[];
+   if(diff.capabilities.added.length)lines.push(`+ ${t('platform.builder.fields.capabilities')}: ${diff.capabilities.added.join(', ')}`);
+   if(diff.capabilities.removed.length)lines.push(`- ${t('platform.builder.fields.capabilities')}: ${diff.capabilities.removed.join(', ')}`);
+   for(const a of diff.actions.added)lines.push(`+ action: ${a}`);
+   for(const a of diff.actions.removed)lines.push(`- action: ${a}`);
+   for(const a of diff.actions.changed)lines.push(`~ action ${a.slug}: ${a.changedFields.join(', ')}`);
+   for(const tr of diff.triggers.added)lines.push(`+ trigger: ${tr}`);
+   for(const tr of diff.triggers.removed)lines.push(`- trigger: ${tr}`);
+   for(const tr of diff.triggers.changed)lines.push(`~ trigger ${tr.slug}: ${tr.changedFields.join(', ')}`);
+   if(diff.auth.changed)lines.push(`~ auth: ${diff.auth.from} → ${diff.auth.to}`);
+   if(diff.health.changed)lines.push(`~ health check changed`);
+   if(diff.connectionMode.changed)lines.push(`~ connectionMode: ${diff.connectionMode.from} → ${diff.connectionMode.to}`);
+   host.innerHTML=`<h4>${escape(t('platform.builder.versions.diffTitle',{from,to}))}</h4>`+(lines.length?`<pre dir="ltr">${escape(lines.join('\n'))}</pre>`:empty(t('platform.builder.versions.noDifferences')));
+  }catch(error){host.innerHTML=empty(t('controlCenter.loadFailed'),error.message);}
  }
 
  function paintReview(){
