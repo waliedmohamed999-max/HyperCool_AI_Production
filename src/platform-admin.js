@@ -1,10 +1,11 @@
 import {randomUUID} from 'node:crypto';
 import {fail} from './auth.js';
-import {getTenant,listActiveMembers,getTrialStatus,tenantOperationalBlockReason} from './tenancy.js';
+import {getTenant,listActiveMembers,getTrialStatus,tenantOperationalBlockReason,setCustomConnectorLimit} from './tenancy.js';
 import {recordPlatformAudit} from './platform-identity.js';
 import {buildControlCenterSummary} from './runtime/control-center.js';
 import {listAuditLog} from './audit.js';
 import {getOnboardingState} from './onboarding.js';
+import {effectiveCustomConnectorLimit} from './connectors/dynamic/tenant-custom.js';
 
 // Multi-Tenant Phase 4C-7 — a minimal Platform Admin foundation, NOT a Super Admin SaaS
 // product (Part 19: "لا تبن Super Admin SaaS ضخمة"). Every read here is real and live-derived
@@ -108,6 +109,11 @@ export function getTenantDetail(db,env,tenantId) {
  const recentAudit=listAuditLog(db,{tenantId,limit:20});
  let onboarding=null;
  try{onboarding=getOnboardingState(db,env,tenantId);}catch{/* leave null if not derivable */}
+ // Phase 6H, Part 37-42 — the tenant detail view's own real, live custom-connector usage:
+ // the raw override (null = "no override yet"), the effective limit actually enforced right
+ // now (reuses the SAME function tenant-custom.js's own enforcement calls — never a second,
+ // possibly-drifting computation), and the current real count.
+ const customConnectorCount=db.prepare('SELECT COUNT(*) c FROM integration_definitions WHERE owner_tenant_id=?').get(tenantId).c;
  return {
   tenant:{id:tenant.id,name:tenant.name,slug:tenant.slug,status:tenant.status,locale:tenant.defaultLocale,timezone:tenant.timezone,createdAt:tenant.createdAt},
   trial:getTrialStatus(tenant),
@@ -115,7 +121,8 @@ export function getTenantDetail(db,env,tenantId) {
   integrations:summary.integrations,
   agents:summary.agents,
   onboarding,
-  recentAudit
+  recentAudit,
+  customConnectors:{limitOverride:tenant.customConnectorLimit,effectiveLimit:effectiveCustomConnectorLimit(db,env,tenantId),count:customConnectorCount}
  };
 }
 
@@ -161,4 +168,17 @@ export function extendTrialByPlatform(db,tenantId,{days},actor) {
  db.prepare("UPDATE tenants SET status='TRIAL',trial_expires_at=?,updated_at=? WHERE id=?").run(newExpiresAt,now.toISOString(),tenantId);
  recordPlatformAudit(db,{id:randomUUID(),action:'TRIAL_EXTENDED',itemId:tenantId,actorId:actor.id,actorName:actor.name,at:now.toISOString()});
  return getTenant(db,tenantId);
+}
+/** Phase 6H, Part 37-42 — the one real, Platform-Admin-gated entry point that changes a
+ * tenant's custom-connector limit override (`limit=null` reverts to "no override — use the
+ * global MAX_CUSTOM_CONNECTORS_PER_TENANT default", exactly like `extendTrialByPlatform`'s own
+ * "explicit action, always audited" shape). Never lets a tenant set this for itself — the only
+ * caller is the Platform Admin route in application.js. */
+export function setCustomConnectorLimitByPlatform(db,env,tenantId,{limit},actor) {
+ const tenant=getTenant(db,tenantId);
+ if(!tenant)fail(404,'المنشأة غير موجودة');
+ if(limit!==null && (!Number.isInteger(limit)||limit<0||limit>1000))fail(400,'الحد يجب أن يكون رقمًا صحيحًا غير سالب (حتى 1000) أو فارغًا لاستخدام الحد الافتراضي العام');
+ const updated=setCustomConnectorLimit(db,tenantId,limit);
+ recordPlatformAudit(db,{id:randomUUID(),action:'TENANT_CUSTOM_CONNECTOR_LIMIT_UPDATED',itemId:tenantId,detail:limit===null?'DEFAULT':String(limit),actorId:actor.id,actorName:actor.name,at:new Date().toISOString()});
+ return {customConnectorLimit:updated.customConnectorLimit,effectiveLimit:effectiveCustomConnectorLimit(db,env,tenantId)};
 }

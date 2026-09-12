@@ -10,9 +10,10 @@ import {createAuth} from '../src/auth.js';
 import {
  tenantCustomConnectorsEnabled,createTenantConnectorDraft,updateTenantConnectorDraft,
  upsertTenantConnectorAction,submitTenantConnectorForReview,listOwnTenantConnectors,
- listPendingTenantConnectors,reviewTenantConnector
+ listPendingTenantConnectors,reviewTenantConnector,effectiveCustomConnectorLimit
 } from '../src/connectors/dynamic/tenant-custom.js';
 import {getTenantCatalog,getConnectorForBuilder,listConnectorsForBuilder} from '../src/connectors/dynamic/builder.js';
+import {setCustomConnectorLimitByPlatform,getTenantDetail} from '../src/platform-admin.js';
 
 // Phase 6G, Part 28-38 — Tenant Custom Connector Governance: the flag now gates real code
 // paths (Phase 6F left it gating nothing — docs/TENANT_CUSTOM_CONNECTORS.md's own admission).
@@ -104,6 +105,51 @@ test('Per-tenant limit (MAX_CUSTOM_CONNECTORS_PER_TENANT) is enforced',async()=>
  try{
   createTenantConnectorDraft(db,env,owner,tenantId,draftInput('tc_a'));
   throwsWithCode(()=>createTenantConnectorDraft(db,env,owner,tenantId,draftInput('tc_b')),'CUSTOM_CONNECTOR_LIMIT_REACHED');
+ } finally { await cleanup(); }
+});
+
+// Phase 6H, Part 37-42 — Per-tenant Custom Connector Limit Override.
+test('Per-tenant PLATFORM override raises (or lowers) the effective limit for exactly one tenant, never touching the global default for anyone else',async()=>{
+ const {db,env,admin,owner,tenantId,cleanup}=await harness({maxPerTenant:1});
+ try{
+  const auth=createAuth(db);
+  const ownerB=auth.createUser({username:'ownerb_'+Math.random().toString(36).slice(2),name:'B',password:'a-long-test-password'},'owner');
+  const tenantB=createTenant(db,{name:'B',slug:'b-'+Math.random().toString(36).slice(2)},ownerB.id);
+
+  assert.equal(effectiveCustomConnectorLimit(db,env,tenantId),1);
+  const result=setCustomConnectorLimitByPlatform(db,env,tenantId,{limit:3},admin);
+  assert.equal(result.customConnectorLimit,3);
+  assert.equal(result.effectiveLimit,3);
+  assert.equal(effectiveCustomConnectorLimit(db,env,tenantId),3);
+  // Tenant B never sees this tenant's override — the global default (1) still applies to it.
+  assert.equal(effectiveCustomConnectorLimit(db,env,tenantB),1);
+
+  createTenantConnectorDraft(db,env,owner,tenantId,draftInput('tc_over_a'));
+  createTenantConnectorDraft(db,env,owner,tenantId,draftInput('tc_over_b'));
+  createTenantConnectorDraft(db,env,owner,tenantId,draftInput('tc_over_c'));
+  throwsWithCode(()=>createTenantConnectorDraft(db,env,owner,tenantId,draftInput('tc_over_d')),'CUSTOM_CONNECTOR_LIMIT_REACHED');
+
+  const detail=getTenantDetail(db,env,tenantId);
+  assert.equal(detail.customConnectors.limitOverride,3);
+  assert.equal(detail.customConnectors.effectiveLimit,3);
+  assert.equal(detail.customConnectors.count,3);
+
+  // Reverting to null restores the global default.
+  const reverted=setCustomConnectorLimitByPlatform(db,env,tenantId,{limit:null},admin);
+  assert.equal(reverted.customConnectorLimit,null);
+  assert.equal(reverted.effectiveLimit,1);
+ } finally { await cleanup(); }
+});
+
+test('Per-tenant limit override: input validation refuses a negative/non-integer limit',async()=>{
+ const {db,env,admin,tenantId,cleanup}=await harness();
+ try{
+  let thrown=null;
+  try{setCustomConnectorLimitByPlatform(db,env,tenantId,{limit:-1},admin);}catch(error){thrown=error;}
+  assert.ok(thrown);
+  thrown=null;
+  try{setCustomConnectorLimitByPlatform(db,env,tenantId,{limit:1.5},admin);}catch(error){thrown=error;}
+  assert.ok(thrown);
  } finally { await cleanup(); }
 });
 

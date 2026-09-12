@@ -261,6 +261,38 @@ test('Platform extend-trial: pushes trial_expires_at forward and restores TRIAL 
   assert.ok(auditRow);
  }finally{await cleanup();}
 });
+test('Platform custom-connector-limit override: Platform-Admin-only route, real effect, audited, and reversible',async()=>{
+ const {app,call,cleanup}=await harness({PLATFORM_ADMIN_USERNAMES:'admin_user',ENABLE_TENANT_CUSTOM_CONNECTORS:'true',MAX_CUSTOM_CONNECTORS_PER_TENANT:'1'});
+ try{
+  const session=await signupAndVerify(call,app,{username:'limit_owner',email:'limit-owner@example.com'});
+  const ws=await call('/api/workspaces',{companyName:'Limit Co'},session);
+
+  // A non-platform-admin (even the tenant's own owner) is refused by the route itself.
+  const ownerAttempt=await call(`/api/platform/tenants/${ws.data.id}/custom-connector-limit`,{limit:5},session);
+  assert.equal(ownerAttempt.status,403);
+
+  const auth=createAuth(app.store.db);
+  auth.createUser({username:'admin_user',name:'Admin',password:'a-long-test-password'},'owner');
+  const login=auth.login({username:'admin_user',password:'a-long-test-password'},'127.0.0.1');
+  const adminSession={cookie:'hc_session='+login.token,csrf:login.csrf};
+
+  const raise=await call(`/api/platform/tenants/${ws.data.id}/custom-connector-limit`,{limit:5},adminSession);
+  assert.equal(raise.status,200);
+  assert.equal(raise.data.customConnectorLimit,5);
+  assert.equal(raise.data.effectiveLimit,5);
+
+  const detail=await call(`/api/platform/tenants/${ws.data.id}`,null,adminSession,{method:'GET'});
+  assert.equal(detail.data.customConnectors.effectiveLimit,5);
+
+  const auditRow=app.store.db.prepare("SELECT * FROM platform_audit_log WHERE action='TENANT_CUSTOM_CONNECTOR_LIMIT_UPDATED' AND item_id=?").get(ws.data.id);
+  assert.ok(auditRow);
+
+  const revert=await call(`/api/platform/tenants/${ws.data.id}/custom-connector-limit`,{limit:null},adminSession);
+  assert.equal(revert.status,200);
+  assert.equal(revert.data.customConnectorLimit,null);
+  assert.equal(revert.data.effectiveLimit,1,'reverting to null restores the global MAX_CUSTOM_CONNECTORS_PER_TENANT default');
+ }finally{await cleanup();}
+});
 
 // --- Concurrency (Part 39/41) ------------------------------------------------------------------
 

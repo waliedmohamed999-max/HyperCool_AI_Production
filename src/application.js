@@ -71,7 +71,7 @@ import {installInvitations,createInvitation,listInvitations,resendInvitation,rev
 import {installPlatformIdentity,getUserIdentity,requestEmailChange,resendEmailVerification,verifyEmailToken,requestPasswordReset,consumePasswordResetToken,checkForgotPasswordRateLimit,checkEmailVerificationRateLimit,recordPlatformAudit,registerPublicUser,checkSignupRateLimit} from './platform-identity.js';
 import {installPlatformMail,platformMailStatus,sendVerificationEmail,sendPasswordResetEmail,sendInvitationEmail,sendSecurityNotice} from './runtime/platform-mail.js';
 import {bootstrapWorkspaceForOwner,assertCanSelfCreateWorkspace,selfServicePolicy} from './workspace-provisioning.js';
-import {isPlatformAdmin,requirePlatformAdmin,buildPlatformOverview,listTenantDirectory,getTenantDetail,suspendTenantByPlatform,reactivateTenantByPlatform,extendTrialByPlatform} from './platform-admin.js';
+import {isPlatformAdmin,requirePlatformAdmin,buildPlatformOverview,listTenantDirectory,getTenantDetail,suspendTenantByPlatform,reactivateTenantByPlatform,extendTrialByPlatform,setCustomConnectorLimitByPlatform} from './platform-admin.js';
 import {checkGlobalSignupLimit,checkWorkspaceCreationIpLimit,checkTotalTrialWorkspacesLimit} from './runtime/pilot-limits.js';
 import {botProtectionStatus,captchaRequiredFor,verifyBotProtection} from './runtime/bot-protection.js';
 import {isTrialActive,getTrialDaysRemaining,countSelfCreatedWorkspaces} from './tenancy.js';
@@ -714,6 +714,15 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const input=await body(req);
         const tenant=extendTrialByPlatform(store.db,platformExtendTrial[1],{days:Number(input.days)},session.user);
         return send(200,{id:tenant.id,status:tenant.status,trialExpiresAt:tenant.trialExpiresAt});
+      }
+      // Phase 6H, Part 37-42 — Per-tenant Custom Connector Limit Override.
+      const platformCustomConnectorLimit=url.pathname.match(/^\/api\/platform\/tenants\/([\w-]+)\/custom-connector-limit$/);
+      if(platformCustomConnectorLimit && req.method==='POST') {
+        requirePlatformAdmin(env,session);
+        const input=await body(req);
+        const limit=input.limit===null||input.limit===''||input.limit===undefined?null:Number(input.limit);
+        const result=setCustomConnectorLimitByPlatform(store.db,env,platformCustomConnectorLimit[1],{limit},session.user);
+        return send(200,result);
       }
       // Universal Integration Platform (Phase 6D) — the Integration Builder's HTTP surface.
       // Tenant-independent, same placement rationale as the Platform Admin routes just above:

@@ -9,6 +9,7 @@
 // parallel connector model.
 import {randomUUID} from 'node:crypto';
 import {getIntegrationDefinition,listIntegrationDefinitions} from '../../integrations/definitions.js';
+import {getTenant} from '../../tenancy.js';
 import {upsertAction as storeUpsertAction,deleteAction as storeDeleteAction,listActionsForDefinition,upsertTrigger as storeUpsertTrigger,deleteTrigger as storeDeleteTrigger,listTriggersForDefinition,saveVersionSnapshot} from './store.js';
 import {hydrateAndValidate} from './hydrate.js';
 import {isKnownCapability} from '../core/capability-registry.js';
@@ -30,6 +31,17 @@ function requireEnabled(env) { if(!tenantCustomConnectorsEnabled(env))fail(403,'
 
 // Part 31 — a configurable, conservative-by-default ceiling.
 function maxPerTenant(env) { const n=Number(env.MAX_CUSTOM_CONNECTORS_PER_TENANT); return Number.isFinite(n)&&n>0?n:3; }
+// Phase 6H, Part 37-42 — a per-tenant PLATFORM override (`tenants.custom_connector_limit`,
+// nullable) takes precedence over the global env default when a Platform Admin has explicitly
+// set one for this specific tenant (see platform-admin.js's setCustomConnectorLimitByPlatform);
+// otherwise falls back to the exact same global `maxPerTenant(env)` every other tenant uses.
+// Exported so both this module's own enforcement and the Platform tenant-detail view (which
+// needs to show "current effective limit", not just the raw override field) share ONE
+// definition of "effective" — never two computations that could silently disagree.
+export function effectiveCustomConnectorLimit(db,env,tenantId) {
+ const tenant=getTenant(db,tenantId);
+ return tenant?.customConnectorLimit!=null?tenant.customConnectorLimit:maxPerTenant(env);
+}
 
 // Part 33 — a tenant-submitted connector can NEVER declare a security/admin/platform-level
 // capability, even a hypothetical future one the canonical registry doesn't have yet.
@@ -55,7 +67,8 @@ function requireOwnedDraft(db,tenantId,definitionId) {
 export function createTenantConnectorDraft(db,env,tenantUser,tenantId,input) {
  requireEnabled(env);
  const existingCount=db.prepare("SELECT COUNT(*) c FROM integration_definitions WHERE owner_tenant_id=?").get(tenantId).c;
- if(existingCount>=maxPerTenant(env))fail(409,'CUSTOM_CONNECTOR_LIMIT_REACHED',`الحد الأقصى لموصلات هذه المنشأة المخصصة هو ${maxPerTenant(env)}`);
+ const limit=effectiveCustomConnectorLimit(db,env,tenantId);
+ if(existingCount>=limit)fail(409,'CUSTOM_CONNECTOR_LIMIT_REACHED',`الحد الأقصى لموصلات هذه المنشأة المخصصة هو ${limit}`);
  const slug=String(input.slug||'').toLowerCase();
  if(!/^[a-z][a-z0-9_-]*$/.test(slug))fail(400,'INVALID_SLUG','slug يجب أن يكون أحرفًا لاتينية صغيرة/أرقام/شرطات فقط');
  if(getIntegrationDefinition(db,slug))fail(409,'SLUG_TAKEN','يوجد Connector بنفس الـslug بالفعل');

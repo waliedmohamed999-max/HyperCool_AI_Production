@@ -210,8 +210,28 @@ async function openTenantDetail(tenant){
   <p><strong>${escape(t('platform.table.agents'))}:</strong> ${escape(detail.agents.ready)}/${escape(detail.agents.total)}</p>
   <h4>${escape(t('platform.members'))}</h4>
   <div class="grid">${detail.members.map(m=>`<div class="card"><strong>${escape(m.name)}</strong><p dir="ltr">${escape(m.username)}</p><p>${escape(m.role)}${m.isOwner?' · '+escape(t('invitations.ownerBadge')):''}</p></div>`).join('')}</div>
+  <h4>${escape(t('platform.customConnectorLimit.title'))}</h4>
+  <p class="kpi-context">${escape(t('platform.customConnectorLimit.hint'))}</p>
+  <p>${escape(t('platform.customConnectorLimit.current',{count:detail.customConnectors.count,limit:detail.customConnectors.effectiveLimit}))} ${detail.customConnectors.limitOverride!=null?badge(t('platform.customConnectorLimit.overridden'),'PENDING'):badge(t('platform.customConnectorLimit.globalDefault'),'CONNECTED')}</p>
+  <div id="pf-custom-limit-form"></div>
   <h4>${escape(t('platform.recentAudit'))}</h4>
   <div>${detail.recentAudit.slice(0,10).map(a=>`<div class="audit-row">${escape(a.action)}<time>${new Date(a.at).toLocaleString(getLocale()==='en'?'en-US':'ar-SA')}</time></div>`).join('')||empty(t('operationsLog.noneRecordedYet'))}</div>`;
+ // Phase 6H, Part 37-42 — Per-tenant Custom Connector Limit Override.
+ const limitForm=node.querySelector('#pf-custom-limit-form');
+ limitForm.innerHTML=`<label class="check"><input type="radio" name="limitMode" value="default" ${detail.customConnectors.limitOverride==null?'checked':''}> ${escape(t('platform.customConnectorLimit.useDefault'))}</label>
+  <label class="check"><input type="radio" name="limitMode" value="custom" ${detail.customConnectors.limitOverride!=null?'checked':''}> ${escape(t('platform.customConnectorLimit.useCustom'))}</label>
+  <label>${escape(t('platform.customConnectorLimit.customValue'))}<input type="number" name="limitValue" min="0" max="1000" value="${escape(detail.customConnectors.limitOverride??3)}" ${detail.customConnectors.limitOverride==null?'disabled':''}></label>`;
+ const limitValueInput=limitForm.querySelector('[name=limitValue]');
+ limitForm.querySelectorAll('[name=limitMode]').forEach(radio=>radio.onchange=()=>{limitValueInput.disabled=limitForm.querySelector('[name=limitMode]:checked').value==='default';});
+ const saveLimit=button(t('common.save'),{variant:'secondary'});
+ saveLimit.onclick=async()=>{
+  const mode=limitForm.querySelector('[name=limitMode]:checked').value;
+  const limit=mode==='default'?null:Number(limitValueInput.value);
+  if(mode==='custom' && (!Number.isInteger(limit)||limit<0)){toastError(t('platform.customConnectorLimit.invalidValue'));return;}
+  try{await apiClient(`/api/platform/tenants/${tenant.id}/custom-connector-limit`,{limit},'POST');toast(t('platform.actionSucceeded'));dialog.close();openTenantDetail(tenant);}
+  catch(error){toastError(error.message);}
+ };
+ limitForm.append(saveLimit);
  const actions=document.createElement('div');actions.className='report-actions';
  if(detail.tenant.status==='SUSPENDED') {
   const reactivate=button(t('platform.reactivate'),{variant:'primary'});

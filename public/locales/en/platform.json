@@ -43,6 +43,17 @@
  "reactivateConfirm": "\"{name}\" will be reactivated immediately (becomes ACTIVE).",
  "extendTrial": "Extend Trial",
  "extendTrialDaysLabel": "Number of days",
+ "customConnectorLimit": {
+  "title": "Custom connector limit for this tenant",
+  "hint": "By default every tenant shares the same global limit (MAX_CUSTOM_CONNECTORS_PER_TENANT). You can raise or lower it for this tenant only here — no other tenant is affected.",
+  "current": "Currently: {count} of {limit}",
+  "overridden": "Custom limit for this tenant",
+  "globalDefault": "Global default limit",
+  "useDefault": "Use the global default",
+  "useCustom": "Custom limit for this tenant",
+  "customValue": "Value",
+  "invalidValue": "The value must be a non-negative whole number"
+ },
  "actionSucceeded": "Action completed successfully",
  "notPlatformAdmin": "This page is available only to a platform administrator",
  "operations": {

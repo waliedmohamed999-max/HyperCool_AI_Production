@@ -51,6 +51,12 @@ export function installTenancy(db) {
  if(!columns.includes('trial_started_at'))db.exec('ALTER TABLE tenants ADD COLUMN trial_started_at TEXT');
  if(!columns.includes('trial_expires_at'))db.exec('ALTER TABLE tenants ADD COLUMN trial_expires_at TEXT');
  if(!columns.includes('created_by_user_id'))db.exec('ALTER TABLE tenants ADD COLUMN created_by_user_id TEXT');
+ // Phase 6H, Part 37-42 — a per-tenant PLATFORM override for the global
+ // MAX_CUSTOM_CONNECTORS_PER_TENANT env default (see connectors/dynamic/tenant-custom.js).
+ // Nullable, meaning "no override — use the global default", the exact same convention
+ // `max_agent_level` already established above; a Platform Admin sets this, never the tenant
+ // itself (see platform-admin.js's setCustomConnectorLimitByPlatform).
+ if(!columns.includes('custom_connector_limit'))db.exec('ALTER TABLE tenants ADD COLUMN custom_connector_limit INTEGER');
 }
 /**
  * Idempotent, lossless backfill (spec Part 99-101). The very first call on a real database
@@ -221,6 +227,7 @@ export function getTenant(db,tenantId) {
  return {id:row.id,name:row.name,slug:row.slug,status:row.status,plan:row.plan,defaultLocale:row.default_locale,timezone:row.timezone,brandingSettings:row.branding_settings?JSON.parse(row.branding_settings):null,systemMode:row.system_mode,
   defaultAiConnectionId:row.default_ai_connection_id,defaultAiModel:row.default_ai_model,maxAgentLevel:row.max_agent_level,
   trialStartedAt:row.trial_started_at,trialExpiresAt:row.trial_expires_at,createdByUserId:row.created_by_user_id,
+  customConnectorLimit:row.custom_connector_limit,
   createdAt:row.created_at,updatedAt:row.updated_at};
 }
 // Multi-Tenant Phase 4B (Part 17/37) — the workspace-level AI default and safety ceiling.
@@ -233,6 +240,14 @@ export function setWorkspaceAiDefault(db,tenantId,{connectionId=null,model=null}
 }
 export function setMaxAgentLevel(db,tenantId,level) {
  db.prepare('UPDATE tenants SET max_agent_level=?,updated_at=? WHERE id=?').run(level,new Date().toISOString(),tenantId);
+ return getTenant(db,tenantId);
+}
+// Phase 6H, Part 37-42 — `limit=null` means "no override, use the global default"; this
+// function itself performs no validation (the caller — platform-admin.js's
+// setCustomConnectorLimitByPlatform — is the one real Platform-Admin-gated entry point that
+// validates and audits this change, matching setMaxAgentLevel's own thin-setter shape above).
+export function setCustomConnectorLimit(db,tenantId,limit) {
+ db.prepare('UPDATE tenants SET custom_connector_limit=?,updated_at=? WHERE id=?').run(limit,new Date().toISOString(),tenantId);
  return getTenant(db,tenantId);
 }
 export function listTenantMembers(db,tenantId) {

@@ -43,6 +43,17 @@
  "reactivateConfirm": "سيتم إعادة تفعيل \"{name}\" فورًا (تصبح ACTIVE).",
  "extendTrial": "تمديد التجربة",
  "extendTrialDaysLabel": "عدد الأيام",
+ "customConnectorLimit": {
+  "title": "حد الموصلات المخصصة لهذه المنشأة",
+  "hint": "بشكل افتراضي تُطبَّق كل المنشآت نفس الحد العام (MAX_CUSTOM_CONNECTORS_PER_TENANT). يمكنك هنا رفعه أو خفضه لهذه المنشأة تحديدًا فقط — لن يتأثر أي مستأجر آخر.",
+  "current": "الحالي: {count} من {limit}",
+  "overridden": "حد مخصص لهذه المنشأة",
+  "globalDefault": "الحد العام الافتراضي",
+  "useDefault": "استخدام الحد العام الافتراضي",
+  "useCustom": "حد مخصص لهذه المنشأة",
+  "customValue": "القيمة",
+  "invalidValue": "القيمة يجب أن تكون رقمًا صحيحًا غير سالب"
+ },
  "actionSucceeded": "تم تنفيذ الإجراء بنجاح",
  "notPlatformAdmin": "هذه الصفحة متاحة فقط لمسؤول المنصة",
  "operations": {
