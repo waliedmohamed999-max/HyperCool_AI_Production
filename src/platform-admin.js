@@ -39,7 +39,7 @@ const HEALTHY=new Set(['CONNECTED','DEGRADED']);
 export function buildPlatformOverview(db,env) {
  const tenants=db.prepare('SELECT * FROM tenants ORDER BY created_at').all();
  const counts={total:tenants.length,ACTIVE:0,TRIAL:0,SUSPENDED:0,ARCHIVED:0,expiredTrials:0};
- let connectionsNeedingAttention=0,agentsFailing=0;
+ let connectionsNeedingAttention=0,healthyConnections=0,agentsFailing=0;
  for(const row of tenants) {
   counts[row.status]=(counts[row.status]||0)+1;
   const tenant=getTenant(db,row.id);
@@ -47,13 +47,18 @@ export function buildPlatformOverview(db,env) {
   try {
    const summary=buildControlCenterSummary(db,env,row.id,'owner');
    connectionsNeedingAttention+=summary.integrations.unhealthyConnections;
+   healthyConnections+=summary.integrations.healthyConnections;
    agentsFailing+=summary.agents.blocked;
   } catch { /* a genuinely broken tenant row must never take the whole overview down */ }
  }
  const users=db.prepare('SELECT COUNT(*) n FROM users').get().n;
  const verifiedUsers=db.prepare('SELECT COUNT(*) n FROM users WHERE email_verified_at IS NOT NULL').get().n;
  const recentCritical=db.prepare("SELECT COUNT(*) n FROM platform_audit_log WHERE action LIKE '%FAILED%' AND at>=?").get(new Date(Date.now()-86400000).toISOString()).n;
- return {tenants:counts,users:{total:users,verified:verifiedUsers},connectionsNeedingAttention,agentsFailing,recentCriticalErrors:recentCritical};
+ // Phase 6F, Part 2 — real, platform-wide (cross-tenant) webhook failure count for the
+ // Integration Platform dashboard card; reuses the EXISTING webhook_events ledger's own
+ // `status` column (Phase 4C-C's real idempotency ledger) — never a second failure tracker.
+ const failedWebhooksRow=db.prepare("SELECT COUNT(*) n FROM webhook_events WHERE status='FAILED'").get();
+ return {tenants:counts,users:{total:users,verified:verifiedUsers},connectionsNeedingAttention,healthyConnections,agentsFailing,recentCriticalErrors:recentCritical,failedWebhooks:failedWebhooksRow.n};
 }
 
 /** Part 22 — the directory. One row per tenant, safe fields only. */

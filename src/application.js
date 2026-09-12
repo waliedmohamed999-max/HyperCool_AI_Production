@@ -12,14 +12,17 @@ import {connectionStatus,importSalla,ConnectorError,testAnthropicConnection,test
 import {processGenericWebhook} from './connectors/generic-webhook/webhook.js';
 import {installDynamicConnectorTables} from './connectors/dynamic/store.js';
 import {resolveConnectorDynamic} from './connectors/dynamic/registry.js';
+import {listCompatibleConnections} from './connectors/dynamic/compatibility.js';
 import {
  createDraftConnector,updateDraftConnector,upsertActionForConnector,deleteActionForConnector,
  upsertTriggerForConnector,deleteTriggerForConnector,validateConnectorDraft,publishConnector,
  disableConnector,reactivateConnector,getConnectorDependencies,listConnectorsForBuilder,
- getConnectorForBuilder,getTenantCatalog
+ getConnectorForBuilder,getTenantCatalog,cloneConnectorDefinition,exportConnectorDefinition,
+ importConnectorDefinition
 } from './connectors/dynamic/builder.js';
 import {executeConnectorAction,checkConnectorHealth} from './connectors/core/runtime.js';
 import {CANONICAL_CAPABILITIES} from './connectors/core/capability-registry.js';
+import {applyMapping,MappingError} from './connectors/core/mapping.js';
 import {createGenerator,listAiRuns} from './generation.js';
 import {loadEnvFile} from 'node:process';
 import {installPlanning,listSlots,listJobs,createCalendar,scheduleContent,cancelJobs,prepareDue,buildBrief,saveDailyBrief,riyadhDate,authorizeAutomation} from './planning.js';
@@ -707,6 +710,19 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         requirePlatformAdmin(env,session);
         return send(200,CANONICAL_CAPABILITIES);
       }
+      // Item 20 — Mapping Preview: the EXACT canonical mapper (Phase 6C) a real action/webhook
+      // uses, run against a Platform-Admin-supplied sample payload — never a second, separate
+      // "preview-only" mapper, and never any real network call or persistence.
+      if(url.pathname==='/api/platform/mapping-preview' && req.method==='POST') {
+        requirePlatformAdmin(env,session);
+        const input=await body(req);
+        try {
+         const result=applyMapping(input.mapping,input.samplePayload);
+         return send(200,{ok:true,result});
+        } catch(error) {
+         return send(200,{ok:false,errorCode:error instanceof MappingError?error.code:'MAPPING_ERROR',message:error.message});
+        }
+      }
       if(url.pathname==='/api/platform/connectors' && req.method==='POST') {
         const input=await body(req);
         const created=createDraftConnector(store.db,env,session.user,input);
@@ -765,6 +781,32 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(platformConnectorTriggerItem && req.method==='DELETE') {
         deleteTriggerForConnector(store.db,env,session.user,platformConnectorTriggerItem[1],platformConnectorTriggerItem[2]);
         return send(200,{ok:true});
+      }
+      // Phase 6F, Part 7/23/24 — Clone: a brand-new DRAFT, never credentials (a definition
+      // never holds one to begin with).
+      const platformConnectorClone=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/clone$/);
+      if(platformConnectorClone && req.method==='POST') {
+        const input=await body(req);
+        if(typeof input.slug!=='string'||!input.slug)fail(400,'slug مطلوب للنسخة الجديدة');
+        const cloned=cloneConnectorDefinition(store.db,env,session.user,platformConnectorClone[1],input.slug);
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_CLONED',itemId:cloned.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(201,cloned);
+      }
+      // Part 8/22 — Export: safe, portable JSON (declarative shape only, verified secret-free
+      // by construction — see exportConnectorDefinition's own doc comment).
+      const platformConnectorExport=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/export$/);
+      if(platformConnectorExport && req.method==='GET') {
+        return send(200,exportConnectorDefinition(store.db,env,session.user,platformConnectorExport[1]));
+      }
+      // Part 9/22 — Import: the imported JSON is NEVER trusted directly; it re-enters through
+      // the exact same validated Builder entry points a manual creation would (see
+      // importConnectorDefinition's own doc comment) — SSRF/capability/event-type checks apply
+      // exactly as they would to a hand-typed connector.
+      if(url.pathname==='/api/platform/connectors/import' && req.method==='POST') {
+        const input=await body(req);
+        const imported=importConnectorDefinition(store.db,env,session.user,input.definition,{slug:input.slug});
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_IMPORTED',itemId:imported.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(201,imported);
       }
       // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only
@@ -1022,7 +1064,18 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner','operator']);
         const tool=getToolDefinition(store.db,toolConnections[1]);
         if(!tool)fail(404,'أداة غير معروفة');
-        if(!tool.integrationSlug)return send(200,[]);
+        // Phase 6F fix — a generic, capability-only tool (integrationSlug:null; get_invoices/
+        // get_orders/get_customers and any future one) used to ALWAYS get an empty list here,
+        // even when a real compatible connection existed — this route pre-dates Phase 6D's
+        // generic capability resolution and was never updated to match, so the Agent config
+        // drawer's own connection dropdown silently showed zero options for these tools. Reuses
+        // the exact same compatibility check `resolveGenericCapabilityTool`/`upsertAssignment`
+        // already enforce — never a second, divergent definition of "compatible".
+        if(!tool.integrationSlug) {
+         const compatible=new Set(listCompatibleConnections(store.db,session.tenantId,tool.capability).map(c=>c.id));
+         const anyHealthy=listConnections(store.db,{},session.tenantId).filter(c=>['CONNECTED','DEGRADED'].includes(c.status));
+         return send(200,anyHealthy.map(c=>({...c,capabilityGranted:compatible.has(c.id)})));
+        }
         // Phase 4B.1 (Part 10) — `capabilityGranted` tells a UI, per candidate connection,
         // whether its actual OAuth scopes cover what this tool needs — never just "supported
         // by the provider in general" (Part 6). `scopes` itself is already non-secret (see
@@ -1461,6 +1514,19 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // a connection's own declared actions directly from the Connection UI (e.g. a manual
       // "Run get_invoices now"), through the EXACT SAME ConnectorRuntime pipeline the Agent
       // tool path already uses — capability/tenant/approval checks included, never a shortcut.
+      // Item 16/17 — the Manual Action Runner / Action Test Console needs to know what actions
+      // even EXIST for this connection's connector before it can offer a "Run" button — safe
+      // metadata only (slug, method, path, risk, whether it needs approval), resolved through
+      // the SAME dynamic registry ConnectorRuntime itself uses, never a second definition of
+      // "what actions does this connector have".
+      const connectionActionsList=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/actions$/);
+      if(req.method==='GET' && connectionActionsList) {
+        authorize(session,['owner','operator']);
+        const connection=getConnection(store.db,connectionActionsList[1],session.tenantId);
+        const manifest=resolveConnectorDynamic(store.db,connection.integrationDefinitionId,{connectorVersion:connection.connectorVersion??null})?.manifest||null;
+        const actions=(manifest?.actions||[]).map(a=>({slug:a.slug,nameAr:a.nameAr,nameEn:a.nameEn,method:a.method,pathTemplate:a.rest?.pathTemplate||null,requiredCapability:a.requiredCapability,riskLevel:a.riskLevel,actionType:a.actionType,requiresApprovalDefault:a.requiresApprovalDefault,inputSchema:a.inputSchema}));
+        return send(200,actions);
+      }
       const connectionAction=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/actions\/([\w-]+)$/);
       if(req.method==='POST' && connectionAction) {
         authorize(session,['owner','operator']);
@@ -1468,6 +1534,20 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const input=await body(req);
         const result=await executeConnectorAction({db:store.db,env,tenantId:session.tenantId,connectorSlug:connection.integrationDefinitionId,connectionId:connection.id,actionId:connectionAction[2],input:input?.input||{},actor:session.user});
         return send(200,result);
+      }
+      // Item 19 — Action History: safe metadata only (status, error code, latency, actor,
+      // time — never the raw output/credential), reusing the EXISTING audit log rather than a
+      // second, parallel action-log table. Filters the tenant's own recent audit rows in
+      // memory rather than widening listAuditLog's own shared signature — a real, documented
+      // scope boundary (fine at pilot scale; revisit with a dedicated indexed query well
+      // before a tenant has thousands of audit rows).
+      const connectionActionHistory=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/action-history$/);
+      if(req.method==='GET' && connectionActionHistory) {
+        authorize(session,['owner','operator']);
+        const connection=getConnection(store.db,connectionActionHistory[1],session.tenantId);
+        const relevant=new Set(['CONNECTOR_ACTION_EXECUTED','CONNECTOR_ACTION_FAILED','CONNECTOR_ACTION_PENDING_APPROVAL']);
+        const recent=listAuditLog(store.db,{tenantId:session.tenantId,limit:300}).filter(a=>a.itemId===connection.id && relevant.has(a.action));
+        return send(200,recent.slice(0,30).map(a=>({action:a.action,actionSlug:a.actionSlug,status:a.status,errorCode:a.errorCode||null,latencyMs:a.latencyMs??null,actorName:a.actorName,at:a.at})));
       }
       const connectionTest=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/test$/);
       if(req.method==='POST' && connectionTest) {

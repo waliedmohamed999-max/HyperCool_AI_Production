@@ -192,14 +192,83 @@ export function reactivateConnector(db,env,actorUser,definitionId) {
  return getDefinitionById(db,definitionId);
 }
 
-// --- Dependency check (Part 92) ----------------------------------------------------------------
+// --- Dependency check (Part 92, extended Phase 6F Part 50/51) -----------------------------------
 
 export function getConnectorDependencies(db,env,actorUser,definitionId) {
  requirePlatformAdmin(env,actorUser);
  const definition=requireOwnDefinition(db,definitionId);
  const connections=db.prepare('SELECT COUNT(*) c FROM integration_connections WHERE integration_definition_id=?').get(definition.slug).c;
  const tenants=db.prepare('SELECT COUNT(DISTINCT tenant_id) c FROM integration_connections WHERE integration_definition_id=?').get(definition.slug).c;
- return {connections,tenants};
+ // Phase 6F, Part 50/51 — the real "who is affected if I disable/change this" picture: every
+ // real agent_tool_assignments row pointing at one of this connector's connections, and every
+ // real trigger this definition itself declares. Never a guess — both are live COUNT queries.
+ const agentAssignments=db.prepare(`SELECT COUNT(*) c FROM agent_tool_assignments a JOIN integration_connections c2 ON c2.id=a.connection_id WHERE c2.integration_definition_id=? AND a.enabled=1`).get(definition.slug).c;
+ const webhookTriggers=definition.isSystem?0:db.prepare('SELECT COUNT(*) c FROM connector_triggers WHERE connector_definition_id=?').get(definition.id).c;
+ return {connections,tenants,agentAssignments,webhookTriggers};
+}
+
+// --- Clone (Part 7/23/24) ------------------------------------------------------------------------
+
+/** Clones a real, existing GENERIC_REST connector's declarative shape (auth config, capabilities,
+ * base URL, actions, triggers) into a brand-new DRAFT definition — NEVER credentials (there are
+ * none on a definition to begin with; only integration_connections+Vault hold those, and this
+ * function never touches either table). A system (BUILT_IN/AI_PROVIDER) connector cannot be
+ * cloned this way — its real behavior lives in code, not in connector_actions/connector_triggers,
+ * so "cloning" it here would silently produce an empty, non-functional draft. */
+export function cloneConnectorDefinition(db,env,actorUser,definitionId,newSlug) {
+ requirePlatformAdmin(env,actorUser);
+ const source=requireOwnDefinition(db,definitionId);
+ if(source.isSystem)fail(400,'SYSTEM_CONNECTOR_READONLY','لا يمكن استنساخ موصل نظامي مبني بالكود — لا توجد بيانات Builder حقيقية لاستنساخها');
+ const created=createDraftConnector(db,env,actorUser,{
+  slug:newSlug,nameAr:`${source.nameAr} (نسخة)`,nameEn:`${source.nameEn} (Copy)`,category:source.category,
+  descriptionAr:source.descriptionAr,descriptionEn:source.descriptionEn,adapterType:source.adapterType,
+  connectionMode:source.connectionMode,auth:source.authConfig,capabilities:source.capabilities,rest:source.restConfig
+ });
+ for(const action of listActionsForDefinition(db,source.id))upsertActionForConnector(db,env,actorUser,created.id,action);
+ for(const trigger of listTriggersForDefinition(db,source.id))upsertTriggerForConnector(db,env,actorUser,created.id,triggerToUpsertInput(trigger));
+ return getDefinitionById(db,created.id);
+}
+/** `listTriggersForDefinition`'s hydrated shape (`discriminatorPath`/`discriminatorValue`) is
+ * NOT the same shape `upsertTriggerForConnector`/store.js's `upsertTrigger` expects as INPUT
+ * (`eventTypeField`/`eventTypeValue`) — a real, easy-to-miss asymmetry between this module's own
+ * read and write contracts. Centralized here once so Clone/Export/Import never re-diverge on it. */
+function triggerToUpsertInput(trigger) {
+ return {...trigger,eventTypeField:trigger.discriminatorPath||undefined,eventTypeValue:trigger.discriminatorValue||undefined};
+}
+
+// --- Export / Import (Part 8/9/22) ----------------------------------------------------------------
+
+/** Safe, portable JSON — declarative shape only. Never includes a credential/token/secret
+ * (definitions never hold one; only integration_connections+Vault do, and neither is read here). */
+export function exportConnectorDefinition(db,env,actorUser,definitionId) {
+ requirePlatformAdmin(env,actorUser);
+ const definition=requireOwnDefinition(db,definitionId);
+ if(definition.isSystem)fail(400,'SYSTEM_CONNECTOR_READONLY','لا يمكن تصدير موصل نظامي مبني بالكود');
+ return {
+  formatVersion:1,slug:definition.slug,nameAr:definition.nameAr,nameEn:definition.nameEn,category:definition.category,
+  descriptionAr:definition.descriptionAr,descriptionEn:definition.descriptionEn,adapterType:definition.adapterType,
+  connectionMode:definition.connectionMode,auth:definition.authConfig,rest:definition.restConfig,capabilities:definition.capabilities,
+  actions:listActionsForDefinition(db,definition.id),triggers:listTriggersForDefinition(db,definition.id)
+ };
+}
+/** Imported data is NEVER trusted directly — every field re-enters through the EXACT SAME
+ * validated entry points (createDraftConnector/upsertActionForConnector/upsertTriggerForConnector)
+ * a Platform Admin typing the same values into the wizard would go through: slug format, SSRF,
+ * known-capability, capability-declared-before-action, known-event-type. A malformed or
+ * malicious export can fail loudly here but can never bypass a single one of those checks. */
+export function importConnectorDefinition(db,env,actorUser,exported,{slug}={}) {
+ requirePlatformAdmin(env,actorUser);
+ if(!exported||typeof exported!=='object')fail(400,'INVALID_IMPORT','ملف الاستيراد غير صالح');
+ if(!Array.isArray(exported.actions))fail(400,'INVALID_IMPORT','actions يجب أن تكون مصفوفة');
+ if(!Array.isArray(exported.triggers))fail(400,'INVALID_IMPORT','triggers يجب أن تكون مصفوفة');
+ const created=createDraftConnector(db,env,actorUser,{
+  slug:slug||exported.slug,nameAr:exported.nameAr,nameEn:exported.nameEn,category:exported.category,
+  descriptionAr:exported.descriptionAr,descriptionEn:exported.descriptionEn,adapterType:exported.adapterType,
+  connectionMode:exported.connectionMode,auth:exported.auth,capabilities:exported.capabilities,rest:exported.rest
+ });
+ for(const action of exported.actions)upsertActionForConnector(db,env,actorUser,created.id,action);
+ for(const trigger of exported.triggers)upsertTriggerForConnector(db,env,actorUser,created.id,triggerToUpsertInput(trigger));
+ return getDefinitionById(db,created.id);
 }
 
 // --- Platform Builder listing (Part 22/63) ------------------------------------------------------

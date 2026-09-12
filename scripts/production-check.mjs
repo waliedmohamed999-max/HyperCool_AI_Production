@@ -55,6 +55,23 @@ for (const flag of ['ENABLE_EXTERNAL_MESSAGING', 'ENABLE_EXTERNAL_PUBLISHING', '
 }
 warn('DATA_DIR set explicitly', !!env.DATA_DIR, env.DATA_DIR ? env.DATA_DIR : 'unset — defaults to a path inside the repo itself; must be outside any deploy/release folder that gets wiped on redeploy (see hostinger-deployment.md)');
 
+// Phase 6F, Part 81 — Universal Integration Platform production readiness. Never a secret
+// VALUE, only presence/completeness — same discipline as every other check above.
+const tenantCustomConnectorsEnabled = env.ENABLE_TENANT_CUSTOM_CONNECTORS === 'true';
+info('ENABLE_TENANT_CUSTOM_CONNECTORS', `${tenantCustomConnectorsEnabled} (default false)${tenantCustomConnectorsEnabled ? ' — WARNING: no tenant-facing custom-connector creation endpoint exists yet (Phase 6F deferred the full governance workflow); this flag currently gates nothing real' : ''}`);
+if (tenantCustomConnectorsEnabled) warn('Tenant custom connector governance implemented', false, 'flag is on but Draft->Review->Approve workflow, per-tenant limits, and capability/event/write policy are NOT implemented (see docs/TENANT_CUSTOM_CONNECTORS.md) — do not rely on this flag for anything in production yet');
+
+const zidVars = ['ZID_CLIENT_ID', 'ZID_CLIENT_SECRET', 'ZID_REDIRECT_URI'];
+const zidPresent = zidVars.filter(v => !!env[v]);
+if (zidPresent.length > 0 && zidPresent.length < zidVars.length) blocker('Zid OAuth fully configured', false, `partially set (${zidPresent.join(', ')}) — all three of ${zidVars.join('/')} are required together or Zid connect will fail for every tenant`);
+else info('Zid OAuth', zidPresent.length === zidVars.length ? 'fully configured' : 'not configured — Zid tools stay INTEGRATION_REQUIRED until a tenant connects');
+
+// Every generic/dynamic connector's webhook auth (HMAC/header-token/shared-secret) is stored
+// per-CONNECTION in the Vault (never in an env var) — there is deliberately nothing platform-
+// wide to validate here beyond INTEGRATION_ENCRYPTION_KEY (already checked above), which is
+// what protects every one of those per-connection secrets at rest.
+info('Dynamic connector webhook security', 'per-connection, Vault-encrypted (no platform-wide webhook secret env var exists or is needed)');
+
 console.log('\n=== HyperCool Production Config Check ===\n');
 let hasBlocker = false;
 for (const r of results) {
