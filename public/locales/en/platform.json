@@ -51,12 +51,16 @@
     "newConnector": "Create Integration",
     "manageIntegrations": "Manage Integrations",
     "dashboardCardTitle": "Integration Platform",
-    "dashboardCard": { "total": "Total Connectors", "published": "Published", "draft": "Draft", "disabled": "Disabled" },
+    "dashboardCard": { "total": "Total Connectors", "published": "Published", "draft": "Draft", "disabled": "Disabled", "active": "Active Connections", "unhealthy": "Unhealthy Connections", "failedWebhooks": "Failed Webhooks" },
     "filters": { "all": "All", "draft": "Draft", "published": "Published", "disabled": "Disabled" },
     "emptyState": "Create your first integration and connect HyperCool to any platform or API.",
     "emptyStateHint": "Use the Integration Builder to add Zid, TikTok, Snapchat, Odoo, Zoho, an accounting system, or any other REST API.",
     "notFound": "This connector could not be found",
-    "table": { "name": "Name", "slug": "Slug", "category": "Category", "auth": "Auth", "capabilities": "Capabilities", "actionsCount": "Actions", "webhooksCount": "Webhooks", "status": "Status", "version": "Version", "connections": "Connections", "updated": "Updated", "type": "Type", "actions": "Actions" },
+    "clone": "Clone",
+    "export": "Export",
+    "import": "Import",
+    "importInvalidFile": "Invalid file — must be real JSON exported from this system",
+    "table": { "name": "Name", "slug": "Slug", "category": "Category", "adapter": "Adapter", "auth": "Auth", "capabilities": "Capabilities", "actionsCount": "Actions", "webhooksCount": "Webhooks", "status": "Status", "version": "Version", "connections": "Connections", "updated": "Updated", "type": "Type", "actions": "Actions" },
     "type": { "system": "System (code)", "dynamic": "Dynamic (Builder)" },
     "status": { "DRAFT": "Draft", "PUBLISHED": "Published", "DISABLED": "Disabled" },
     "manage": "Manage",
@@ -125,7 +129,11 @@
     "publishConfirm": "This connector will immediately become visible to every tenant in the marketplace. Continue?",
     "publishSucceeded": "Published successfully — version {version}",
     "disableConfirm": "This blocks every new connection to this connector; existing connections are preserved. Continue?",
+    "disableImpact": "Real impact right now: {connections} connection(s) across {tenants} tenant(s), and {agents} active agent assignment(s) will stop working immediately.",
     "createFirst": "Create the draft in the Basics tab first before adding actions or webhooks",
-    "connectionsCount": "{count} real connection(s) currently depend on this connector"
+    "connectionsCount": "{count} real connection(s) currently depend on this connector",
+    "mappingPreviewTitle": "Mapping Preview",
+    "samplePayloadLabel": "Sample payload (JSON)",
+    "previewMapping": "Preview"
   }
 }

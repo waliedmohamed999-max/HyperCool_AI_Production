@@ -376,7 +376,11 @@ function paintAgentTools(panel,agentId,tools){
   const row=document.createElement('div');row.className='audit-row';
   const readinessStatus=tool.readiness?.status||'READY';
   row.innerHTML=`<div class="row-between"><strong>${escape(tool.slug)}</strong>${badge(TOOL_STATUS_LABEL(readinessStatus),readinessStatus==='READY'?'CONNECTED':readinessStatus==='CONNECTION_CAPABILITY_MISSING'?'ERROR':readinessStatus==='DISABLED'?'DISCONNECTED':'PENDING')}</div><p>${escape(tool.description||'')}</p>`;
-  if(tool.integrationSlug && tool.requiresConnection!==false){
+  // Phase 6F fix — a generic, capability-only tool (integrationSlug:null; get_invoices/
+  // get_orders/get_customers) used to never show a connection selector at all here, even
+  // though the backend has fully supported assigning one since Phase 6D/6E — this condition
+  // pre-dates generic capability tools and only ever checked the fixed-provider shape.
+  if(tool.requiresConnection!==false){
    const selector=document.createElement('div');selector.className='row';
    const select=document.createElement('select');
    select.innerHTML=`<option value="">${escape(t('controlCenter.noConnectionAssigned'))}</option>`;
@@ -567,8 +571,46 @@ function openProviderDrawer(provider){
    try{await api(`/api/integrations/connections/${c.id}/disconnect`,{});toastAndRefresh(t('common.savedSuccessfully'));}catch(error){toastError(error.message);}
   };
   actions.append(disconnect);
+  // Item 16/17/19 — Manual Action Runner + Action History, through the EXACT SAME
+  // ConnectorRuntime pipeline (capability/health/approval checks included) the Agent tool
+  // path already uses — never a bypass, never a raw secret shown.
+  const runAction=button(t('controlCenter.runAction'),{variant:'ghost'});
+  runAction.onclick=()=>openActionRunner(c);
+  actions.append(runAction);
  }
  drawer(getLocale()==='en'?provider.nameEn:provider.nameAr,node);
+}
+async function openActionRunner(connection){
+ const node=document.createElement('div');node.innerHTML=skeleton(t('common.loading'));
+ const dialog=drawer(t('controlCenter.runAction'),node);
+ let actions,history;
+ try{[actions,history]=await Promise.all([api(`/api/integrations/connections/${connection.id}/actions`),api(`/api/integrations/connections/${connection.id}/action-history`)]);}
+ catch(error){node.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+ if(!actions.length){node.innerHTML=empty(t('controlCenter.noActionsAvailable'));return;}
+ node.innerHTML=`
+  <label>${escape(t('controlCenter.actionLabel'))}<select name="action">${actions.map(a=>`<option value="${escape(a.slug)}" dir="ltr">${escape(getLocale()==='en'?a.nameEn:a.nameAr)} — ${escape(a.method)} ${escape(a.pathTemplate||'')}</option>`).join('')}</select></label>
+  <label>${escape(t('controlCenter.actionInputLabel'))}<textarea name="input" dir="ltr" rows="4" placeholder="{}">{}</textarea></label>
+  <div id="runner-result"></div>
+  <div class="report-actions" id="runner-actions"></div>
+  <h4>${escape(t('controlCenter.actionHistoryTitle'))}</h4>
+  <div id="runner-history">${history.length?table([t('controlCenter.actionLabel'),t('controlCenter.statusLabel'),t('controlCenter.lastChecked'),t('common.field')],history.map(h=>[escape(h.actionSlug),badge(h.status,h.status==='OK'?'CONNECTED':'ERROR'),new Date(h.at).toLocaleString(getLocale()==='en'?'en-US':'ar-SA'),escape(h.errorCode||h.latencyMs+' ms')])):empty(t('controlCenter.noActionsRunYet'))}</div>`;
+ const runButton=button(t('controlCenter.runAction'),{variant:'primary'});
+ runButton.onclick=async()=>{
+  const actionSlug=node.querySelector('[name=action]').value;
+  let input={};
+  try{input=JSON.parse(node.querySelector('[name=input]').value||'{}');}
+  catch{toastError(t('controlCenter.invalidJson'));return;}
+  runButton.disabled=true;
+  try{
+   const result=await api(`/api/integrations/connections/${connection.id}/actions/${actionSlug}`,{input});
+   const resultHost=node.querySelector('#runner-result');
+   if(result.status==='WAITING_APPROVAL'){resultHost.innerHTML=`<p class="notice">${escape(t('controlCenter.actionWaitingApproval'))}</p>`;}
+   else if(result.status==='OK'){resultHost.innerHTML=`<p class="notice">${escape(t('controlCenter.actionSucceeded',{latency:result.latencyMs}))}</p><pre dir="ltr">${escape(JSON.stringify(result.output,null,1)).slice(0,2000)}</pre>`;}
+   else{resultHost.innerHTML=`<p class="notice trial-banner-warning">${escape(t('controlCenter.actionFailed',{code:result.errorCode||result.status}))}</p>`;}
+  }catch(error){toastError(error.message);}
+  finally{runButton.disabled=false;}
+ };
+ node.querySelector('#runner-actions').append(runButton);
 }
 
 // --- System check (Part 51/79 — safe, read-only aggregation only) -------------------------

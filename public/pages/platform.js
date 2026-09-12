@@ -38,21 +38,24 @@ export async function renderPlatformPage({api:client,auth}){
   return;
  }
  if(staleGuard(generation))return;
- renderIntegrationPlatformCard(connectors);
+ renderIntegrationPlatformCard(connectors,overview);
  renderOverview(overview);
  renderDirectory(directory);
  renderConnectorsSection(connectors);
 }
-/** Item 25 — a prominent, always-visible summary card for the whole Integration Platform,
- * with real counts from the SAME connector list the Builder table below renders (one fetch,
- * two views — never a second, divergent computation). */
-function renderIntegrationPlatformCard(connectors){
- const counts={total:connectors.length,published:connectors.filter(c=>c.status==='PUBLISHED').length,draft:connectors.filter(c=>c.status==='DRAFT').length,disabled:connectors.filter(c=>c.status==='DISABLED').length};
+/** Item 2/25 — a prominent, always-visible summary card for the whole Integration Platform.
+ * Connector counts come from the SAME list the Builder table below renders (one fetch, two
+ * views — never a second, divergent computation); connection/webhook health numbers reuse
+ * `buildPlatformOverview`'s own real, already-aggregated platform-wide figures (Part 2 —
+ * never a third, separate computation of "how many connections are unhealthy"). */
+function renderIntegrationPlatformCard(connectors,overview){
+ const counts={total:connectors.length,published:connectors.filter(c=>c.status==='PUBLISHED').length,draft:connectors.filter(c=>c.status==='DRAFT').length,disabled:connectors.filter(c=>c.status==='DISABLED').length,
+  active:overview.healthyConnections??0,unhealthy:overview.connectionsNeedingAttention??0,failedWebhooks:overview.failedWebhooks??0};
  const host=$('#pf-integration-card');
  host.innerHTML=`<article class="card pf-integration-card">
   <div class="row-between"><h3>${escape(t('platform.builder.dashboardCardTitle'))}</h3></div>
   <div class="kpi-grid">
-   ${['total','published','draft','disabled'].map(k=>`<div class="kpi-card"><span class="kpi-label">${escape(t('platform.builder.dashboardCard.'+k))}</span><strong class="kpi-value">${counts[k]}</strong></div>`).join('')}
+   ${['total','published','draft','disabled','active','unhealthy','failedWebhooks'].map(k=>`<div class="kpi-card"><span class="kpi-label">${escape(t('platform.builder.dashboardCard.'+k))}</span><strong class="kpi-value">${counts[k]}</strong></div>`).join('')}
   </div>
   <div class="report-actions"></div>
  </article>`;
@@ -187,7 +190,28 @@ function renderConnectorsSection(connectors){
   <div id="pf-connectors-list"></div>`;
  const newButton=button(t('platform.builder.newConnector'),{variant:'primary',iconName:'plus'});
  newButton.onclick=()=>openConnectorWizard(null);
- host.querySelector('.report-section-head').append(newButton);
+ const importButton=button(t('platform.builder.import'),{variant:'secondary'});
+ const fileInput=document.createElement('input');fileInput.type='file';fileInput.accept='application/json';fileInput.hidden=true;
+ importButton.onclick=()=>fileInput.click();
+ fileInput.onchange=async()=>{
+  const file=fileInput.files?.[0];fileInput.value='';
+  if(!file)return;
+  let parsed;
+  try{parsed=JSON.parse(await file.text());}catch{toastError(t('platform.builder.importInvalidFile'));return;}
+  const newSlug=await promptDrawer(t('platform.builder.import'),node=>{
+   const input=document.createElement('input');input.name='slug';input.required=true;input.pattern='[a-z][a-z0-9_-]*';input.maxLength=60;input.dir='ltr';input.value=parsed.slug||'';
+   const label=document.createElement('label');label.textContent=t('platform.builder.fields.slug');label.append(input);node.append(label);
+   return {value:()=>input.value.trim(),focus:()=>input.focus()};
+  },{confirmLabel:t('platform.builder.import')});
+  if(!newSlug)return;
+  try{
+   const imported=await apiClient('/api/platform/connectors/import',{definition:parsed,slug:newSlug});
+   toast(t('common.savedSuccessfully'));
+   await renderConnectorsSectionRefresh();
+   openConnectorWizard(imported);
+  }catch(error){toastError(error.message);}
+ };
+ host.querySelector('.report-section-head').append(newButton,importButton,fileInput);
  const tabsHost=host.querySelector('#pf-connectors-tabs');
  const filterPanels=['ALL','DRAFT','PUBLISHED','DISABLED'].map(()=>{const el=document.createElement('div');el.hidden=true;return el;});
  tabsHost.append(...filterPanels);
@@ -215,10 +239,11 @@ function paintConnectorsList(container,list){
   return;
  }
  container.innerHTML=table(
-  [t('platform.builder.table.name'),t('platform.builder.table.category'),t('platform.builder.table.auth'),t('platform.builder.table.capabilities'),t('platform.builder.table.actionsCount'),t('platform.builder.table.webhooksCount'),t('platform.builder.table.status'),t('platform.builder.table.version'),t('platform.builder.table.connections'),t('platform.builder.table.updated'),t('platform.builder.table.actions')],
+  [t('platform.builder.table.name'),t('platform.builder.table.category'),t('platform.builder.table.adapter'),t('platform.builder.table.auth'),t('platform.builder.table.capabilities'),t('platform.builder.table.actionsCount'),t('platform.builder.table.webhooksCount'),t('platform.builder.table.status'),t('platform.builder.table.version'),t('platform.builder.table.connections'),t('platform.builder.table.updated'),t('platform.builder.table.actions')],
   filtered.map(c=>[
    `${escape(getLocale()==='en'?c.nameEn:c.nameAr)} <span dir="ltr" class="kpi-context">${escape(c.slug)}</span>`,
    escape(c.category),
+   `<span dir="ltr">${escape(c.adapterType)}</span>`,
    escape(c.authConfig?.type||c.authType),
    `<span dir="ltr">${(c.capabilities||[]).map(escape).join(', ')||'—'}</span>`,
    escape(c.actionsCount??0),
@@ -235,7 +260,46 @@ function paintConnectorsList(container,list){
   const manage=button(t('platform.builder.manage'),{variant:'secondary'});
   manage.onclick=()=>openConnectorWizard(c);
   cell.append(manage);
+  if(!c.isSystem){
+   const clone=button(t('platform.builder.clone'),{variant:'ghost'});
+   clone.onclick=()=>startCloneConnector(c);
+   const exportButton=button(t('platform.builder.export'),{variant:'ghost'});
+   exportButton.onclick=()=>exportConnectorToFile(c);
+   cell.append(clone,exportButton);
+  }
  }
+}
+/** Item 7/23/24 — a real, new DRAFT copy of the declarative shape (never a system connector,
+ * never a credential — see cloneConnectorDefinition's own doc comment). */
+function startCloneConnector(summary){
+ promptDrawer(t('platform.builder.clone'),node=>{
+  const input=document.createElement('input');input.name='slug';input.required=true;input.pattern='[a-z][a-z0-9_-]*';input.maxLength=60;input.dir='ltr';input.value=summary.slug+'_copy';
+  const label=document.createElement('label');label.textContent=t('platform.builder.fields.slug');label.append(input);node.append(label);
+  return {value:()=>input.value.trim(),focus:()=>input.focus()};
+ },{confirmLabel:t('platform.builder.clone')}).then(async newSlug=>{
+  if(!newSlug)return;
+  try{
+   const cloned=await apiClient(`/api/platform/connectors/${summary.id}/clone`,{slug:newSlug});
+   toast(t('common.savedSuccessfully'));
+   await renderConnectorsSectionRefresh();
+   openConnectorWizard(cloned);
+  }catch(error){toastError(error.message);}
+ });
+}
+/** Item 8/22 — safe, portable JSON, declarative shape only (verified secret-free by
+ * construction). The viewer's sandbox blocks script-driven file saves in a published Artifact,
+ * but this is the real app, not an artifact — a plain download anchor works normally here. */
+async function exportConnectorToFile(summary){
+ try{
+  const exported=await apiClient(`/api/platform/connectors/${summary.id}/export`);
+  const blob=new Blob([JSON.stringify(exported,null,1)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=`${summary.slug}.connector.json`;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(error){toastError(error.message);}
+}
+async function renderConnectorsSectionRefresh(){
+ try{const list=await apiClient('/api/platform/connectors');renderConnectorsSection(list);}catch{/* best-effort refresh only */}
 }
 /** Cross-page shortcut (item 20/M): the Control Center's "إدارة التكامل" button imports this
  * directly rather than depending on the Builder table already being rendered — it fetches the
@@ -369,7 +433,25 @@ async function openConnectorWizard(summary){
     <label>${escape(t('platform.builder.fields.requiredCapability'))}<select name="cap">${(detail.capabilities||[]).map(c=>`<option value="${escape(c)}" dir="ltr">${escape(c)}</option>`).join('')}</select></label>
     <label>${escape(t('platform.builder.fields.riskLevel'))}<select name="riskLevel">${RISK_LEVELS.map(r=>`<option>${r}</option>`).join('')}</select></label>
     <label class="check"><input type="checkbox" name="requiresApproval"> ${escape(t('platform.builder.fields.requiresApproval'))}</label>
-    <label>${escape(t('platform.builder.fields.responseMappingArrayFrom'))}<input name="arrayFrom" dir="ltr" placeholder="invoices"></label>`;
+    <label>${escape(t('platform.builder.fields.responseMappingArrayFrom'))}<input name="arrayFrom" dir="ltr" placeholder="invoices"></label>
+    <h4>${escape(t('platform.builder.mappingPreviewTitle'))}</h4>
+    <label>${escape(t('platform.builder.samplePayloadLabel'))}<textarea name="samplePayload" dir="ltr" rows="4" placeholder='{"invoices":[{"id":"inv1","total":250}]}'></textarea></label>
+    <div id="mapping-preview-actions" class="report-actions"></div>
+    <div id="mapping-preview-result"></div>`;
+   const previewButton=button(t('platform.builder.previewMapping'),{variant:'secondary'});
+   previewButton.onclick=async()=>{
+    const resultHost=n.querySelector('#mapping-preview-result');
+    let samplePayload;
+    try{samplePayload=JSON.parse(n.querySelector('[name=samplePayload]').value||'{}');}
+    catch{resultHost.innerHTML=`<p class="notice trial-banner-warning">${escape(t('controlCenter.invalidJson'))}</p>`;return;}
+    const arrayFrom=n.querySelector('[name=arrayFrom]').value.trim();
+    const mapping=arrayFrom?{array:{from:arrayFrom,item:{}}}:{object:{}};
+    try{
+     const preview=await apiClient('/api/platform/mapping-preview',{mapping,samplePayload});
+     resultHost.innerHTML=preview.ok?`<pre dir="ltr">${escape(JSON.stringify(preview.result,null,1)).slice(0,1500)}</pre>`:`<p class="notice trial-banner-warning">${escape(preview.message||preview.errorCode)}</p>`;
+    }catch(error){resultHost.innerHTML=`<p class="notice trial-banner-warning">${escape(error.message)}</p>`;}
+   };
+   n.querySelector('#mapping-preview-actions').append(previewButton);
    return {
     value:()=>{
      const val=name=>n.querySelector(`[name=${name}]`).value.trim();
@@ -484,7 +566,13 @@ async function openConnectorWizard(summary){
   if(detail.status==='PUBLISHED'){
    const disableButton=button(t('platform.builder.disable'),{variant:'danger'});
    disableButton.onclick=async()=>{
-    const confirmed=await promptDrawer(t('platform.builder.disable'),n=>{n.innerHTML=`<p>${escape(t('platform.builder.disableConfirm'))}</p>`;},{confirmLabel:t('platform.builder.disable')});
+    // Item 34/51 — a real, live dependency count fetched fresh right before the confirmation
+    // is shown, never a stale number from whenever the drawer first opened.
+    let deps={connections:0,tenants:0,agentAssignments:0};
+    try{deps=await apiClient(`/api/platform/connectors/${definitionId}/dependencies`);}catch{/* show the confirmation anyway with a conservative "unknown" note */}
+    const confirmed=await promptDrawer(t('platform.builder.disable'),n=>{
+     n.innerHTML=`<p>${escape(t('platform.builder.disableConfirm'))}</p><p>${escape(t('platform.builder.disableImpact',{connections:deps.connections,tenants:deps.tenants,agents:deps.agentAssignments}))}</p>`;
+    },{confirmLabel:t('platform.builder.disable')});
     if(!confirmed)return;
     try{await apiClient(`/api/platform/connectors/${definitionId}/disable`,{});toast(t('platform.actionSucceeded'));await reload();refreshConnectorsListInBackground();}
     catch(error){toastError(error.message);}

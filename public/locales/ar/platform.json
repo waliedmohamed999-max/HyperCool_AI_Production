@@ -51,12 +51,16 @@
     "newConnector": "إنشاء تكامل جديد",
     "manageIntegrations": "إدارة التكاملات",
     "dashboardCardTitle": "منصّة التكاملات",
-    "dashboardCard": { "total": "إجمالي الموصلات", "published": "منشورة", "draft": "مسودات", "disabled": "معطَّلة" },
+    "dashboardCard": { "total": "إجمالي الموصلات", "published": "منشورة", "draft": "مسودات", "disabled": "معطَّلة", "active": "اتصالات نشطة", "unhealthy": "اتصالات غير سليمة", "failedWebhooks": "Webhooks فاشلة" },
     "filters": { "all": "الكل", "draft": "مسودة", "published": "منشور", "disabled": "معطَّل" },
     "emptyState": "أنشئ أول تكامل جديد واربط HyperCool بأي منصة أو API.",
     "emptyStateHint": "استخدم منشئ التكاملات لإضافة Zid وTikTok وSnapchat وOdoo وZoho وأي نظام محاسبي أو REST API آخر.",
     "notFound": "هذا التكامل غير موجود",
-    "table": { "name": "الاسم", "slug": "المعرّف", "category": "الفئة", "auth": "المصادقة", "capabilities": "القدرات", "actionsCount": "الإجراءات", "webhooksCount": "Webhooks", "status": "الحالة", "version": "الإصدار", "connections": "الاتصالات", "updated": "آخر تحديث", "type": "النوع", "actions": "إجراءات" },
+    "clone": "استنساخ",
+    "export": "تصدير",
+    "import": "استيراد",
+    "importInvalidFile": "ملف غير صالح — يجب أن يكون JSON حقيقيًا تم تصديره من هذا النظام",
+    "table": { "name": "الاسم", "slug": "المعرّف", "category": "الفئة", "adapter": "النوع التقني", "auth": "المصادقة", "capabilities": "القدرات", "actionsCount": "الإجراءات", "webhooksCount": "Webhooks", "status": "الحالة", "version": "الإصدار", "connections": "الاتصالات", "updated": "آخر تحديث", "type": "النوع", "actions": "إجراءات" },
     "type": { "system": "نظامي (كود)", "dynamic": "ديناميكي (Builder)" },
     "status": { "DRAFT": "مسودة", "PUBLISHED": "منشور", "DISABLED": "معطَّل" },
     "manage": "إدارة",
@@ -125,7 +129,11 @@
     "publishConfirm": "سيصبح هذا الموصل ظاهرًا فورًا لجميع المستأجرين في السوق. متابعة؟",
     "publishSucceeded": "تم النشر بنجاح — الإصدار {version}",
     "disableConfirm": "سيمنع هذا كل اتصال جديد بهذا الموصل، لكن الاتصالات الحالية تبقى محفوظة. متابعة؟",
+    "disableImpact": "التأثير الحقيقي الآن: {connections} اتصال في {tenants} منشأة، و{agents} تعيين وكيل نشط سيتوقف عن العمل فورًا.",
     "createFirst": "أنشئ المسودة أولًا من تبويب الأساسيات قبل إضافة إجراءات أو أحداث",
-    "connectionsCount": "{count} اتصال حقيقي يعتمد على هذا الموصل حاليًا"
+    "connectionsCount": "{count} اتصال حقيقي يعتمد على هذا الموصل حاليًا",
+    "mappingPreviewTitle": "معاينة التحويل (Mapping Preview)",
+    "samplePayloadLabel": "بيانات نموذجية (JSON)",
+    "previewMapping": "معاينة"
   }
 }
