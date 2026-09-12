@@ -15,6 +15,10 @@ let filters={status:'all',query:''};
 const AGENT_STATUS_VARIANT={READY:'CONNECTED',PARTIAL:'DEGRADED',BLOCKED:'ERROR',DISABLED:'DISCONNECTED'};
 const CONNECTION_MODE_LABEL=mode=>t('controlCenter.connectionMode.'+(mode||'SINGLE'));
 const TOOL_STATUS_LABEL=status=>t('controlCenter.toolStatus.'+status)||status;
+// Phase 6E — every real, approved, platform-managed OAuth2 provider sharing the generic
+// multi-connection OAuth flow (application.js's GENERIC_OAUTH_PROVIDERS allowlist). Adding a
+// future approved OAuth2 connector means adding its slug here, never a new branch shape.
+const GENERIC_OAUTH_SLUGS=new Set(['salla','zid']);
 
 function statusBadge(status,map=AGENT_STATUS_VARIANT){return badge(t('controlCenter.status.'+status)||status,map[status]||status);}
 
@@ -153,7 +157,7 @@ function renderIntegrationsTab(){
    actions.append(manage);
   }
   if(canAddConnection(provider)){
-   const add=button(provider.slug==='salla'?t('controlCenter.addStore'):t('controlCenter.addConnection'),{variant:'primary',iconName:'plus'});
+   const add=button(GENERIC_OAUTH_SLUGS.has(provider.slug)?t('controlCenter.addStore'):t('controlCenter.addConnection'),{variant:'primary',iconName:'plus'});
    add.onclick=()=>startAddConnection(provider);
    actions.append(add);
   } else if(disabledByPlatform){
@@ -174,7 +178,7 @@ function renderIntegrationsTab(){
  * either. */
 function canAddConnection(provider){
  if(!provider.isAvailable||provider.status==='DISABLED')return false;
- if(provider.slug==='salla')return true;
+ if(GENERIC_OAUTH_SLUGS.has(provider.slug))return true; // real MULTI-store OAuth providers (Salla, Zid) — always offer "add another store"
  if(['anthropic','openai'].includes(provider.slug))return true;
  return provider.connections.length===0 && provider.connectionMode!=='UNAVAILABLE';
 }
@@ -223,14 +227,14 @@ function startGenericConnect(provider){
  });
 }
 function startAddConnection(provider){
- if(provider.slug==='salla'){
+ if(GENERIC_OAUTH_SLUGS.has(provider.slug)){
   promptDrawer(t('controlCenter.addStore'),node=>{
    const input=document.createElement('input');input.name='name';input.required=true;input.maxLength=100;input.placeholder=t('controlCenter.storeNamePlaceholder');
    const label=document.createElement('label');label.textContent=t('controlCenter.connectionNameLabel');label.append(input);node.append(label);
    return {value:()=>input.value.trim(),focus:()=>input.focus()};
   },{confirmLabel:t('controlCenter.startOAuth')}).then(name=>{
    if(name===null)return;
-   window.location.href=`/api/integrations/oauth/salla/start?name=${encodeURIComponent(name||t('controlCenter.storeNamePlaceholder'))}`;
+   window.location.href=`/api/integrations/oauth/${provider.slug}/start?name=${encodeURIComponent(name||t('controlCenter.storeNamePlaceholder'))}`;
   });
   return;
  }

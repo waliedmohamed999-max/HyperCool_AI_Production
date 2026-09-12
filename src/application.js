@@ -56,6 +56,8 @@ import {isTrialActive,getTrialDaysRemaining,countSelfCreatedWorkspaces} from './
 import {installContent,listContent,getContent,getContentOrNull,insertContent,writeContent} from './content.js';
 import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
+import {createZidAuthorizeUrl,exchangeZidCodeForTokens} from './runtime/zid-oauth.js';
+import {safeFetch} from './connectors/core/ssrf.js';
 import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
 import {resolveTenantForWhatsAppPhoneNumberId,resolveTenantForMicrosoftSubscription,resolveTenantForSallaMerchant} from './runtime/webhook-tenant-resolver.js';
 import {installIntegrationDefinitions,listIntegrationDefinitions,getIntegrationDefinition} from './integrations/definitions.js';
@@ -110,13 +112,39 @@ function validateEnv(env) {
   ['Microsoft 365',['MICROSOFT_ACCESS_TOKEN, or MICROSOFT_CLIENT_ID/SECRET/TENANT_ID/REDIRECT_URI for OAuth'],!!env.MICROSOFT_ACCESS_TOKEN||!!(env.MICROSOFT_CLIENT_ID&&env.MICROSOFT_CLIENT_SECRET&&env.MICROSOFT_REDIRECT_URI)],
   ['Microsoft 365 OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.MICROSOFT_CLIENT_ID||credentialsConfigured(env)],
   ['Microsoft 365 mail webhook',['MICROSOFT_WEBHOOK_SECRET'],!!env.MICROSOFT_WEBHOOK_SECRET],
-  ['Canva',['CANVA_API_KEY'],!!env.CANVA_API_KEY]
+  ['Canva',['CANVA_API_KEY'],!!env.CANVA_API_KEY],
+  ['Zid',['ZID_CLIENT_ID/ZID_CLIENT_SECRET/ZID_REDIRECT_URI for OAuth'],!!(env.ZID_CLIENT_ID&&env.ZID_CLIENT_SECRET&&env.ZID_REDIRECT_URI)],
+  ['Zid OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.ZID_CLIENT_ID||credentialsConfigured(env)]
  ];
  for(const [name,vars,configured] of optionalIntegrations)
   if(!configured)console.warn(`[HyperCool] REQUIRED_FOR_OPTIONAL_INTEGRATION — ${name} not configured (missing: ${vars.join(', ')}). Core app and CRM are unaffected; only this integration's tools stay INTEGRATION_REQUIRED.`);
  const configuredCount=optionalIntegrations.filter(o=>o[2]).length;
  console.log(`[HyperCool] environment check: ${configuredCount}/${optionalIntegrations.length} optional integrations configured. SYSTEM_MODE=${env.SYSTEM_MODE||'(unset — autonomy levels run uncapped; set PRODUCTION_SAFE to cap every agent at L1 for first launch)'}.`);
 }
+
+// Phase 6E, Part 3/51/56 — the generic multi-connection OAuth routes below dispatch through
+// this FIXED, code-reviewed allowlist only — a tenant can never supply their own
+// authorize/token URL (Part 3: "No Generic Unsafe OAuth"). Adding a future approved OAuth2
+// connector means adding one more entry here, never widening the route itself to accept an
+// arbitrary provider.
+async function resolveZidIdentity({env,fetcher,accessToken}) {
+ // docs.zid.sa/get-manager-profile — GET /v1/managers/account/profile, the same real,
+ // read-only endpoint Zid's health check uses (Part 20/21) — resolves the real store id/name
+ // right after a successful token exchange, through the SSRF-hardened transport, never the
+ // bare `fetcher`.
+ const response=await safeFetch('https://api.zid.sa/v1/managers/account/profile',{
+  method:'GET',headers:{authorization:`Bearer ${accessToken}`,'x-manager-token':accessToken},
+  timeoutMs:10000,maxResponseBytes:256*1024,allowedHosts:['api.zid.sa']
+ });
+ if(response.status!==200)return null;
+ const profile=JSON.parse(response.body.toString('utf8')||'null');
+ if(!profile?.store?.id)return null;
+ return {externalAccountId:String(profile.store.id),externalAccountName:profile.store.title||null};
+}
+const GENERIC_OAUTH_PROVIDERS={
+ salla:{createAuthorizeUrl,exchangeCodeForTokens,defaultConnectionName:'متجر سلة جديد',resolveIdentity:null},
+ zid:{createAuthorizeUrl:createZidAuthorizeUrl,exchangeCodeForTokens:exchangeZidCodeForTokens,defaultConnectionName:'متجر زد جديد',resolveIdentity:resolveZidIdentity}
+};
 
 export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLToPath(new URL('../data/',import.meta.url)),fetcher=fetch}={}) {
   const publicUrl=env.PUBLIC_ORIGIN?new URL(env.PUBLIC_ORIGIN):null;
@@ -1540,30 +1568,35 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         recordAudit(store.db,{id:crypto.randomUUID(),action:'CREDENTIAL_CREATED',itemId:connection.id,provider:connection.integrationDefinitionId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
         return send(200,getCredentialMeta(store.db,connection.id,session.tenantId));
       }
-      // Generic OAuth start/callback — Salla only in this pass (see block comment above).
-      // Deliberately a SEPARATE path (/api/integrations/oauth/:slug/...) from the existing
-      // /api/integrations/salla/oauth/... routes so the two flows never collide: the old
-      // route always operates on Salla's single mirrored "default" connection, this one can
-      // create/refresh any specific connection (Phase 54's multi-store proof).
+      // Generic OAuth start/callback — Salla and (Phase 6E) Zid, both real, approved,
+      // platform-managed OAuth2 flows. Deliberately a SEPARATE path
+      // (/api/integrations/oauth/:slug/...) from the existing /api/integrations/salla/oauth/...
+      // routes so the two flows never collide: the old route always operates on Salla's single
+      // mirrored "default" connection, this one can create/refresh any specific connection
+      // (Phase 54's multi-store proof). Every provider here is a fixed, code-reviewed entry in
+      // GENERIC_OAUTH_PROVIDERS below — a tenant never supplies its own authorize/token URL
+      // (Part 3 of Phase 6E: "No Generic Unsafe OAuth").
       const genericOAuthStart=url.pathname.match(/^\/api\/integrations\/oauth\/([\w-]+)\/start$/);
       if(req.method==='GET' && genericOAuthStart) {
         authorize(session,['owner']);
         const slug=genericOAuthStart[1];
-        if(slug!=='salla')fail(501,'تدفق الربط العام (متعدد الاتصالات) غير متاح بعد لهذا التكامل — استخدم مسار الربط الحالي');
+        const provider=GENERIC_OAUTH_PROVIDERS[slug];
+        if(!provider)fail(501,'تدفق الربط العام (متعدد الاتصالات) غير متاح بعد لهذا التكامل — استخدم مسار الربط الحالي');
         if(!getIntegrationDefinition(store.db,slug))fail(400,'تكامل غير معروف');
         const existingId=url.searchParams.get('connectionId')||null;
         const connection=existingId
          ?getConnection(store.db,existingId,session.tenantId)
-         :createConnection(store.db,{integrationDefinitionId:slug,name:url.searchParams.get('name')||'متجر سلة جديد',connectedBy:session.user.id},session.tenantId);
+         :createConnection(store.db,{integrationDefinitionId:slug,name:url.searchParams.get('name')||provider.defaultConnectionName,connectedBy:session.user.id},session.tenantId);
         const stateToken=createOAuthState(store.db,{tenantId:session.tenantId,userId:session.user.id,integrationDefinitionId:slug,connectionId:connection.id},env);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'OAUTH_STARTED',itemId:connection.id,provider:slug,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-        res.writeHead(302,{Location:createAuthorizeUrl(env,session.user.id,stateToken)});return res.end();
+        res.writeHead(302,{Location:provider.createAuthorizeUrl(env,session.user.id,stateToken)});return res.end();
       }
       const genericOAuthCallback=url.pathname.match(/^\/api\/integrations\/oauth\/([\w-]+)\/callback$/);
       if(req.method==='GET' && genericOAuthCallback) {
         authorize(session,['owner']);
         const slug=genericOAuthCallback[1];
-        if(slug!=='salla')fail(501,'تدفق الربط العام (متعدد الاتصالات) غير متاح بعد لهذا التكامل');
+        const provider=GENERIC_OAUTH_PROVIDERS[slug];
+        if(!provider)fail(501,'تدفق الربط العام (متعدد الاتصالات) غير متاح بعد لهذا التكامل');
         const code=url.searchParams.get('code'),state=url.searchParams.get('state');
         if(!code||!state)fail(400,'استجابة ربط ناقصة (code/state)');
         let consumed;
@@ -1573,16 +1606,24 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
          throw error;
         }
         if(consumed.tenantId!==session.tenantId)fail(403,'طلب الربط لا يخص هذه المنشأة');
-        // Note (matches salla-oauth.js's own honest limitation): the merchant/store id is NOT
-        // resolved here — there is no live Salla app in this environment to verify the exact
-        // "fetch the merchant profile" endpoint against, and guessing one risks silently
-        // breaking real webhook routing. externalAccountId stays null until a real webhook
-        // resolves it (see webhook-tenant-resolver.js) or a verified profile call is added.
-        const tokens=await exchangeCodeForTokens({env,fetcher,code});
+        const tokens=await provider.exchangeCodeForTokens({env,fetcher,code});
         storeCredential(store.db,env,{connectionId:consumed.connectionId,credentialType:'oauth_tokens',payload:{accessToken:tokens.accessToken,refreshToken:tokens.refreshToken,expiresAt:tokens.expiresAt}},session.tenantId);
+        // Phase 6E, Part 21 — Zid's real, documented, read-only identity endpoint
+        // (GET /v1/managers/account/profile) is called right after a successful token
+        // exchange so `externalAccountId`/`externalAccountName` are resolved honestly instead
+        // of staying null forever (the pre-existing, still-unresolved Salla gap this comment
+        // used to describe is untouched — Salla still has no live app in this environment to
+        // verify a profile call against, so it is deliberately left exactly as it was).
+        let identity={};
+        if(provider.resolveIdentity){
+         try{identity=await provider.resolveIdentity({env,fetcher,accessToken:tokens.accessToken})||{};}
+         catch{identity={};}
+        }
         const now=new Date().toISOString();
         const connection=updateConnection(store.db,consumed.connectionId,{
          status:'CONNECTED',externalAccountType:slug,scopes:tokens.scopes,
+         ...(identity.externalAccountId?{externalAccountId:identity.externalAccountId}:{}),
+         ...(identity.externalAccountName?{externalAccountName:identity.externalAccountName}:{}),
          connectedBy:session.user.id,connectedAt:now,lastSuccessAt:now,lastErrorAt:null,lastErrorCode:null,lastErrorMessageSafe:null
         },session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'OAUTH_COMPLETED',itemId:connection.id,provider:slug,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);

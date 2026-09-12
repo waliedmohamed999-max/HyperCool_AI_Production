@@ -145,7 +145,15 @@ const TOOL_METADATA={
  // connection automatically, built-in or Builder-published alike, with zero per-connector
  // branch anywhere in this file or the Agent Runtime.
  get_invoices:{description:'List invoices from whichever accounting system this tenant has connected.',inputSchema:obj({}),minLevel:'L0',
-  category:'Accounting',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:true,isReadOnly:true,capability:'accounting.invoices.read'}
+  category:'Accounting',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:true,isReadOnly:true,capability:'accounting.invoices.read'},
+ // Phase 6E — the SAME generic, capability-only pattern get_invoices already proved in Phase
+ // 6D, now with a real second provider (Zid) behind it: whichever connected commerce platform
+ // grants `commerce.orders.read`/`commerce.customers.read` is auto-discovered, never a
+ // hardcoded `integrationSlug`.
+ get_orders:{description:'List orders from whichever commerce platform this tenant has connected.',inputSchema:obj({page:{type:'number'},perPage:{type:'number'}},[]),minLevel:'L0',
+  category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:true,isReadOnly:true,capability:'commerce.orders.read'},
+ get_customers:{description:'List customers from whichever commerce platform this tenant has connected.',inputSchema:obj({page:{type:'number'},perPage:{type:'number'}},[]),minLevel:'L0',
+  category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:true,isReadOnly:true,capability:'commerce.customers.read'}
 };
 /** Static metadata only — no store/env/handler required. Used to seed `tool_definitions` at boot (src/runtime/tool-definitions.js) and by anything else that needs the catalog without a live registry instance. */
 export function listToolMetadata() {
@@ -208,6 +216,20 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
    const connection=getConnectionOrNull(db,ctx.connectionId,ctx.tenantId);
    if(!connection)return {status:'INTEGRATION_REQUIRED'};
    const result=await executeConnectorAction({db,env,fetcher,tenantId:ctx.tenantId,connectorSlug:connection.integrationDefinitionId,connectionId:connection.id,actionId:'get_invoices',input:{},actor:ctx.actor});
+   return result.status==='OK'?result.output:result;
+  },
+  get_orders:async(input,ctx)=>{
+   if(!ctx.connectionId)return {status:'INTEGRATION_REQUIRED'};
+   const connection=getConnectionOrNull(db,ctx.connectionId,ctx.tenantId);
+   if(!connection)return {status:'INTEGRATION_REQUIRED'};
+   const result=await executeConnectorAction({db,env,fetcher,tenantId:ctx.tenantId,connectorSlug:connection.integrationDefinitionId,connectionId:connection.id,actionId:'get_orders',input:{page:input?.page,perPage:input?.perPage},actor:ctx.actor});
+   return result.status==='OK'?result.output:result;
+  },
+  get_customers:async(input,ctx)=>{
+   if(!ctx.connectionId)return {status:'INTEGRATION_REQUIRED'};
+   const connection=getConnectionOrNull(db,ctx.connectionId,ctx.tenantId);
+   if(!connection)return {status:'INTEGRATION_REQUIRED'};
+   const result=await executeConnectorAction({db,env,fetcher,tenantId:ctx.tenantId,connectorSlug:connection.integrationDefinitionId,connectionId:connection.id,actionId:'get_customers',input:{page:input?.page,perPage:input?.perPage},actor:ctx.actor});
    return result.status==='OK'?result.output:result;
   },
   get_products:(input,ctx)=>listProducts(db,ctx.tenantId),

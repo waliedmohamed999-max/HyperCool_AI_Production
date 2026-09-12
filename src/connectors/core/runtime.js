@@ -94,11 +94,14 @@ export async function executeConnectorAction({db,env,fetcher=fetch,tenantId,conn
  // 10. Connector adapter execution. `manifest` is passed through (Phase 6B addition, purely
  // additive — Salla/Anthropic/OpenAI's 6A adapters simply ignore it) so a SHARED generic
  // adapter (Generic REST) can read connector-level config (base URL, auth strategy) that a
- // single `action` object alone never carries.
+ // single `action` object alone never carries. `db` is passed through too (Phase 6E addition,
+ // same additive contract) so an OAuth-backed BUILT_IN adapter (Zid) can persist a refreshed
+ // access/refresh token pair back to the Vault itself — every pre-6E adapter ignores it exactly
+ // like they already ignore `manifest`.
  const startedAt=Date.now();
  let result;
  try {
-  result=await adapter.executeAction({action,input,env,fetcher,credential,connection,manifest,resolver,transport});
+  result=await adapter.executeAction({action,input,env,db,fetcher,credential,connection,manifest,resolver,transport});
  } catch(error) {
   // Preserve the real, specific, already-safe error code an adapter/lower layer (e.g. the
   // SSRF module's ConnectorHttpError) threw — never collapse every failure into one generic
@@ -147,7 +150,7 @@ export async function checkConnectorHealth({db,env,fetcher=fetch,tenantId,connec
  let credential=null;
  try{credential=getCredentialForRuntime(db,env,connectionId,tenantId);}catch{credential=null;}
  let result;
- try{result=await adapter.healthCheck({env,fetcher,credential,manifest,connection,resolver,transport});}
+ try{result=await adapter.healthCheck({env,db,fetcher,credential,manifest,connection,resolver,transport});}
  catch(error){result={status:'ERROR',errorCode:error?.code||'REMOTE_SERVER_ERROR'};}
  if(!result||typeof result.status!=='string')result={status:'ERROR',errorCode:'REMOTE_VALIDATION_ERROR'};
  return result;
