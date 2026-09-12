@@ -27,6 +27,18 @@ import {isInviteRoute,renderInvitePage} from './pages/invite.js';
 const labels=new Proxy({},{get:(_,code)=>{const key='operationsLog.actions.'+code,value=t(key);return value===key?undefined:value;}});
 const escape=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 await initI18n();
+function translateAuthExperience(){
+ document.querySelectorAll('[data-auth-copy]').forEach(el=>{el.textContent=t('common.authExperience.'+el.dataset.authCopy);});
+ $('#auth-language').textContent=getLocale()==='ar'?'English':'العربية';
+ document.querySelectorAll('[data-auth-go]').forEach(el=>el.setAttribute('aria-label',t('common.authExperience.banner'+el.dataset.authGo)));
+}
+translateAuthExperience();
+onLocaleChange(translateAuthExperience);
+$('#auth-language').addEventListener('click',()=>setLocale(getLocale()==='ar'?'en':'ar'));
+document.querySelectorAll('[data-auth-go]').forEach(control=>control.addEventListener('click',()=>{
+ document.querySelectorAll('[data-auth-slide]').forEach(slide=>{slide.hidden=slide.dataset.authSlide!==control.dataset.authGo;});
+ document.querySelectorAll('[data-auth-go]').forEach(el=>el.setAttribute('aria-pressed',String(el===control)));
+}));
 installPlanningFields();
 installShell();
 installWorkspace();
@@ -94,7 +106,7 @@ function renderEmailBanner(auth){
   const banner=$('#email-banner');
   let dismissed=false;
   try{dismissed=sessionStorage.getItem('hc_email_banner_dismissed')==='1';}catch{}
-  if(dismissed || auth.user.email || auth.user.pendingEmail){banner.hidden=true;return;}
+  if(!auth.user || dismissed || auth.user.email || auth.user.pendingEmail){banner.hidden=true;return;}
   banner.hidden=false;
   banner.innerHTML=`<span>${escape(t('account.banner.text'))}</span>`;
   const go=button(t('account.banner.action'),{variant:'primary'});
@@ -124,6 +136,8 @@ async function render(){
   if(isNewWorkspaceRoute() && auth.user){await renderNewWorkspacePage(auth,api);return;}
   workspaceAuth(auth);
   $('#auth-panel').hidden=!!auth.user;
+  $('#email-banner').hidden=true;
+  $('#auth-panel').classList.remove('is-signup');
   $('#protected').hidden=!auth.user;
   $('#session-bar').hidden=!auth.user;
   $('#auth-title').textContent=auth.needsSetup?t('common.setupOwnerTitle'):t('common.loginTitle');
@@ -241,8 +255,8 @@ $('#logout').addEventListener('click',async()=>{try{await api('/api/logout',{});
 // Multi-Tenant Phase 4C-6 (Part 42/43) — a plain show/hide toggle between the login and
 // public signup forms on the same auth screen; no route/hash change, so it works even before
 // initI18n's very first render() has resolved anything about the visitor.
-$('#show-signup-link').addEventListener('click',()=>{$('#auth-form').hidden=true;$('#forgot-password-link').hidden=true;$('#show-signup-link').hidden=true;$('#signup-form').hidden=false;$('#show-login-link').hidden=false;});
-$('#show-login-link').addEventListener('click',()=>{$('#signup-form').hidden=true;$('#show-login-link').hidden=true;$('#auth-form').hidden=false;$('#forgot-password-link').hidden=false;$('#show-signup-link').hidden=false;});
+$('#show-signup-link').addEventListener('click',()=>{$('#auth-panel').classList.add('is-signup');$('#auth-form').hidden=true;$('#forgot-password-link').hidden=true;$('#show-signup-link').hidden=true;$('#signup-form').hidden=false;$('#show-login-link').hidden=false;});
+$('#show-login-link').addEventListener('click',()=>{$('#auth-panel').classList.remove('is-signup');$('#signup-form').hidden=true;$('#show-login-link').hidden=true;$('#auth-form').hidden=false;$('#forgot-password-link').hidden=false;$('#show-signup-link').hidden=false;});
 document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button||!button.dataset.complianceCheck)return;button.disabled=true;try{const result=await clickCompliance(button,api);await render();message(result);}catch(error){message(error.message,'error');}finally{button.disabled=false;}});
 document.addEventListener('click',async event=>{const button=event.target.closest('button,[data-open-lead],[data-crm-scroll]');if(!button||!(button.dataset.leadId||button.dataset.openLead||button.dataset.followupApprove||button.dataset.crmStop||button.id==='crm-prepare'||button.id==='crm-run-frost'||button.dataset.followupTab||button.dataset.inboxTab||button.dataset.quickAction))return;if(button.tagName==='BUTTON')button.disabled=true;try{const result=await clickCRM(button,api);if(result){await render();message(result);}}catch(error){message(error.message,'error');}finally{if(button.tagName==='BUTTON')button.disabled=false;}});
 let crmSearchTimer=null;

@@ -61,5 +61,32 @@
     "sparklineNotEnough": "Not enough data to show a trend",
     "kpiNotEnoughData": "Not enough data",
     "kpiComparedToPreviousPeriod": "Compared to the previous period"
+  },
+  "authExperience": {
+    "eyebrow": "ONE PLATFORM. A CLEARER VIEW.",
+    "title0": "From your first idea\nto a lasting impact.",
+    "body0": "Bring content, marketing and sales into one workspace. Plan, review and keep your team moving with confidence.",
+    "title1": "Every opportunity.\nA better follow-up.",
+    "body1": "Organize customer relationships, conversations and follow-ups so your team always knows what comes next.",
+    "title2": "Intelligence beside you.\nDecisions in your hands.",
+    "body2": "Specialist agents help get work done with defined tools, clear permissions and human approvals along the way.",
+    "workspace": "Your workspace, in sync",
+    "flow1": "Turn ideas into content",
+    "flow1hint": "From approved knowledge to a draft",
+    "draft": "Draft",
+    "flow2": "Review and approve together",
+    "flow2hint": "Clear ownership at every step",
+    "flow3": "See the bigger picture",
+    "flow3hint": "Content, customers and reporting together",
+    "human": "AI assistance ? Human oversight",
+    "footer": "Made for your team?s ambition",
+    "welcomeTag": "Your space for focused work",
+    "entryEyebrow": "WELCOME TO HYPERCOOL",
+    "intro": "Sign in and keep building what comes next.",
+    "trust": "A private workspace. Access based on permissions.",
+    "entryFooter": "Marketing & sales operations",
+    "banner0": "Content and marketing",
+    "banner1": "Customers and follow-ups",
+    "banner2": "Agents and approvals"
   }
 }
