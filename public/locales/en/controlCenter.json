@@ -218,7 +218,10 @@
    "CHANGES_REQUESTED": "Changes requested"
   },
   "submit": "Submit for review",
-  "policyNote": "Only NONE/API_KEY/BEARER_TOKEN/BASIC auth and a public HTTPS URL are allowed — no OAuth2, and no reserved capabilities (platform./security./admin./permissions.*)."
+  "policyNote": "Only NONE/API_KEY/BEARER_TOKEN/BASIC auth and a public HTTPS URL are allowed — no OAuth2, and no reserved capabilities (platform./security./admin./permissions.*).",
+  "webhookTriggers": "Webhook Triggers",
+  "webhookPolicyNote": "Only HMAC or HEADER_TOKEN authentication is allowed, and the event type must be one of a fixed, safe list.",
+  "normalizedEventType": "Normalized event type"
  },
  "tokenExpiry": {
   "HEALTHY": "Healthy",

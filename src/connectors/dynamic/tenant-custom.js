@@ -133,6 +133,55 @@ export function listTenantConnectorActions(db,tenantId,definitionId) {
  return listActionsForDefinition(db,definitionId);
 }
 
+// Phase 6H, Part 26-32 — Tenant Custom Connector Webhook Triggers. Uses the EXACT SAME
+// `connector_triggers` table and the EXACT SAME inbound Generic Webhook Framework pipeline
+// (`processGenericWebhook`) every Platform-Admin-authored connector's trigger already goes
+// through — never a second, parallel webhook path — with tenant-specific restrictions layered
+// on top at declaration time, mirroring `upsertTenantConnectorAction`'s own pattern exactly.
+
+// Part 27 — a tenant-declared trigger may only use HMAC or HEADER_TOKEN; NONE is refused
+// outright (an unauthenticated inbound webhook on a tenant-authored connector is a real,
+// unnecessary risk this platform never has to accept), and SHARED_SECRET (query-string based)
+// is likewise excluded — HMAC/HEADER_TOKEN are the two verifiable-in-a-header mechanisms.
+const TENANT_ALLOWED_WEBHOOK_AUTH_TYPES=new Set(['HMAC','HEADER_TOKEN']);
+// Part 28 — a safe, honest allowlist: real "an external system told us something happened"
+// business-data facts only. Deliberately EXCLUDES every event that drives an internal
+// automation/process side effect on its own (CONTENT_PUBLISH_REQUESTED, AGENT_RUN_FAILED,
+// DAILY_BRIEF_REQUIRED, LEAD_HOT, CONTENT_APPROVED/PUBLISHED, ...) — a tenant-authored inbound
+// webhook must never be able to trigger those directly, even by accident.
+const TENANT_ALLOWED_EVENT_TYPES=new Set(['ORDER_CREATED','ORDER_UPDATED','ORDER_COMPLETED','CART_ABANDONED','PRODUCT_UPDATED','PRODUCT_STOCK_UPDATED','CUSTOMER_MESSAGE_RECEIVED','INVOICE_CREATED']);
+// Part 31 — a configurable, conservative-by-default ceiling (distinct from the per-tenant
+// connector-count limit).
+function maxTriggersPerConnector(env) { const n=Number(env.MAX_CUSTOM_CONNECTOR_TRIGGERS); return Number.isFinite(n)&&n>0?n:3; }
+
+export function upsertTenantConnectorTrigger(db,env,tenantId,definitionId,trigger) {
+ requireEnabled(env);
+ const definition=requireOwnedDraft(db,tenantId,definitionId);
+ if(definition.status!=='DRAFT')fail(400,'NOT_EDITABLE','لا يمكن تعديل موصل بعد نشره');
+ if(!trigger.slug||!trigger.normalizedEventType||!trigger.mappingDefinition)fail(400,'INVALID_TRIGGER','slug/normalizedEventType/mappingDefinition مطلوبة');
+ const authType=trigger.authentication?.type;
+ if(!TENANT_ALLOWED_WEBHOOK_AUTH_TYPES.has(authType))fail(400,'INVALID_AUTH_TYPE','موصلات المستأجر المخصصة تسمح فقط بمصادقة HMAC أو HEADER_TOKEN لأحداث الويبهوك — NONE غير مسموح');
+ if(authType==='HMAC' && !trigger.authentication.signatureHeader)fail(400,'INVALID_TRIGGER','HMAC يتطلب signatureHeader حقيقيًا');
+ if(authType==='HEADER_TOKEN' && !trigger.authentication.headerName)fail(400,'INVALID_TRIGGER','HEADER_TOKEN يتطلب headerName حقيقيًا');
+ if(!TENANT_ALLOWED_EVENT_TYPES.has(trigger.normalizedEventType))
+  fail(400,'EVENT_TYPE_NOT_ALLOWED',`نوع الحدث ${trigger.normalizedEventType} غير مسموح به لموصلات المستأجر المخصصة — القائمة المسموحة: ${[...TENANT_ALLOWED_EVENT_TYPES].join(', ')}`);
+ const existing=listTriggersForDefinition(db,definitionId);
+ const isNew=!existing.some(t=>t.slug===trigger.slug);
+ if(isNew && existing.length>=maxTriggersPerConnector(env))
+  fail(409,'TRIGGER_LIMIT_REACHED',`الحد الأقصى لعدد أحداث Webhook لكل موصل مستأجر مخصص هو ${maxTriggersPerConnector(env)}`);
+ return storeUpsertTrigger(db,definitionId,trigger);
+}
+export function deleteTenantConnectorTrigger(db,env,tenantId,definitionId,triggerId) {
+ requireEnabled(env);
+ const definition=requireOwnedDraft(db,tenantId,definitionId);
+ if(definition.status!=='DRAFT')fail(400,'NOT_EDITABLE','لا يمكن تعديل موصل بعد نشره');
+ storeDeleteTrigger(db,definitionId,triggerId);
+}
+export function listTenantConnectorTriggers(db,tenantId,definitionId) {
+ requireOwnedDraft(db,tenantId,definitionId);
+ return listTriggersForDefinition(db,definitionId);
+}
+
 /** Part 29 — Submit for Review: re-validated through the EXACT SAME validator a Platform-Admin
  * publish uses (never a weaker tenant-only bar) before it can even enter the review queue. */
 export function submitTenantConnectorForReview(db,env,tenantId,definitionId) {

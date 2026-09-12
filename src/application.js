@@ -26,6 +26,7 @@ import {getConnectionVersionInfo,previewVersionMigration,migrateConnectionVersio
 import {
  tenantCustomConnectorsEnabled,createTenantConnectorDraft,updateTenantConnectorDraft,
  upsertTenantConnectorAction,deleteTenantConnectorAction,listTenantConnectorActions,
+ upsertTenantConnectorTrigger,deleteTenantConnectorTrigger,listTenantConnectorTriggers,
  submitTenantConnectorForReview,listOwnTenantConnectors,listPendingTenantConnectors,reviewTenantConnector
 } from './connectors/dynamic/tenant-custom.js';
 import {
@@ -1561,6 +1562,22 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='DELETE' && customConnectorActionItem) {
         authorize(session,['owner']);
         deleteTenantConnectorAction(store.db,env,session.tenantId,customConnectorActionItem[1],customConnectorActionItem[2]);
+        return send(200,{ok:true});
+      }
+      // Phase 6H, Part 26-32 — Tenant Custom Connector Webhook Triggers.
+      const customConnectorTriggers=url.pathname.match(/^\/api\/integrations\/custom-connectors\/([\w-]+)\/triggers$/);
+      if(req.method==='GET' && customConnectorTriggers) {
+        authorize(session,['owner']);
+        return send(200,listTenantConnectorTriggers(store.db,session.tenantId,customConnectorTriggers[1]));
+      }
+      if(req.method==='POST' && customConnectorTriggers) {
+        authorize(session,['owner']);
+        return send(201,upsertTenantConnectorTrigger(store.db,env,session.tenantId,customConnectorTriggers[1],await body(req)));
+      }
+      const customConnectorTriggerItem=url.pathname.match(/^\/api\/integrations\/custom-connectors\/([\w-]+)\/triggers\/([\w-]+)$/);
+      if(req.method==='DELETE' && customConnectorTriggerItem) {
+        authorize(session,['owner']);
+        deleteTenantConnectorTrigger(store.db,env,session.tenantId,customConnectorTriggerItem[1],customConnectorTriggerItem[2]);
         return send(200,{ok:true});
       }
       const customConnectorSubmit=url.pathname.match(/^\/api\/integrations\/custom-connectors\/([\w-]+)\/submit$/);

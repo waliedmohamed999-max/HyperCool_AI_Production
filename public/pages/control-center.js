@@ -230,6 +230,10 @@ function paintCustomConnectorsList(host,list){
    const edit=button(t('platform.builder.manage'),{variant:'secondary'});
    edit.onclick=()=>openCustomConnectorDraftForm(c);
    cell.append(edit);
+   // Phase 6H, Part 26-32 — Tenant Custom Connector Webhook Triggers.
+   const triggers=button(t('controlCenter.customConnectors.webhookTriggers'),{variant:'ghost'});
+   triggers.onclick=()=>openCustomConnectorTriggers(c);
+   cell.append(triggers);
    if(!c.reviewStatus||c.reviewStatus==='CHANGES_REQUESTED'||c.reviewStatus==='REJECTED'){
     const submit=button(t('controlCenter.customConnectors.submit'),{variant:'primary'});
     submit.onclick=async()=>{
@@ -274,6 +278,57 @@ function openCustomConnectorDraftForm(existing){
    renderControlCenter({api:apiClient,auth:currentAuth});
   }catch(error){toastError(error.message);}
  });
+}
+// Phase 6H, Part 26-32 — Tenant Custom Connector Webhook Triggers management.
+async function openCustomConnectorTriggers(connector){
+ const node=document.createElement('div');node.innerHTML=skeleton(t('common.loading'));
+ const dialog=drawer(t('controlCenter.customConnectors.webhookTriggers')+' — '+(getLocale()==='en'?connector.nameEn:connector.nameAr),node);
+ async function reload(){
+  let triggers;
+  try{triggers=await api(`/api/integrations/custom-connectors/${connector.id}/triggers`);}
+  catch(error){node.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+  node.innerHTML=(triggers.length?'':empty(t('platform.builder.noTriggersYet')))+
+   triggers.map(tr=>`<div class="audit-row row-between" data-trigger="${escape(tr.id)}"><span><strong dir="ltr">${escape(tr.slug)}</strong> → <span dir="ltr">${escape(tr.normalizedEventType)}</span> (${escape(tr.authentication?.type)})</span><span data-del></span></div>`).join('');
+  for(const tr of triggers){
+   const del=button(t('platform.builder.deleteTrigger'),{variant:'danger'});
+   del.onclick=async()=>{try{await api(`/api/integrations/custom-connectors/${connector.id}/triggers/${tr.id}`,{},'DELETE');await reload();}catch(error){toastError(error.message);}};
+   node.querySelector(`[data-trigger="${CSS.escape(tr.id)}"] [data-del]`).append(del);
+  }
+  const addButton=button(t('platform.builder.addTrigger'),{variant:'primary',iconName:'plus'});
+  addButton.onclick=()=>openAddCustomTrigger();
+  node.append(addButton);
+ }
+ function openAddCustomTrigger(){
+  promptDrawer(t('platform.builder.addTrigger'),n=>{
+   n.innerHTML=`
+    <p class="notice">${escape(t('controlCenter.customConnectors.webhookPolicyNote'))}</p>
+    <label>${escape(t('platform.builder.fields.triggerSlug'))}<input name="slug" dir="ltr" required maxlength="60" pattern="[a-z][a-z0-9_]*"></label>
+    <label>${escape(t('platform.builder.fields.triggerName'))}<input name="name" required maxlength="100"></label>
+    <label>${escape(t('platform.builder.fields.webhookAuthType'))}<select name="authType"><option>HMAC</option><option>HEADER_TOKEN</option></select></label>
+    <label>${escape(t('platform.builder.fields.signatureHeader'))}<input name="signatureHeader" dir="ltr" placeholder="X-Signature"></label>
+    <label>${escape(t('platform.builder.fields.signaturePrefix'))}<input name="signaturePrefix" dir="ltr" placeholder="sha256="></label>
+    <label>${escape(t('platform.builder.fields.eventIdPath'))}<input name="eventIdPath" dir="ltr" placeholder="id"></label>
+    <label>${escape(t('controlCenter.customConnectors.normalizedEventType'))}<select name="normalizedEventType">${['ORDER_CREATED','ORDER_UPDATED','ORDER_COMPLETED','CART_ABANDONED','PRODUCT_UPDATED','PRODUCT_STOCK_UPDATED','CUSTOMER_MESSAGE_RECEIVED','INVOICE_CREATED'].map(e=>`<option value="${e}">${e}</option>`).join('')}</select></label>`;
+   return {
+    value:()=>{
+     const val=name=>n.querySelector(`[name=${name}]`).value.trim();
+     const authType=n.querySelector('[name=authType]').value;
+     return {
+      slug:val('slug'),name:val('name'),
+      authentication:authType==='HEADER_TOKEN'?{type:'HEADER_TOKEN',headerName:val('signatureHeader')||'X-Token'}:{type:'HMAC',signatureHeader:val('signatureHeader')||'X-Signature',signaturePrefix:val('signaturePrefix')||undefined},
+      eventIdPath:val('eventIdPath')||undefined,eventIdPolicy:'OPTIONAL',
+      mappingDefinition:{object:{}},normalizedEventType:n.querySelector('[name=normalizedEventType]').value
+     };
+    },
+    focus:()=>n.querySelector('[name=slug]').focus()
+   };
+  },{confirmLabel:t('platform.builder.addTrigger')}).then(async result=>{
+   if(!result)return;
+   try{await api(`/api/integrations/custom-connectors/${connector.id}/triggers`,result);await reload();}
+   catch(error){toastError(error.message);}
+  });
+ }
+ await reload();
 }
 /** Honest add-connection gating (Phase 4C-2 Part 10/73, extended Phase 6D): Salla's real
  * multi-store OAuth and Anthropic/OpenAI's real API-key flow keep their own dedicated paths; any

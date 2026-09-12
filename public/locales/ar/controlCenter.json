@@ -218,7 +218,10 @@
    "CHANGES_REQUESTED": "مطلوب تعديلات"
   },
   "submit": "إرسال للمراجعة",
-  "policyNote": "يُسمح فقط بمصادقة NONE/API_KEY/BEARER_TOKEN/BASIC ورابط HTTPS عام — لا OAuth2، ولا قدرات محجوزة (platform./security./admin./permissions.*)."
+  "policyNote": "يُسمح فقط بمصادقة NONE/API_KEY/BEARER_TOKEN/BASIC ورابط HTTPS عام — لا OAuth2، ولا قدرات محجوزة (platform./security./admin./permissions.*).",
+  "webhookTriggers": "أحداث Webhook",
+  "webhookPolicyNote": "يُسمح فقط بمصادقة HMAC أو HEADER_TOKEN، ونوع حدث من قائمة آمنة محددة مسبقًا.",
+  "normalizedEventType": "نوع الحدث الموحّد"
  },
  "tokenExpiry": {
   "HEALTHY": "صحّي",
