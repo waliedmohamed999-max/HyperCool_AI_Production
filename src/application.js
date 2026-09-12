@@ -12,6 +12,7 @@ import {connectionStatus,importSalla,ConnectorError,testAnthropicConnection,test
 import {processGenericWebhook} from './connectors/generic-webhook/webhook.js';
 import {installDynamicConnectorTables} from './connectors/dynamic/store.js';
 import {installDraftOverlayTables} from './connectors/dynamic/draft-store.js';
+import {installBulkOperations,previewBulkVersionMigration,bulkMigrateConnections,bulkRollbackOperation,listBulkOperations,getBulkOperation} from './connectors/dynamic/bulk-operations.js';
 import {resolveConnectorDynamic} from './connectors/dynamic/registry.js';
 import {listCompatibleConnections} from './connectors/dynamic/compatibility.js';
 import {
@@ -203,6 +204,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installCredentialsVault(store.db);
   installDynamicConnectorTables(store.db); // Phase 6D — persistent Connector Definition actions/triggers/versions
   installDraftOverlayTables(store.db); // Phase 6H — parallel draft workspace (Safe Published Version Lifecycle)
+  installBulkOperations(store.db); // Phase 6H — bulk version migration / webhook reprocess operations log
   installOAuthStates(store.db);
   installCredentials(store.db);
   migrateLegacyIntegrationCredentials(store.db,env); // one-time-per-row copy into the new connection+vault model
@@ -868,6 +870,29 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const reviewed=reviewTenantConnector(store.db,env,session.user,platformCustomConnectorReview[1],{decision:input.decision,notes:input.notes});
         recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'TENANT_CONNECTOR_REVIEWED',itemId:reviewed.id,detail:input.decision,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
         return send(200,reviewed);
+      }
+      // Phase 6H, Part 6-9 — Bulk Connection Version Migration (Platform Admin only, Part 46).
+      if(url.pathname==='/api/platform/bulk/version-migration/preview' && req.method==='GET') {
+        return send(200,previewBulkVersionMigration(store.db,env,session.user,{connectorSlug:url.searchParams.get('connectorSlug'),fromVersion:url.searchParams.get('fromVersion'),toVersion:url.searchParams.get('toVersion')}));
+      }
+      if(url.pathname==='/api/platform/bulk/version-migration' && req.method==='POST') {
+        const input=await body(req);
+        const result=await bulkMigrateConnections({db:store.db,env,fetcher,actorUser:session.user,connectorSlug:input.connectorSlug,fromVersion:input.fromVersion,toVersion:input.toVersion,connectionIds:input.connectionIds});
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'BULK_VERSION_MIGRATION_EXECUTED',itemId:result.operationId,detail:JSON.stringify(result.summary),actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,result);
+      }
+      const bulkVersionRollback=url.pathname.match(/^\/api\/platform\/bulk\/version-migration\/([\w-]+)\/rollback$/);
+      if(bulkVersionRollback && req.method==='POST') {
+        const result=await bulkRollbackOperation({db:store.db,env,fetcher,actorUser:session.user,operationId:bulkVersionRollback[1]});
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'BULK_VERSION_MIGRATION_ROLLED_BACK',itemId:result.operationId,detail:JSON.stringify(result.summary),actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,result);
+      }
+      if(url.pathname==='/api/platform/bulk/operations' && req.method==='GET') {
+        return send(200,listBulkOperations(store.db,env,session.user,{type:url.searchParams.get('type')||undefined,limit:Number(url.searchParams.get('limit'))||20}));
+      }
+      const bulkOperationItem=url.pathname.match(/^\/api\/platform\/bulk\/operations\/([\w-]+)$/);
+      if(bulkOperationItem && req.method==='GET') {
+        return send(200,getBulkOperation(store.db,env,session.user,bulkOperationItem[1]));
       }
       // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only

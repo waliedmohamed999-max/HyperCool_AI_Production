@@ -657,6 +657,14 @@ async function openConnectorWizard(summary){
    versionsPanel.querySelector(`[data-diff-btn="${v.version}"]`).append(diffButton);
   }
   const actionsHost=versionsPanel.querySelector('#versions-actions');
+  // Phase 6H, Part 6-9 — Bulk Connection Version Migration, offered whenever at least 2 real
+  // versions exist (something to migrate FROM and TO).
+  const realVersions=versions.filter(v=>v.status!=='DRAFT');
+  if(realVersions.length>=2){
+   const bulkButton=button(t('platform.builder.bulk.button'),{variant:'secondary'});
+   bulkButton.onclick=()=>openBulkMigrationDrawer(realVersions);
+   actionsHost.append(bulkButton);
+  }
   if(detail.status==='PUBLISHED' && !detail.hasDraft){
    const draftButton=button(t('platform.builder.versions.createDraftVersion'),{variant:'primary'});
    draftButton.onclick=async()=>{
@@ -687,6 +695,70 @@ async function openConnectorWizard(summary){
    if(diff.connectionMode.changed)lines.push(`~ connectionMode: ${diff.connectionMode.from} → ${diff.connectionMode.to}`);
    host.innerHTML=`<h4>${escape(t('platform.builder.versions.diffTitle',{from,to}))}</h4>`+(lines.length?`<pre dir="ltr">${escape(lines.join('\n'))}</pre>`:empty(t('platform.builder.versions.noDifferences')));
   }catch(error){host.innerHTML=empty(t('controlCenter.loadFailed'),error.message);}
+ }
+
+ // Phase 6H, Part 6-9 — Bulk Connection Version Migration.
+ function openBulkMigrationDrawer(realVersions){
+  const node=document.createElement('div');
+  const options=realVersions.map(v=>v.version);
+  node.innerHTML=`
+   <label>${escape(t('platform.builder.bulk.fromVersion'))}<select name="from">${options.map(v=>`<option value="${v}" ${v===options[0]?'selected':''}>${v}</option>`).join('')}</select></label>
+   <label>${escape(t('platform.builder.bulk.toVersion'))}<select name="to">${options.map(v=>`<option value="${v}" ${v===options[options.length-1]?'selected':''}>${v}</option>`).join('')}</select></label>
+   <div id="bulk-preview"></div>
+   <div id="bulk-list"></div>
+   <div class="report-actions" id="bulk-actions"></div>
+   <div id="bulk-results"></div>`;
+  const dialog=drawer(t('platform.builder.bulk.button'),node);
+  let currentPreview=null;
+  async function refreshPreview(){
+   const from=Number(node.querySelector('[name=from]').value),to=Number(node.querySelector('[name=to]').value);
+   const previewHost=node.querySelector('#bulk-preview'),listHost=node.querySelector('#bulk-list'),actionsHost=node.querySelector('#bulk-actions');
+   actionsHost.innerHTML='';node.querySelector('#bulk-results').innerHTML='';
+   if(from===to){previewHost.innerHTML=empty(t('platform.builder.bulk.samePicked'));listHost.innerHTML='';return;}
+   previewHost.innerHTML=skeleton(t('common.loading'));
+   try{currentPreview=await apiClient(`/api/platform/bulk/version-migration/preview?connectorSlug=${detail.slug}&fromVersion=${from}&toVersion=${to}`);}
+   catch(error){previewHost.innerHTML=empty(t('controlCenter.loadFailed'),error.message);listHost.innerHTML='';return;}
+   previewHost.innerHTML=`<div class="kpi-grid">
+    ${['totalAffected','tenants','capabilityRegressionCount'].map(k=>`<div class="kpi-card"><span class="kpi-label">${escape(t('platform.builder.bulk.'+k))}</span><strong class="kpi-value">${currentPreview[k]}</strong></div>`).join('')}
+   </div>`;
+   if(!currentPreview.connections.length){listHost.innerHTML=empty(t('common.noResults'));return;}
+   listHost.innerHTML=currentPreview.connections.map(c=>`<label class="check"><input type="checkbox" name="conn" value="${escape(c.id)}" ${c.capabilityImpacted?'':'checked'}> ${escape(c.name)} <span dir="ltr" class="kpi-context">${escape(c.tenantId)}</span>${c.capabilityImpacted?` — <strong>${escape(t('platform.builder.bulk.capabilityWarning'))}</strong>`:''}</label>`).join('');
+   const migrateButton=button(t('platform.builder.bulk.migrateSelected'),{variant:'primary'});
+   migrateButton.onclick=async()=>{
+    const selected=[...listHost.querySelectorAll('[name=conn]:checked')].map(el=>el.value);
+    if(!selected.length){toastError(t('platform.builder.bulk.noneSelected'));return;}
+    const confirmed=await promptDrawer(t('platform.builder.bulk.migrateSelected'),n=>{n.innerHTML=`<p>${escape(t('platform.builder.bulk.migrateConfirm',{count:selected.length}))}</p>`;},{confirmLabel:t('platform.builder.bulk.migrateSelected')});
+    if(!confirmed)return;
+    try{
+     const result=await apiClient('/api/platform/bulk/version-migration',{connectorSlug:detail.slug,fromVersion:from,toVersion:to,connectionIds:selected});
+     renderBulkResults(node.querySelector('#bulk-results'),result);
+     refreshConnectorsListInBackground();
+    }catch(error){toastError(error.message);}
+   };
+   actionsHost.append(migrateButton);
+  }
+  node.querySelector('[name=from]').onchange=refreshPreview;
+  node.querySelector('[name=to]').onchange=refreshPreview;
+  refreshPreview();
+ }
+ function renderBulkResults(host,result){
+  host.innerHTML=`<h4>${escape(t('platform.builder.bulk.resultsTitle'))}</h4>
+   <div class="kpi-grid">
+    ${['ready','skipped','failed'].map(k=>`<div class="kpi-card"><span class="kpi-label">${escape(t('platform.builder.bulk.'+k))}</span><strong class="kpi-value">${result.summary[k]}</strong></div>`).join('')}
+   </div>`+table(
+    [t('platform.builder.bulk.connectionId'),t('controlCenter.statusLabel'),'reason'],
+    result.results.map(r=>[`<span dir="ltr">${escape(r.connectionId)}</span>`,badge(r.status,r.status==='READY'?'CONNECTED':r.status==='SKIPPED'?'PENDING':'ERROR'),escape(r.reason||'—')])
+   );
+  if(result.summary.ready>0){
+   const rollbackButton=button(t('platform.builder.bulk.rollbackOperation'),{variant:'danger'});
+   rollbackButton.onclick=async()=>{
+    const confirmed=await promptDrawer(t('platform.builder.bulk.rollbackOperation'),n=>{n.innerHTML=`<p>${escape(t('platform.builder.bulk.rollbackConfirm'))}</p>`;},{confirmLabel:t('platform.builder.bulk.rollbackOperation')});
+    if(!confirmed)return;
+    try{const rollback=await apiClient(`/api/platform/bulk/version-migration/${result.operationId}/rollback`,{},'POST');renderBulkResults(host,rollback);}
+    catch(error){toastError(error.message);}
+   };
+   host.append(rollbackButton);
+  }
  }
 
  function paintReview(){

@@ -200,7 +200,27 @@
   },
   "draftBanner": "You are editing a draft of the next version — the currently published version (v{version}) keeps serving every new connection completely unaffected.",
   "discardDraft": "Discard Draft",
-  "discardDraftConfirm": "Every edit in this draft will be permanently deleted. The currently published version is never affected."
+  "discardDraftConfirm": "Every edit in this draft will be permanently deleted. The currently published version is never affected.",
+  "bulk": {
+   "button": "Bulk Migrate Connections",
+   "fromVersion": "From version",
+   "toVersion": "To version",
+   "samePicked": "Pick two different versions to preview.",
+   "totalAffected": "Affected connections",
+   "tenants": "Tenants",
+   "capabilityRegressionCount": "May lose a capability",
+   "capabilityWarning": "May break a tool/agent assignment relying on this capability — unchecked by default",
+   "migrateSelected": "Migrate Selected",
+   "noneSelected": "No connection selected",
+   "migrateConfirm": "Compatibility will be checked and a real health check run on each of the {count} selected connections before anything changes — only the ones that actually pass will be migrated.",
+   "resultsTitle": "Bulk migration results",
+   "ready": "Ready/Done",
+   "skipped": "Skipped",
+   "failed": "Failed",
+   "connectionId": "Connection ID",
+   "rollbackOperation": "Rollback this operation",
+   "rollbackConfirm": "Only rolls back the connections this specific operation actually migrated, each through the same safety checks."
+  }
  },
  "customConnectors": {
   "pendingTitle": "Tenant connectors awaiting review",
