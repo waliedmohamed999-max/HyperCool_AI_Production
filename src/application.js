@@ -10,7 +10,16 @@ import {agentDefinitions} from './agents.js';
 import {installKnowledge,listMemory,saveMemory,proposeMemoryUpdate,listProducts,replaceProducts} from './knowledge.js';
 import {connectionStatus,importSalla,ConnectorError,testAnthropicConnection,testOpenAIConnection,testSallaConnection} from './connectors.js';
 import {processGenericWebhook} from './connectors/generic-webhook/webhook.js';
-import {getConnectorManifest} from './connectors/registry.js';
+import {installDynamicConnectorTables} from './connectors/dynamic/store.js';
+import {resolveConnectorDynamic} from './connectors/dynamic/registry.js';
+import {
+ createDraftConnector,updateDraftConnector,upsertActionForConnector,deleteActionForConnector,
+ upsertTriggerForConnector,deleteTriggerForConnector,validateConnectorDraft,publishConnector,
+ disableConnector,reactivateConnector,getConnectorDependencies,listConnectorsForBuilder,
+ getConnectorForBuilder,getTenantCatalog
+} from './connectors/dynamic/builder.js';
+import {executeConnectorAction,checkConnectorHealth} from './connectors/core/runtime.js';
+import {CANONICAL_CAPABILITIES} from './connectors/core/capability-registry.js';
 import {createGenerator,listAiRuns} from './generation.js';
 import {loadEnvFile} from 'node:process';
 import {installPlanning,listSlots,listJobs,createCalendar,scheduleContent,cancelJobs,prepareDue,buildBrief,saveDailyBrief,riyadhDate,authorizeAutomation} from './planning.js';
@@ -145,6 +154,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installIntegrationDefinitions(store.db); // Multi-Tenant Phase 4A — global integration catalog, see docs/INTEGRATION_CONNECTION_ARCHITECTURE.md
   installIntegrationConnections(store.db);
   installCredentialsVault(store.db);
+  installDynamicConnectorTables(store.db); // Phase 6D — persistent Connector Definition actions/triggers/versions
   installOAuthStates(store.db);
   installCredentials(store.db);
   migrateLegacyIntegrationCredentials(store.db,env); // one-time-per-row copy into the new connection+vault model
@@ -652,6 +662,81 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const input=await body(req);
         const tenant=extendTrialByPlatform(store.db,platformExtendTrial[1],{days:Number(input.days)},session.user);
         return send(200,{id:tenant.id,status:tenant.status,trialExpiresAt:tenant.trialExpiresAt});
+      }
+      // Universal Integration Platform (Phase 6D) — the Integration Builder's HTTP surface.
+      // Tenant-independent, same placement rationale as the Platform Admin routes just above:
+      // a platform admin authoring a Connector Definition is never acting within any one
+      // tenant's own workspace. Every mutation below delegates STRAIGHT to builder.js, which
+      // enforces its OWN Platform Admin check on every call (never a tenant role, however
+      // senior — Part 25/100/126/127) — so `session.user` is passed through as the actor and
+      // the real 403 comes from the same allowlist as every other Platform Admin action.
+      if(url.pathname==='/api/platform/connectors' && req.method==='GET') {
+        return send(200,listConnectorsForBuilder(store.db,env,session.user));
+      }
+      // The Integration Builder's Capabilities tab picks from this REAL, canonical list —
+      // never a freehand text field a Platform Admin could typo into a rejected publish.
+      if(url.pathname==='/api/platform/capabilities' && req.method==='GET') {
+        requirePlatformAdmin(env,session);
+        return send(200,CANONICAL_CAPABILITIES);
+      }
+      if(url.pathname==='/api/platform/connectors' && req.method==='POST') {
+        const input=await body(req);
+        const created=createDraftConnector(store.db,env,session.user,input);
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_DRAFT_CREATED',itemId:created.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(201,created);
+      }
+      const platformConnectorItem=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)$/);
+      if(platformConnectorItem && req.method==='GET') {
+        return send(200,getConnectorForBuilder(store.db,env,session.user,platformConnectorItem[1]));
+      }
+      if(platformConnectorItem && req.method==='PATCH') {
+        const updated=updateDraftConnector(store.db,env,session.user,platformConnectorItem[1],await body(req));
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_DRAFT_UPDATED',itemId:updated.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,updated);
+      }
+      const platformConnectorValidate=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/validate$/);
+      if(platformConnectorValidate && req.method==='POST') {
+        return send(200,validateConnectorDraft(store.db,env,session.user,platformConnectorValidate[1]));
+      }
+      const platformConnectorPublish=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/publish$/);
+      if(platformConnectorPublish && req.method==='POST') {
+        const published=publishConnector(store.db,env,session.user,platformConnectorPublish[1]);
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_PUBLISHED',itemId:published.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,published);
+      }
+      const platformConnectorDisable=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/disable$/);
+      if(platformConnectorDisable && req.method==='POST') {
+        const disabled=disableConnector(store.db,env,session.user,platformConnectorDisable[1]);
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_DISABLED',itemId:disabled.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,disabled);
+      }
+      const platformConnectorReactivate=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/reactivate$/);
+      if(platformConnectorReactivate && req.method==='POST') {
+        const reactivated=reactivateConnector(store.db,env,session.user,platformConnectorReactivate[1]);
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'CONNECTOR_REACTIVATED',itemId:reactivated.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,reactivated);
+      }
+      const platformConnectorDependencies=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/dependencies$/);
+      if(platformConnectorDependencies && req.method==='GET') {
+        return send(200,getConnectorDependencies(store.db,env,session.user,platformConnectorDependencies[1]));
+      }
+      const platformConnectorActions=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/actions$/);
+      if(platformConnectorActions && req.method==='POST') {
+        return send(201,upsertActionForConnector(store.db,env,session.user,platformConnectorActions[1],await body(req)));
+      }
+      const platformConnectorActionItem=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/actions\/([\w-]+)$/);
+      if(platformConnectorActionItem && req.method==='DELETE') {
+        deleteActionForConnector(store.db,env,session.user,platformConnectorActionItem[1],platformConnectorActionItem[2]);
+        return send(200,{ok:true});
+      }
+      const platformConnectorTriggers=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/triggers$/);
+      if(platformConnectorTriggers && req.method==='POST') {
+        return send(201,upsertTriggerForConnector(store.db,env,session.user,platformConnectorTriggers[1],await body(req)));
+      }
+      const platformConnectorTriggerItem=url.pathname.match(/^\/api\/platform\/connectors\/([\w-]+)\/triggers\/([\w-]+)$/);
+      if(platformConnectorTriggerItem && req.method==='DELETE') {
+        deleteTriggerForConnector(store.db,env,session.user,platformConnectorTriggerItem[1],platformConnectorTriggerItem[2]);
+        return send(200,{ok:true});
       }
       // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only
@@ -1268,6 +1353,16 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner','operator']);
         return send(200,listIntegrationDefinitions(store.db));
       }
+      // Universal Integration Platform (Phase 6D, Part 26/27/39/40) — the data-driven
+      // marketplace: PUBLISHED connectors only (a DRAFT one 404s/never appears here, a
+      // DISABLED one is excluded too — `getTenantCatalog` filters on real `status`), safe
+      // metadata only. This is the ONE source the Control Center's Integrations tab reads for
+      // "what can this tenant connect" — a newly Builder-published connector needs zero
+      // frontend code change to appear here.
+      if(req.method==='GET' && url.pathname==='/api/integrations/catalog') {
+        authorize(session,['owner','operator']);
+        return send(200,getTenantCatalog(store.db));
+      }
       if(req.method==='GET' && url.pathname==='/api/integrations/connections') {
         authorize(session,['owner','operator']);
         return send(200,listConnections(store.db,{integrationDefinitionId:url.searchParams.get('provider')||undefined},session.tenantId));
@@ -1321,7 +1416,10 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='GET' && connectionWebhook) {
         authorize(session,['owner','operator']);
         const connection=getConnection(store.db,connectionWebhook[1],session.tenantId);
-        const manifest=getConnectorManifest(connection.integrationDefinitionId);
+        // Phase 6D — a dynamic (Builder-published) connector has no code-defined manifest, so
+        // this MUST resolve through the same dynamic registry runtime uses, never the static-
+        // only registry (which would silently report NOT_APPLICABLE for every Builder webhook).
+        const manifest=resolveConnectorDynamic(store.db,connection.integrationDefinitionId,{connectorVersion:connection.connectorVersion??null})?.manifest||null;
         const triggers=manifest?.triggers||[];
         if(!triggers.length)return send(200,{url:null,status:'NOT_APPLICABLE',triggers:[]});
         const publicId=getOrCreateWebhookPublicId(store.db,connection.id,session.tenantId);
@@ -1330,6 +1428,18 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
          status:connection.status,
          triggers:triggers.map(t=>({slug:t.slug,name:t.name,authType:t.authentication.type}))
         });
+      }
+      // Universal Integration Platform (Phase 6D) — lets the tenant owner/operator run one of
+      // a connection's own declared actions directly from the Connection UI (e.g. a manual
+      // "Run get_invoices now"), through the EXACT SAME ConnectorRuntime pipeline the Agent
+      // tool path already uses — capability/tenant/approval checks included, never a shortcut.
+      const connectionAction=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/actions\/([\w-]+)$/);
+      if(req.method==='POST' && connectionAction) {
+        authorize(session,['owner','operator']);
+        const connection=getConnection(store.db,connectionAction[1],session.tenantId);
+        const input=await body(req);
+        const result=await executeConnectorAction({db:store.db,env,tenantId:session.tenantId,connectorSlug:connection.integrationDefinitionId,connectionId:connection.id,actionId:connectionAction[2],input:input?.input||{},actor:session.user});
+        return send(200,result);
       }
       const connectionTest=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/test$/);
       if(req.method==='POST' && connectionTest) {
@@ -1378,6 +1488,54 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
          fail(422,`فشل اختبار المفتاح: ${testResult.code||testResult.result}`);
         }
         storeCredential(store.db,env,{connectionId:connection.id,credentialType:'api_key',payload:{apiKey}},session.tenantId);
+        updateConnection(store.db,connection.id,{status:'CONNECTED',connectedBy:session.user.id,connectedAt:connection.connectedAt||now,lastHealthCheck:now,lastSuccessAt:now,lastErrorAt:null,lastErrorCode:null,lastErrorMessageSafe:null},session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CREDENTIAL_CREATED',itemId:connection.id,provider:connection.integrationDefinitionId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+        return send(200,getCredentialMeta(store.db,connection.id,session.tenantId));
+      }
+      // Universal Integration Platform (Phase 6D) — the Generic Connection UI's credential
+      // route: ANY dynamic (GENERIC_REST/Builder-published) connector's API_KEY/BEARER_TOKEN/
+      // BASIC/NONE auth, never Salla/Anthropic/OpenAI (those keep their own dedicated,
+      // already-tested flows above/OAuth — this route 400s for them so the two paths can never
+      // collide). Same real principle as the legacy /credential route: the submitted secret is
+      // tested for REAL (via the same ConnectorRuntime health pipeline the Agent tool path
+      // uses) BEFORE it is ever persisted or the connection marked CONNECTED — a failing
+      // credential is never stored.
+      const genericCredential=url.pathname.match(/^\/api\/integrations\/connections\/([\w-]+)\/generic-credential$/);
+      if(req.method==='PUT' && genericCredential) {
+        authorize(session,['owner']);
+        const connection=getConnection(store.db,genericCredential[1],session.tenantId);
+        const definition=getIntegrationDefinition(store.db,connection.integrationDefinitionId);
+        if(!definition||definition.adapterType!=='GENERIC_REST')fail(400,'هذا المسار مخصص لموصلات REST العامة فقط — استخدم مسار الربط الخاص بهذا التكامل');
+        const authType=definition.authConfig?.type;
+        const input=await body(req);
+        let credentialType,payload;
+        if(authType==='API_KEY') {
+         if(typeof input.apiKey!=='string'||!input.apiKey.trim())fail(400,'apiKey مطلوب');
+         credentialType='api_key';payload={apiKey:input.apiKey.trim()};
+        } else if(authType==='BEARER_TOKEN') {
+         if(typeof input.token!=='string'||!input.token.trim())fail(400,'token مطلوب');
+         credentialType='bearer_token';payload={token:input.token.trim()};
+        } else if(authType==='BASIC') {
+         if(typeof input.username!=='string'||!input.username.trim())fail(400,'username مطلوب');
+         credentialType='basic_auth';payload={username:input.username.trim(),password:typeof input.password==='string'?input.password:''};
+        } else if(authType==='NONE') {
+         credentialType='none';payload={};
+        } else {
+         fail(400,'نوع مصادقة غير مدعوم لهذا المسار');
+        }
+        // Persist first so checkConnectorHealth's own credential lookup can see it — mirrors
+        // the same order the direct-function integration-builder tests already prove is safe:
+        // a failing real check still leaves the connection NOT CONNECTED (never silently
+        // upgraded), and a re-submit simply overwrites the one row (Part 13's single-credential
+        // per connection model), so no orphaned bad credential can ever linger unreported.
+        storeCredential(store.db,env,{connectionId:connection.id,credentialType,payload},session.tenantId);
+        const health=await checkConnectorHealth({db:store.db,env,tenantId:session.tenantId,connectorSlug:connection.integrationDefinitionId,connectionId:connection.id});
+        const now=new Date().toISOString();
+        if(health.status!=='OK') {
+         updateConnection(store.db,connection.id,{status:health.status==='NOT_CONFIGURED'?'NOT_CONFIGURED':'ERROR',lastHealthCheck:now,lastErrorAt:now,lastErrorCode:health.errorCode||health.status,lastErrorMessageSafe:health.errorCode||health.status},session.tenantId);
+         recordAudit(store.db,{id:crypto.randomUUID(),action:'CREDENTIAL_TEST_FAILED',itemId:connection.id,errorCode:health.errorCode||health.status,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
+         fail(422,`فشل اختبار الاتصال: ${health.errorCode||health.status}`);
+        }
         updateConnection(store.db,connection.id,{status:'CONNECTED',connectedBy:session.user.id,connectedAt:connection.connectedAt||now,lastHealthCheck:now,lastSuccessAt:now,lastErrorAt:null,lastErrorCode:null,lastErrorMessageSafe:null},session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'CREDENTIAL_CREATED',itemId:connection.id,provider:connection.integrationDefinitionId,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
         return send(200,getCredentialMeta(store.db,connection.id,session.tenantId));
