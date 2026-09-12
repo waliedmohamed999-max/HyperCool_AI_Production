@@ -181,7 +181,108 @@ feature-flag storage, which is a materially separate piece of work, likely adjac
 future Billing/plan-tier phase rather than this pilot-hardening one. Documented here as a
 known pilot constraint, not silently worked around.
 
-## Incident Steps
+## Error Budget (Phase 5, Part 17)
+
+**P0 — STOP THE PILOT immediately** (no exceptions, no "let's watch it"):
+- Any confirmed cross-tenant data leakage (one tenant seeing another's CRM/content/memory/
+  agent config/integration/audit/reports/invitations/members/onboarding state).
+- Any secret leakage (an API key, OAuth token, or credential visible outside the encrypted
+  vault — in a log, an API response, or the browser).
+- Data corruption (a write that produced an inconsistent or unrecoverable row).
+- A duplicate EXTERNAL action (two real WhatsApp sends, two real Salla writes, etc. for what
+  should have been one).
+
+**P1 — pause the affected feature only, pilot continues**:
+- Repeated webhook failure for one provider/tenant.
+- A scheduler job missed for a critical (non-retryable) cycle.
+- Workspace creation failing for real users.
+- An auth/account lockout affecting a real pilot user.
+
+## Incident Response (Phase 5, Part 18) — the 10 steps, in order
+
+1. **Disable external actions** — set the relevant `ENABLE_EXTERNAL_*` flag(s) to `false` and
+   restart, or (for one tenant only) suspend that tenant via `#platform` (immediate, reversible,
+   audited — every OTHER tenant is provably unaffected, verified by test).
+2. **Suspend the affected tenant if needed** — `#platform` → tenant detail → Suspend.
+3. **Preserve logs** — copy the current structured request-log output before it rotates/is lost.
+4. **Backup the DB** — `npm run backup` the CURRENT state first, even if suspect; never lose the
+   only copy before investigating.
+5. **Identify the `request_id`** (HyperCool's structured JSON logs carry one per request — see
+   `logRequest`) tying the incident to its exact request(s).
+6. **Reproduce in an isolated copy** — never on live pilot data. Copy the backup file to a
+   scratch directory and point a local `createApp({dataDir})` at it.
+7. **Fix** the real root cause.
+8. **Regression test** — a real, permanent test proving this exact scenario is now blocked (see
+   "No Silent Fixes" below — this is not optional).
+9. **Redeploy** — after `npm test`/`npm run build`/`npm run production:check` all pass clean.
+10. **Document the incident** — root cause, tenant(s) affected, real data impact, the fix, and
+    the test added. See `docs/PILOT_FEEDBACK.md`.
+
+## No Silent Fixes (Phase 5, Part 19)
+
+Any production bug found during the pilot gets: root cause, tenant affected, data impact, the
+fix, and a new regression test — recorded in `docs/PILOT_FEEDBACK.md` before the fix is
+considered done. Never patch behavior without a test that would have caught it.
+
+## Data Isolation Watch (Phase 5, Part 20)
+
+```
+npm run pilot:isolation-check
+```
+
+Real, read-only, periodic check (`scripts/data-isolation-check.mjs`) — opens the DB read-only
+(never writes, never deletes) and reports: any tenant-owned table with an unexpectedly NULL
+`tenant_id`, orphan `tenant_memberships` rows, and — the shape a genuine cross-tenant leak would
+actually take — any `agent_tool_assignments`/`agent_runs`/`agent_tool_calls`/
+`integration_credentials_vault`/`agent_approvals` row whose own `connection_id` belongs to a
+**different** tenant's `integration_connections` row. **Report only** — a real finding must be
+investigated by hand, never auto-deleted. Verified against a deliberately-injected cross-tenant
+row in a scratch DB during this phase (correctly caught, exit code 1) and against the real
+pilot database (clean, exit code 0). Run this daily during the pilot alongside the monitoring
+below.
+
+## Database Migration Trigger Conditions (Phase 5, Part 28)
+
+**Not migrating away from SQLite this phase.** The real, explicit conditions that would trigger
+a future migration to a real database server (Postgres) — not vague "if it feels slow":
+- This deployment needs to run as **more than one app process/instance** (the in-process
+  rate limiters, workspace-creation guard, and scheduler reentrancy guard are not
+  multi-instance-safe — see `PILOT_RUNBOOK.md`'s audit table).
+- **Persistent `SQLITE_BUSY`** under real load, even with `busy_timeout=5000` (Part 45/46) —
+  i.e., writers routinely waiting out the full timeout, not an occasional one-off.
+- **Real write contention** — multiple tenants' scheduler ticks or webhook bursts overlapping
+  long enough to matter (watch via the SQLite Monitoring items below).
+- **A meaningfully larger tenant count** than the pilot's 1-3 (this was never load-tested or
+  claimed to scale further).
+- **Job throughput becoming a bottleneck** — the scheduler or webhook ingestion measurably
+  falling behind real volume.
+
+## SQLite Monitoring (Phase 5, Part 27)
+
+During the pilot, watch for (via the structured request logs and `#platform`):
+- Any `SQLITE_BUSY` occurrence surfacing as a request error (should be effectively zero at
+  pilot scale given `busy_timeout=5000`).
+- Write-heavy request latency (`duration_ms` in the structured logs) trending upward.
+- `data/hypercool.sqlite` file size growth.
+- `npm run backup` duration (recorded on every run).
+- Scheduler tick duration (visible in `#platform`'s operations view).
+
+## External Action Enablement Order (Phase 5, Part 29-32)
+
+Never enable all channels together. Recommended order, each step proven stable before the next:
+1. AI drafts (read/draft-only agent scenarios).
+2. Salla reads (product/price/stock lookups — no writes).
+3. WhatsApp inbound (receipt + routing only — `ENABLE_EXTERNAL_MESSAGING=false` keeps outbound
+   closed).
+4. Microsoft reads (identity + read-safe capabilities only).
+5. **One** approved outbound action, manually reviewed end to end (see the Approval flow).
+6. Publishing (`ENABLE_EXTERNAL_PUBLISHING`) last, and only after (5) is proven stable.
+
+Keep `ENABLE_AUTOMATED_FOLLOWUPS=false` and both `ENABLE_L2_AUTONOMY`/`ENABLE_L3_AUTONOMY=false`
+through the entire initial pilot (Part 31/32) — all agents stay at L0 (or a single explicitly
+promoted agent at L1 with mandatory Approval, never automatic L2/L3).
+
+## Incident Steps (quick reference)
 
 1. Check `GET /health/ready` and `#platform` overview first.
 2. If a specific tenant is misbehaving: `#platform` → tenant detail → review recent audit,
@@ -192,6 +293,8 @@ known pilot constraint, not silently worked around.
    (even if suspect — never lose the only copy), then consider `npm run restore` from the
    last known-good backup.
 5. Reactivate/extend-trial once resolved (`#platform`, both audited).
+
+See "Incident Response" above for the full 10-step procedure.
 
 ## Starting the App
 

@@ -14,7 +14,8 @@
     "backup": "node scripts/backup.mjs",
     "restore": "node scripts/restore.mjs",
     "production:check": "node scripts/production-check.mjs",
-    "load:workspace-creation": "node scripts/load-workspace-creation.mjs"
+    "load:workspace-creation": "node scripts/load-workspace-creation.mjs",
+    "pilot:isolation-check": "node scripts/data-isolation-check.mjs"
   },
   "engines": {
     "node": ">=24.11.0"

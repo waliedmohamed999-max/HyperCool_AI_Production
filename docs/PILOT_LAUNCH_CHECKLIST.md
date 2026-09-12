@@ -1,7 +1,16 @@
 # Pilot Launch Checklist (Multi-Tenant Phase 4C-7)
 
 Companion to `docs/PILOT_RUNBOOK.md`. Work through this once, before onboarding the first real
-pilot company.
+pilot company. See also (Phase 5): `docs/PILOT_FEEDBACK.md` (log real issues as they happen),
+`docs/PILOT_SUPPORT_PLAYBOOK.md` (common real support situations), and
+`docs/PRODUCTION_PILOT_REPORT.md` (fill in as the real pilot progresses — never with invented
+data).
+
+- [ ] `npm run pilot:isolation-check` shows no findings (Phase 5, Part 20).
+- [ ] `ENABLE_EXTERNAL_MESSAGING`/`ENABLE_EXTERNAL_PUBLISHING`/`ENABLE_AUTOMATED_FOLLOWUPS`
+      explicitly set to `false` for the initial pilot (none defaults to false on its own).
+- [ ] `ALLOW_PUBLIC_SIGNUP` explicitly set to `false` for an invite-only initial pilot (does
+      not default to false on its own).
 
 ## Before Launch
 
