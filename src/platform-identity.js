@@ -182,3 +182,29 @@ function makeLimiter(max,windowMs) {
 // dozens of these within 15 minutes).
 export const checkForgotPasswordRateLimit=makeLimiter(40,900000);
 export const checkEmailVerificationRateLimit=makeLimiter(40,900000);
+// Account creation is a heavier, one-time-per-real-person action — a much lower cap than the
+// resend/reset limiters above is appropriate and still generous for real usage (Part 66/67).
+export const checkSignupRateLimit=makeLimiter(20,900000);
+
+/**
+ * Multi-Tenant Phase 4C-6 (Part 4/5) — public self-service account registration. Deliberately
+ * does NOT create a workspace in the same step (Part 4: "لا تطلب company في نفس transaction
+ * بالضرورة" / Part 7: "لا تنشئ Workspace تلقائيًا من verification endpoint نفسه") — this only
+ * creates the USER identity and starts the exact same email-verification round-trip
+ * `requestEmailChange` already provides, reusing it rather than a second implementation.
+ * Email uniqueness is checked up front so a doomed registration never creates an orphan
+ * account with an email it can never verify; `requestEmailChange`'s own re-check right after
+ * is defense-in-depth against a race between the two, not redundant. `role:'owner'` matches
+ * this account's real eventual intent — every self-service signup is, by definition, someone
+ * about to become an owner of their own new workspace (Part 20/21).
+ */
+export function registerPublicUser(db,auth,{name,username,email,password}) {
+ const normalizedEmail=normalizeEmail(email);
+ if(db.prepare('SELECT id FROM users WHERE email=?').get(normalizedEmail))fail(409,'هذا البريد الإلكتروني مستخدم من قبل حساب آخر');
+ const user=auth.createUser({username,name,password},'owner');
+ // Marks this account as a real public self-service signup — see store.js's `self_registered`
+ // column comment for exactly why `resolveTenantForUser` needs to know this.
+ db.prepare('UPDATE users SET self_registered=1 WHERE id=?').run(user.id);
+ const {token}=requestEmailChange(db,user.id,normalizedEmail);
+ return {user,token,normalizedEmail};
+}

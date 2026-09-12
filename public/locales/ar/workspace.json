@@ -9,5 +9,27 @@
   "roleReviewer": "مراجع",
   "roleOperator": "مشغّل",
   "switchAriaLabel": "تبديل منشأة العمل النشطة",
-  "currentBadge": "نشطة"
+  "currentBadge": "نشطة",
+  "verifyEmailFirstTitle": "يجب تأكيد بريدك الإلكتروني أولًا",
+  "verifyEmailFirstHint": "لإنشاء منشأتك الخاصة، أكّد بريدك الإلكتروني من إعدادات الحساب أولًا.",
+  "goToAccountSettings": "الذهاب إلى إعدادات الحساب",
+  "createFirstWorkspaceTitle": "لا تملك منشأة بعد",
+  "createFirstWorkspaceHint": "أنشئ منشأتك الخاصة الآن لتبدأ إعداد فريق الوكلاء لشركتك.",
+  "createWorkspaceButton": "إنشاء منشأة جديدة",
+  "newWorkspace": {
+    "title": "إنشاء منشأة جديدة",
+    "subtitle": "أدخل بيانات شركتك لإنشاء مساحة عمل جديدة خاصة بك — تبدأ بفترة تجريبية.",
+    "companyNameLabel": "اسم الشركة أو المنشأة",
+    "slugLabel": "المعرّف (اختياري)",
+    "slugHint": "يُستخدم في الروابط — يُولَّد تلقائيًا من اسم الشركة إن تُرك فارغًا.",
+    "languageLabel": "اللغة الافتراضية",
+    "timezoneLabel": "المنطقة الزمنية",
+    "submit": "إنشاء المنشأة",
+    "submitting": "جارٍ إنشاء المنشأة…",
+    "trialNote": "ستبدأ منشأتك بفترة تجريبية مدتها {days} يومًا.",
+    "slugTaken": "هذا المعرّف مستخدم بالفعل — جرّب: {suggestion}",
+    "limitReached": "لقد وصلت إلى الحد الأقصى لعدد المنشآت التي يمكنك إنشاؤها ({limit}).",
+    "notAllowed": "إنشاء منشأة ذاتيًا غير متاح حاليًا على هذه المنصة.",
+    "emailRequired": "يجب تأكيد بريدك الإلكتروني أولًا من إعدادات الحساب."
+  }
 }

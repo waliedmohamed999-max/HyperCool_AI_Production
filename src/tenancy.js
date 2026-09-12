@@ -39,6 +39,18 @@ export function installTenancy(db) {
  if(!columns.includes('default_ai_connection_id'))db.exec('ALTER TABLE tenants ADD COLUMN default_ai_connection_id TEXT');
  if(!columns.includes('default_ai_model'))db.exec('ALTER TABLE tenants ADD COLUMN default_ai_model TEXT');
  if(!columns.includes('max_agent_level'))db.exec('ALTER TABLE tenants ADD COLUMN max_agent_level TEXT');
+ // Multi-Tenant Phase 4C-6 (Self-Service Signup + Trial Workspaces) — additive, nullable.
+ // `trial_started_at`/`trial_expires_at` are NULL for every tenant that predates this phase
+ // (the real HyperCool tenant included, Part 74/75 — never retroactively converted into a
+ // trial) and for any tenant created any other way than the new self-service flow.
+ // `created_by_user_id` records who actually ran the self-service creation flow (NULL for the
+ // legacy default tenant and any tenant created directly by a backend caller) — this is the
+ // ONLY reliable way to count "self-created workspaces per user" (Part 13) without conflating
+ // it with owner memberships gained through an invitation, which must never count against the
+ // limit.
+ if(!columns.includes('trial_started_at'))db.exec('ALTER TABLE tenants ADD COLUMN trial_started_at TEXT');
+ if(!columns.includes('trial_expires_at'))db.exec('ALTER TABLE tenants ADD COLUMN trial_expires_at TEXT');
+ if(!columns.includes('created_by_user_id'))db.exec('ALTER TABLE tenants ADD COLUMN created_by_user_id TEXT');
 }
 /**
  * Idempotent, lossless backfill (spec Part 99-101). The very first call on a real database
@@ -110,12 +122,16 @@ function validMembershipsForUser(db,userId) {
  *
  * Resolution order (never a `LIMIT 1`/`[0]`/`findFirst()` guess across multiple real
  * memberships — Part D):
- *  0 valid memberships AND exactly one tenant exists system-wide → the pre-existing,
- *    single-tenant auto-attach behavior (Phase 1/3.5), UNCHANGED for zero regression risk to
- *    the one real deployment and every fixture/test that predates real multi-tenancy.
- *  0 valid memberships AND more than one tenant exists           → `NO_WORKSPACE_ACCESS`
- *    (never silently attached to "the first tenant" — that would be exactly the unsafe
- *    fallback this phase exists to remove).
+ *  0 valid memberships AND exactly one tenant exists system-wide AND the user is NOT a
+ *    Phase 4C-6 self-service signup → the pre-existing, single-tenant auto-attach behavior
+ *    (Phase 1/3.5), UNCHANGED for zero regression risk to the one real deployment and every
+ *    fixture/test that predates real multi-tenancy.
+ *  0 valid memberships AND (more than one tenant exists OR the user IS a self-service signup)
+ *    → `NO_WORKSPACE_ACCESS` (never silently attached to "the first tenant" — that would be
+ *    exactly the unsafe fallback this phase exists to remove; Phase 4C-6 Part 8 turns this into
+ *    a normal, expected "create your first workspace" prompt on the frontend, not an error
+ *    page — a self-service signup must NEVER be silently attached to, and given owner access
+ *    over, a real pre-existing tenant it had nothing to do with).
  *  exactly 1 valid membership                                     → that tenant, always
  *    (deterministic — not a "guess among many", so no friction is added here — Part B Case 3).
  *  >1 valid memberships, activeTenantIdFromSession matches one     → that one (Part B Case 5).
@@ -127,8 +143,8 @@ export function resolveTenantForUser(db,userId,activeTenantIdFromSession=null) {
  const memberships=validMembershipsForUser(db,userId);
  if(memberships.length===0) {
   const {n}=db.prepare('SELECT COUNT(*) n FROM tenants').get();
-  if(n>1)throw Object.assign(new Error('NO_WORKSPACE_ACCESS'),{code:'NO_WORKSPACE_ACCESS',status:403});
-  const user=db.prepare('SELECT role FROM users WHERE id=?').get(userId);
+  const user=db.prepare('SELECT role,self_registered FROM users WHERE id=?').get(userId);
+  if(n>1 || user?.self_registered)throw Object.assign(new Error('NO_WORKSPACE_ACCESS'),{code:'NO_WORKSPACE_ACCESS',status:403});
   if(user)db.prepare('INSERT OR IGNORE INTO tenant_memberships (id,tenant_id,user_id,role,status,is_owner,created_at) VALUES (?,?,?,?,?,?,?)')
    .run(randomUUID(),tenantId,userId,user.role,'active',user.role==='owner'?1:0,new Date().toISOString());
   return tenantId;
@@ -178,7 +194,9 @@ export function getTenant(db,tenantId) {
  const row=db.prepare('SELECT * FROM tenants WHERE id=?').get(tenantId);
  if(!row)return null;
  return {id:row.id,name:row.name,slug:row.slug,status:row.status,plan:row.plan,defaultLocale:row.default_locale,timezone:row.timezone,brandingSettings:row.branding_settings?JSON.parse(row.branding_settings):null,systemMode:row.system_mode,
-  defaultAiConnectionId:row.default_ai_connection_id,defaultAiModel:row.default_ai_model,maxAgentLevel:row.max_agent_level,createdAt:row.created_at,updatedAt:row.updated_at};
+  defaultAiConnectionId:row.default_ai_connection_id,defaultAiModel:row.default_ai_model,maxAgentLevel:row.max_agent_level,
+  trialStartedAt:row.trial_started_at,trialExpiresAt:row.trial_expires_at,createdByUserId:row.created_by_user_id,
+  createdAt:row.created_at,updatedAt:row.updated_at};
 }
 // Multi-Tenant Phase 4B (Part 17/37) — the workspace-level AI default and safety ceiling.
 // `setWorkspaceAiDefault`'s `connectionId` is validated by the caller (application.js route)
@@ -247,14 +265,18 @@ export function updateMembershipStatus(db,tenantId,membershipId,status) {
 }
 /**
  * Creates a brand-new, empty tenant — no credentials, no CRM data, no memory, no logs (spec
- * Part 53: "cloning" a customer must never copy another tenant's data). Not yet reachable
- * from any UI (no Control Center exists in this pass) — exposed here so the next phase's
- * onboarding route has a real, tested function to call rather than inventing one blind.
+ * Part 53: "cloning" a customer must never copy another tenant's data). This is now the real
+ * foundation `workspace-provisioning.js`'s self-service flow builds on directly (Multi-Tenant
+ * Phase 4C-6, Part 1: "حوّل الدالة الحالية إلى foundation آمنة" — extended, not duplicated).
+ * `createdByUserId` (new, optional, defaults to `null`) records who actually ran a
+ * self-service creation flow, distinct from `ownerUserId` (every existing call site keeps
+ * passing only `{name,slug}` unchanged) — see `countSelfCreatedWorkspaces` above for why this
+ * must be tracked separately from owner membership.
  */
-export function createTenant(db,{name,slug},ownerUserId) {
+export function createTenant(db,{name,slug,createdByUserId=null},ownerUserId) {
  const id=randomUUID(),now=new Date().toISOString();
- db.prepare('INSERT INTO tenants (id,name,slug,status,default_locale,timezone,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
-  .run(id,name,slug,'TRIAL','ar','Asia/Riyadh',now,now);
+ db.prepare('INSERT INTO tenants (id,name,slug,status,default_locale,timezone,created_by_user_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+  .run(id,name,slug,'TRIAL','ar','Asia/Riyadh',createdByUserId,now,now);
  if(ownerUserId)db.prepare('INSERT INTO tenant_memberships (id,tenant_id,user_id,role,status,is_owner,created_at) VALUES (?,?,?,?,?,?,?)')
   .run(randomUUID(),id,ownerUserId,'owner','active',1,now);
  return id;
@@ -274,4 +296,36 @@ export function listTenants(db,{statuses=['ACTIVE','TRIAL']}={}) {
  if(!statuses.length)return [];
  const placeholders=statuses.map(()=>'?').join(',');
  return db.prepare(`SELECT id,name,slug,status FROM tenants WHERE status IN (${placeholders}) ORDER BY created_at`).all(...statuses);
+}
+// --- Multi-Tenant Phase 4C-6 — Trial workspace policy (Part 58/59). No billing engine: these
+// are pure, real, read-derived helpers over `tenants.status`/`trial_expires_at` — never a
+// separate "subscription" concept.
+export function isTrialActive(tenant) {
+ return tenant.status==='TRIAL' && (!tenant.trialExpiresAt || new Date(tenant.trialExpiresAt).getTime()>Date.now());
+}
+export function getTrialDaysRemaining(tenant) {
+ if(tenant.status!=='TRIAL' || !tenant.trialExpiresAt)return null;
+ return Math.max(0,Math.ceil((new Date(tenant.trialExpiresAt).getTime()-Date.now())/86400000));
+}
+/**
+ * Part 17/18 — a trial that has run past `trial_expires_at` stops being eligible for
+ * automation WITHOUT deleting anything: reusing the existing `SUSPENDED` status is the only
+ * option that doesn't require altering `tenants.status`'s CHECK constraint (SQLite cannot
+ * widen a CHECK via a simple `ALTER TABLE`, and adding a distinct `TRIAL_EXPIRED` value would
+ * require rebuilding the table — explicitly out of scope for what should stay a lightweight,
+ * additive migration). `trial_expires_at` staying non-null on the now-SUSPENDED row is what
+ * still distinguishes "trial ran out" from an owner being suspended for any other reason,
+ * for any future UI/audit that needs to tell the two apart. Intended to be called from the
+ * existing tenant-aware scheduler tick (Part 19) — never a separate scheduler.
+ */
+export function expireTrials(db) {
+ const now=new Date().toISOString();
+ const due=db.prepare("SELECT id FROM tenants WHERE status='TRIAL' AND trial_expires_at IS NOT NULL AND trial_expires_at<?").all(now);
+ for(const {id} of due)db.prepare("UPDATE tenants SET status='SUSPENDED',updated_at=? WHERE id=?").run(now,id);
+ return due.map(r=>r.id);
+}
+/** Part 13 — ONLY tenants this exact user created via the self-service flow (`created_by_
+ * user_id`), never an owner membership gained through accepting someone else's invitation. */
+export function countSelfCreatedWorkspaces(db,userId) {
+ return db.prepare('SELECT COUNT(*) n FROM tenants WHERE created_by_user_id=?').get(userId).n;
 }

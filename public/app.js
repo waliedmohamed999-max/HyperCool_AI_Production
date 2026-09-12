@@ -18,6 +18,7 @@ import {installControlCenter,renderControlCenter} from './pages/control-center.j
 import {installOnboardingPage,renderOnboardingPage} from './pages/onboarding.js';
 import {installAccountPage,renderAccountPage} from './pages/account.js';
 import {isRecoveryRoute,installRecoveryPage,renderRecoveryPage} from './pages/recovery.js';
+import {isNewWorkspaceRoute,installNewWorkspacePage,renderNewWorkspacePage} from './pages/new-workspace.js';
 import {isInviteRoute,renderInvitePage} from './pages/invite.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
@@ -32,6 +33,7 @@ installControlCenter();
 installOnboardingPage();
 installAccountPage();
 installRecoveryPage();
+installNewWorkspacePage();
 installCRMInteractions();
 installContentInteractions();
 installMemoryInteractions();
@@ -67,7 +69,7 @@ window.addEventListener('popstate',()=>showPage(currentPage()));
 // visibility. Leaving them (their own "back to app" actions) uses a full page reload instead,
 // so this only needs to handle the "entering" direction.
 window.addEventListener('hashchange',()=>{
-  if(isInviteRoute()||isRecoveryRoute())render().catch(error=>message(error.message,'error'));
+  if(isInviteRoute()||isRecoveryRoute()||isNewWorkspaceRoute())render().catch(error=>message(error.message,'error'));
   else showPage(currentPage());
 });
 const roles=new Proxy({},{get:(_,role)=>t('navigation.role'+role.charAt(0).toUpperCase()+role.slice(1))});
@@ -112,6 +114,12 @@ async function render(){
   // session at all, or an expired one, or be on a different device than where they're
   // logged in).
   if(isRecoveryRoute()){await renderRecoveryPage();return;}
+  // Multi-Tenant Phase 4C-6 — Create Workspace deliberately lives OUTSIDE the normal
+  // `workspace.ready` gate below: the very case it exists for is "no workspace is ready yet"
+  // (Part 8), and an already-established user may also reach it later for a SECOND workspace
+  // (Part 48). Requires a real session, though — an unauthenticated visitor on this hash just
+  // falls through to the ordinary login screen.
+  if(isNewWorkspaceRoute() && auth.user){await renderNewWorkspacePage(auth,api);return;}
   workspaceAuth(auth);
   $('#auth-panel').hidden=!!auth.user;
   $('#protected').hidden=!auth.user;
@@ -120,6 +128,17 @@ async function render(){
   $('#setup-name').hidden=!auth.needsSetup;
   $('#setup-name input').required=auth.needsSetup;
   $('#auth-form button').textContent=auth.needsSetup?t('common.createAccountAndStart'):t('common.login');
+  // The public-signup toggle only makes sense once the platform's very first owner already
+  // exists — during needsSetup, `#auth-form` itself IS that one-time setup flow.
+  $('#show-signup-link').hidden=auth.needsSetup||!!auth.user;
+  // Every render() while logged out resets to the DEFAULT login view — a plain toggle click
+  // (see the two listeners below) never itself calls render(), so this only ever runs again
+  // after something else already ended that toggle's context (a real submit, a fresh page
+  // load, a locale switch); starting over at login each time is correct, not a loss of state.
+  // (A real bug this phase's own regression testing found: gating this reset behind
+  // `auth.needsSetup||auth.user` left BOTH forms stuck hidden after a later logout, since
+  // neither condition holds true then — see docs/SAAS_ENTRY_FLOW.md.)
+  if(!auth.user){$('#signup-form').hidden=true;$('#show-login-link').hidden=true;$('#auth-form').hidden=false;$('#forgot-password-link').hidden=false;}
   shellData(auth,viewData,api);
   if(!auth.user)return;
   if(!accountLocaleApplied){accountLocaleApplied=true;if(auth.user.preferredLocale&&auth.user.preferredLocale!==getLocale()){await setLocale(auth.user.preferredLocale);return;}}
@@ -130,7 +149,7 @@ async function render(){
   const workspace=await resolveActiveWorkspace(auth.csrf);
   $('#protected').hidden=!workspace.ready;
   if(!workspace.ready){
-    renderWorkspaceGate(workspace,auth.csrf,()=>render().catch(error=>message(error.message,'error')));
+    renderWorkspaceGate(workspace,auth.csrf,()=>render().catch(error=>message(error.message,'error')),auth.user);
     return;
   }
   hideWorkspaceGate();
@@ -172,12 +191,18 @@ document.addEventListener('submit',async event=>{
   // FormData must be built before disabling the submitter — a disabled form control (the
   // button itself, once we disable it below) is excluded from its own form's data set.
   const input=Object.fromEntries(new FormData(form,submitter&&submitter.form===form?submitter:undefined));
+  // Multi-Tenant Phase 4C-6 — client-side-only guard (the backend never receives or checks
+  // `confirmPassword` at all); a real mismatch is still just a normal, correctable form error.
+  if(form.id==='signup-form') {
+    if(input.password!==input.confirmPassword){const note=document.createElement('p');note.className='field-error';note.setAttribute('role','alert');note.textContent=t('common.passwordsDontMatch');button.before(note);return;}
+    delete input.confirmPassword;
+  }
   button.disabled=true;
   form.querySelector('.field-error')?.remove();
   if(form.dataset.autonomy||['approve','reject'].includes(form.dataset.action)){const accepted=await confirmAction(t('common.confirmActionGeneric'),t('common.confirmActionGenericBody'));if(!accepted){button.disabled=false;return;}}
   form.setAttribute('aria-busy','true');
   if(form.id==='ai-form')beginGeneration();
-  try {const result=await submitCRM(form,input,api)||await submitPlanning(form,input,api)||await submitKnowledge(form,input,api)||await submitAutonomy(form,input,api)||await submitAgentTest(form,input,api);if(result){if(form.id==='memory-form')form.reset();await render();message(result);return;}if(form.dataset.action==='review') for(const key of ['facts','claims','link','asset'])input[key]=input[key]==='on';const path=form.id==='auth-form'?(auth.needsSetup?'/api/setup':'/api/login'):form.id==='user-form'?'/api/users':form.id==='draft'?'/api/content':`/api/content/${form.dataset.id}/${form.dataset.action}`;await api(path,input);form.reset();await render();message(t('common.savedSuccessfully'));}catch(error){const note=document.createElement('p');note.className='field-error';note.setAttribute('role','alert');note.textContent=error.message;button.before(note);message(error.message,'error');}finally{if(form.id==='ai-form')endGeneration();button.disabled=false;form.removeAttribute('aria-busy');}
+  try {const result=await submitCRM(form,input,api)||await submitPlanning(form,input,api)||await submitKnowledge(form,input,api)||await submitAutonomy(form,input,api)||await submitAgentTest(form,input,api);if(result){if(form.id==='memory-form')form.reset();await render();message(result);return;}if(form.dataset.action==='review') for(const key of ['facts','claims','link','asset'])input[key]=input[key]==='on';const path=form.id==='auth-form'?(auth.needsSetup?'/api/setup':'/api/login'):form.id==='signup-form'?'/api/signup':form.id==='user-form'?'/api/users':form.id==='draft'?'/api/content':`/api/content/${form.dataset.id}/${form.dataset.action}`;await api(path,input);form.reset();await render();message(t('common.savedSuccessfully'));}catch(error){const note=document.createElement('p');note.className='field-error';note.setAttribute('role','alert');note.textContent=error.message;button.before(note);message(error.message,'error');}finally{if(form.id==='ai-form')endGeneration();button.disabled=false;form.removeAttribute('aria-busy');}
 });
 $('#salla-sync').addEventListener('click',async event=>{event.target.disabled=true;try{const result=await api('/api/salla/sync',{});await render();message(t('common.importedProducts',{count:result.count}));}catch(error){message(error.message,'error');}finally{event.target.disabled=false;}});
 document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button)return;let path,input={};if(button.id==='save-brief')path='/api/brief';else if(button.id==='prepare-due')path='/api/schedule/prepare';else if(button.dataset.cancelContent){path='/api/schedule/cancel';input.contentId=button.dataset.cancelContent;}if(!path)return;button.disabled=true;try{const result=await api(path,input);await render();message(result.replayed?t('common.todayBundleAlreadySaved'):t('common.savedLocallySuccessfully'));}catch(error){message(error.message,'error');}finally{button.disabled=false;}});
@@ -189,6 +214,11 @@ document.addEventListener('click',async event=>{const button=event.target.closes
 document.addEventListener('team-refresh',async event=>{try{await render();message(event.detail);}catch(error){message(error.message,'error');}});
 document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button||!(button.dataset.approvalDecide||button.dataset.escalationResolve))return;button.disabled=true;try{const text=await clickApprovalCenter(button,api);await render();message(text);}catch(error){message(error.message,'error');}finally{button.disabled=false;}});
 $('#logout').addEventListener('click',async()=>{try{await api('/api/logout',{});resetCRM();resetCompliance();await render();message(t('common.loggedOut'));}catch(error){message(error.message,'error');}});
+// Multi-Tenant Phase 4C-6 (Part 42/43) — a plain show/hide toggle between the login and
+// public signup forms on the same auth screen; no route/hash change, so it works even before
+// initI18n's very first render() has resolved anything about the visitor.
+$('#show-signup-link').addEventListener('click',()=>{$('#auth-form').hidden=true;$('#forgot-password-link').hidden=true;$('#show-signup-link').hidden=true;$('#signup-form').hidden=false;$('#show-login-link').hidden=false;});
+$('#show-login-link').addEventListener('click',()=>{$('#signup-form').hidden=true;$('#show-login-link').hidden=true;$('#auth-form').hidden=false;$('#forgot-password-link').hidden=false;$('#show-signup-link').hidden=false;});
 document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button||!button.dataset.complianceCheck)return;button.disabled=true;try{const result=await clickCompliance(button,api);await render();message(result);}catch(error){message(error.message,'error');}finally{button.disabled=false;}});
 document.addEventListener('click',async event=>{const button=event.target.closest('button,[data-open-lead],[data-crm-scroll]');if(!button||!(button.dataset.leadId||button.dataset.openLead||button.dataset.followupApprove||button.dataset.crmStop||button.id==='crm-prepare'||button.id==='crm-run-frost'||button.dataset.followupTab||button.dataset.inboxTab||button.dataset.quickAction))return;if(button.tagName==='BUTTON')button.disabled=true;try{const result=await clickCRM(button,api);if(result){await render();message(result);}}catch(error){message(error.message,'error');}finally{if(button.tagName==='BUTTON')button.disabled=false;}});
 let crmSearchTimer=null;

@@ -35,8 +35,10 @@ import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
 import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants,listWorkspacesForUser,activateWorkspaceForUser,listActiveMembers,getMembership,updateMembershipRole,updateMembershipStatus} from './tenancy.js';
 import {installInvitations,createInvitation,listInvitations,resendInvitation,revokeInvitation,previewInvitation,acceptInvitation,roleForValidToken,checkInvitationRateLimit} from './invitations.js';
-import {installPlatformIdentity,getUserIdentity,requestEmailChange,resendEmailVerification,verifyEmailToken,requestPasswordReset,consumePasswordResetToken,checkForgotPasswordRateLimit,checkEmailVerificationRateLimit,recordPlatformAudit} from './platform-identity.js';
+import {installPlatformIdentity,getUserIdentity,requestEmailChange,resendEmailVerification,verifyEmailToken,requestPasswordReset,consumePasswordResetToken,checkForgotPasswordRateLimit,checkEmailVerificationRateLimit,recordPlatformAudit,registerPublicUser,checkSignupRateLimit} from './platform-identity.js';
 import {installPlatformMail,platformMailStatus,sendVerificationEmail,sendPasswordResetEmail,sendInvitationEmail,sendSecurityNotice} from './runtime/platform-mail.js';
+import {bootstrapWorkspaceForOwner,assertCanSelfCreateWorkspace,selfServicePolicy} from './workspace-provisioning.js';
+import {isTrialActive,getTrialDaysRemaining,countSelfCreatedWorkspaces} from './tenancy.js';
 import {installContent,listContent,getContent,getContentOrNull,insertContent,writeContent} from './content.js';
 import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
@@ -109,6 +111,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   await mkdir(dataDir,{recursive:true});
   const store=openStore(resolve(dataDir,'hypercool.sqlite'),resolve(dataDir,'state.json'));
   const auth=createAuth(store.db);
+  // Multi-Tenant Phase 4C-6 (Part 34/72) — a simple, in-process per-user guard against a
+  // double-click/network-retry firing two overlapping `POST /api/workspaces` requests from the
+  // SAME user before the first has finished its transaction. Scoped to this one `createApp()`
+  // instance (not a module-level singleton) so separate app instances — every test fixture,
+  // for one — never share or leak this state across each other.
+  const workspaceCreationInFlight=new Set();
   installTenancy(store.db);
   ensureDefaultTenant(store.db); // real, lossless backfill — see docs/MULTI_TENANT_ARCHITECTURE.md
   installInvitations(store.db); // Multi-Tenant Phase 4C-3 — see docs/WORKSPACE_INVITATIONS.md
@@ -362,6 +370,27 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         res.setHeader('Set-Cookie',`hc_session=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secureCookie}`);
         return send(200,{user:result.user,csrf:result.csrf});
       }
+      // Multi-Tenant Phase 4C-6 (Part 4-7) — public self-service ACCOUNT registration. This is
+      // deliberately narrower than `/api/setup` above (which only ever creates the platform's
+      // very first owner, once): any number of new accounts can register here, but this route
+      // creates a USER identity ONLY — no tenant, no membership. Placed alongside
+      // `/api/setup`/`/api/login`, before the generic authorize()+CSRF gate, since a signing-up
+      // visitor has no session yet.
+      if(req.method==='POST' && url.pathname==='/api/signup') {
+        checkSignupRateLimit(req.socket.remoteAddress);
+        const input=await body(req);
+        const {user,token,normalizedEmail}=registerPublicUser(store.db,auth,{name:input.name,username:input.username,email:input.email,password:input.password});
+        const verifyUrl=`${baseUrl}/#verify-email/${token}`;
+        const locale=['ar','en'].includes(input.locale)?input.locale:'ar';
+        const delivery=await sendVerificationEmail({db:store.db,env,fetcher},{to:normalizedEmail,locale,verifyUrl});
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'USER_REGISTERED',itemId:user.id,actorId:user.id,actorName:user.name,at:new Date().toISOString()});
+        // A real, logged-in session from the moment of signup (Part 6) — but the account
+        // remains "Account Created, Email Unverified" until the link above is actually
+        // clicked; nothing here treats the account as verified or workspace-eligible yet.
+        const result=auth.session(store.db.prepare('SELECT * FROM users WHERE id=?').get(user.id));
+        res.setHeader('Set-Cookie',`hc_session=${result.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${secureCookie}`);
+        return send(201,{user:result.user,csrf:result.csrf,delivered:delivery.delivered});
+      }
       // Workspace Invitations (Phase 4C-3) — the two PUBLIC, token-authenticated routes.
       // Deliberately unauthenticated (a fresh invitee has no session yet) and therefore
       // handled here, alongside /api/auth|setup|login, before the generic authorize()+CSRF
@@ -488,6 +517,40 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const delivery=await sendVerificationEmail({db:store.db,env,fetcher},{to:normalizedEmail,locale,verifyUrl});
         if(delivery.delivered)recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'EMAIL_VERIFICATION_SENT',itemId:session.user.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
         return send(200,{pendingEmail:normalizedEmail,delivered:delivery.delivered,errorCode:delivery.errorCode||null});
+      }
+      // A cheap, read-only check the frontend uses to decide whether to show the Create
+      // Workspace form at all, and why not if not — never the authority itself (the real
+      // enforcement is `assertCanSelfCreateWorkspace`, called again inside the POST below).
+      if(req.method==='GET' && url.pathname==='/api/workspaces/eligibility') {
+        const policy=selfServicePolicy(env);
+        const ownedCount=countSelfCreatedWorkspaces(store.db,session.user.id);
+        return send(200,{allowed:policy.allowed,emailVerified:!!session.user.emailVerifiedAt,ownedCount,maxOwnedWorkspaces:policy.maxOwnedWorkspaces,trialDays:policy.trialDays});
+      }
+      // Multi-Tenant Phase 4C-6 (Part 10/11) — New Company / Trial Workspace creation. Placed
+      // here, tenant-independent, alongside the Phase 4C-1 workspace-selection routes and the
+      // Phase 4C-5 account routes above: creating the FIRST tenant for a user obviously cannot
+      // require one to already be resolved. Uses ONLY `session.user.id` — never a client-
+      // supplied owner/tenant id (Part 10/69/70: the body accepts only `companyName`, `slug`,
+      // `defaultLocale`, `timezone`).
+      if(req.method==='POST' && url.pathname==='/api/workspaces') {
+        if(workspaceCreationInFlight.has(session.user.id))fail(409,'طلب إنشاء منشأة آخر قيد التنفيذ لهذا الحساب بالفعل');
+        workspaceCreationInFlight.add(session.user.id);
+        try {
+          assertCanSelfCreateWorkspace(store.db,env,session.user);
+          const input=await body(req);
+          let created;
+          try { created=bootstrapWorkspaceForOwner(store.db,env,{companyName:input.companyName,slug:input.slug,defaultLocale:input.defaultLocale,timezone:input.timezone},session.user.id); }
+          catch(error) { if(error.code==='WORKSPACE_SLUG_TAKEN')return send(409,{error:error.message,suggestion:error.suggestion});throw error; }
+          const {tenantId,slug,trialExpiresAt}=created;
+          // Part 71 — activate the session's workspace only AFTER the creation transaction has
+          // already committed; a failure here never rolls back the (already real, already
+          // valid) tenant — the owner can still reach it from the workspace switcher.
+          auth.setActiveTenant(session.tokenHash,tenantId);
+          const now=new Date().toISOString();
+          recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_CREATED',itemId:tenantId,actorId:session.user.id,actorName:session.user.name,at:now},tenantId);
+          recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_TRIAL_STARTED',itemId:tenantId,actorId:session.user.id,actorName:session.user.name,at:now},tenantId);
+          return send(201,{id:tenantId,slug,trialExpiresAt});
+        } finally { workspaceCreationInFlight.delete(session.user.id); }
       }
       // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only
@@ -1398,7 +1461,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
       for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
       if(req.method==='GET' && files[url.pathname]) {

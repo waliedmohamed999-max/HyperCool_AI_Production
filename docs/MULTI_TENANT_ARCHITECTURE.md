@@ -339,3 +339,15 @@ there is still no public registration and no billing identity. See
 `docs/PLATFORM_IDENTITY.md`, `docs/EMAIL_VERIFICATION.md`, `docs/PASSWORD_RECOVERY.md`, and
 `docs/PLATFORM_EMAIL.md` for the full detail, and `docs/TENANT_SECURITY_MODEL.md`'s Phase 4C-5
 update for why the new `users.email` is deliberately global rather than tenant-scoped.
+
+## Phase 4C-6 update: public registration and new-company creation now exist too
+
+`createTenant()` is now genuinely reachable — through `POST /api/workspaces`
+(`docs/WORKSPACE_CREATION.md`), gated on a verified email and wrapped in one real atomic
+transaction (`src/workspace-provisioning.js`) that also seeds the real 12
+`TenantAgentConfig` rows and sets trial timestamps (`docs/TRIAL_WORKSPACES.md`). Public account
+registration exists (`POST /api/signup`, `docs/SELF_SERVICE_SIGNUP.md`). What is still
+explicitly NOT built: any billing identity, payment processing, or paid-plan enforcement (see
+`docs/TRIAL_WORKSPACES.md`'s own list) — those remain a genuinely separate, future phase. See
+`docs/SAAS_ENTRY_FLOW.md` for the full entry journey and the real bugs (including one genuine
+security gap) this phase's own end-to-end testing found and fixed along the way.

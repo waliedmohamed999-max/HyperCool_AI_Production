@@ -9,7 +9,13 @@ import {escape,button} from '../components/ui/index.js';
 import {t} from '../i18n.js';
 
 const $=s=>document.querySelector('#invite-panel '+s);
-export function isInviteRoute(){return location.hash.startsWith('#invite/');}
+// `#invite/accepted` is the post-success sentinel `showSuccess()` below leaves in the visible
+// URL — it must NEVER be treated as a route to render again (a page reload on that exact hash,
+// e.g. from clicking "Go to workspace", would otherwise call this page with the literal string
+// "accepted" as a token, get a real 404 from the preview endpoint, and strand the user on a
+// permanent "invalid invitation" screen — found via this phase's own real-browser regression
+// testing, see docs/SAAS_ENTRY_FLOW.md).
+export function isInviteRoute(){return location.hash.startsWith('#invite/') && location.hash!=='#invite/accepted';}
 function tokenFromHash(){return location.hash.slice('#invite/'.length);}
 
 export function installInvitePage(){/* built dynamically per render — nothing to wire once */}
@@ -73,6 +79,9 @@ export async function renderInvitePage(auth,api){
  });
  loginForm.onsubmit=async event=>{
   event.preventDefault();
+  // See recovery.js's identical comment: stops this bubbling into app.js's generic
+  // document-level submit delegate, which would otherwise 404 a stray, harmless request.
+  event.stopPropagation();
   const input=Object.fromEntries(new FormData(loginForm));
   const submitBtn=loginForm.querySelector('button');submitBtn.disabled=true;
   try{
@@ -83,6 +92,7 @@ export async function renderInvitePage(auth,api){
  };
  registerForm.onsubmit=async event=>{
   event.preventDefault();
+  event.stopPropagation();
   const input=Object.fromEntries(new FormData(registerForm));
   const submitBtn=registerForm.querySelector('button');submitBtn.disabled=true;
   try{

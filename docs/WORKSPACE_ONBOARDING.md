@@ -166,3 +166,12 @@ connection through the real form → confirm the AI step turns `READY` from the 
 response, not a locally-set flag → apply the recommended preset → skip Commerce → finish → the
 completion banner appears → reload → the completion persists → Control Center's attention item
 for onboarding disappears. Zero console/page errors.
+
+## Phase 4C-6 update: also the real landing page for a brand-new self-service workspace
+
+`docs/WORKSPACE_CREATION.md`'s `POST /api/workspaces` navigates straight to `#onboarding` on
+success (a real reload, `history.replaceState` first) — this is the exact same wizard described
+above, completely unmodified. No second onboarding implementation exists for self-service
+workspaces; a freshly created tenant's onboarding state starts `NOT_STARTED` like any other
+(lazily created on first real interaction), and tenant creation itself never marks it complete.
+Verified end-to-end by `docs/SAAS_ENTRY_FLOW.md`'s full-journey test.

@@ -9,5 +9,27 @@
   "roleReviewer": "Reviewer",
   "roleOperator": "Operator",
   "switchAriaLabel": "Switch active workspace",
-  "currentBadge": "Active"
+  "currentBadge": "Active",
+  "verifyEmailFirstTitle": "Verify your email first",
+  "verifyEmailFirstHint": "To create your own workspace, verify your email from Account Settings first.",
+  "goToAccountSettings": "Go to Account Settings",
+  "createFirstWorkspaceTitle": "You don't have a workspace yet",
+  "createFirstWorkspaceHint": "Create your own workspace now to start setting up your agent team.",
+  "createWorkspaceButton": "Create Workspace",
+  "newWorkspace": {
+    "title": "Create Workspace",
+    "subtitle": "Enter your company details to create your own new workspace — it starts on a free trial.",
+    "companyNameLabel": "Company / workspace name",
+    "slugLabel": "Slug (optional)",
+    "slugHint": "Used in links — auto-generated from the company name if left blank.",
+    "languageLabel": "Default language",
+    "timezoneLabel": "Timezone",
+    "submit": "Create workspace",
+    "submitting": "Creating workspace…",
+    "trialNote": "Your workspace will start on a {days}-day trial.",
+    "slugTaken": "That slug is already taken — try: {suggestion}",
+    "limitReached": "You've reached the maximum number of workspaces you can create ({limit}).",
+    "notAllowed": "Self-service workspace creation is not currently available on this platform.",
+    "emailRequired": "You must verify your email first from Account Settings."
+  }
 }

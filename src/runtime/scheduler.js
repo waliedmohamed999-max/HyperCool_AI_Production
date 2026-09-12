@@ -6,7 +6,7 @@ import {listLeads} from '../crm.js';
 import {getCredentialsMeta,updateCredentialsMetadata,isExpiringSoon} from './credentials.js';
 import {renewMailSubscription} from './microsoft-graph.js';
 import {isEnabled} from './feature-flags.js';
-import {listTenants} from '../tenancy.js';
+import {listTenants,expireTrials} from '../tenancy.js';
 import {recordAudit} from '../audit.js';
 
 export const SCHEDULER_ACTOR={id:'scheduler',name:'الجدولة الآلية',role:'automation'};
@@ -137,6 +137,13 @@ export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch,
   tickRunning=true;
   try {
    const result={at:new Date(now).toISOString(),tenants:{}};
+   // Multi-Tenant Phase 4C-6 (Part 17-19) — a TRIAL tenant past its own `trial_expires_at`
+   // stops being automation-eligible from this same tick onward: `expireTrials` flips it to
+   // the existing `SUSPENDED` status (no data touched, no new scheduler built) BEFORE
+   // `listTenants` below reads the eligible set, so an expired trial never runs even one more
+   // daily brief / follow-up sweep / scheduled publish after its own expiry moment.
+   const expiredTenantIds=expireTrials(db);
+   for(const tenantId of expiredTenantIds)recordAudit(store.db,{id:randomUUID(),action:'WORKSPACE_TRIAL_EXPIRED',itemId:tenantId,at:new Date(now).toISOString()},tenantId);
    const {hour,weekday}=riyadhParts(now);
    const eligibleTenants=listTenants(db);
    for(const tenant of eligibleTenants) {

@@ -50,6 +50,17 @@ export function openStore(path, legacyPath) {
   // without needing a partial/WHERE-guarded index — any number of NULL (no email yet) rows
   // coexist freely.
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+  // Multi-Tenant Phase 4C-6 (Self-Service Signup) — additive. Marks an account created through
+  // the new PUBLIC `/api/signup` specifically (never set for `/api/setup`'s first owner, an
+  // owner-created team member, or invitation registration). The ONE thing this flag exists to
+  // do: tell `resolveTenantForUser` (tenancy.js) NOT to run its legacy "auto-attach a
+  // zero-membership user to the sole existing tenant" fallback for this account — that
+  // fallback predates self-service signup and assumes every user account implicitly belongs
+  // to the one tenant that happens to exist, which is exactly wrong for a brand-new public
+  // signup in what is, in the real HyperCool deployment today, a single-tenant system: without
+  // this flag, any stranger signing up publicly would be silently attached to (and, given
+  // `role='owner'`, made an owner of) the real production tenant.
+  if(!userColumns.includes('self_registered'))db.exec('ALTER TABLE users ADD COLUMN self_registered INTEGER NOT NULL DEFAULT 0');
   if (!db.prepare('SELECT id FROM state WHERE id=1').get()) {
     const state = legacyPath && existsSync(legacyPath) ? JSON.parse(readFileSync(legacyPath,'utf8')) : initialState();
     if (!Array.isArray(state.content) || !Array.isArray(state.audit)) throw new Error('Invalid legacy state');

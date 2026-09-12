@@ -212,3 +212,22 @@ re-validation (§7 above) already handles a membership appearing or disappearing
 zero new invalidation code — proven directly by Phase 4C-3's own tests (a suspended/removed
 member loses access on their very next request; a newly accepted invitation's workspace appears
 in `GET /api/workspaces` without requiring re-login).
+
+## Phase 4C-6 update: the zero-membership gate is no longer always a dead end
+
+A real change WAS needed here, though not to the resolution logic itself. Two things changed:
+
+1. **`resolveTenantForUser`'s zero-membership branch now also checks `users.self_registered`**
+   before running its legacy single-tenant auto-attach, refusing with `NO_WORKSPACE_ACCESS`
+   for a self-service signup even when exactly one tenant exists system-wide (previously this
+   auto-attach fired unconditionally at `n===1`, which is exactly the real HyperCool
+   deployment's current tenant count — see `docs/SELF_SERVICE_SIGNUP.md` for why that was a
+   real security gap this phase found and closed, not a style change).
+2. **The frontend gate (`components/workspace-switcher.js`'s `renderWorkspaceGate`) no longer
+   treats every `NO_WORKSPACE_ACCESS` the same way.** A verified user with zero real
+   memberships now sees a real "create your first workspace" call to action
+   (`docs/WORKSPACE_CREATION.md`) instead of the old static "no access, contact your system
+   owner" message; an unverified one sees a distinct "verify your email first" prompt with a
+   working resend button. The underlying backend error code and resolution semantics are
+   completely unchanged — only what the frontend does with that specific, already-existing
+   signal is new.

@@ -149,3 +149,13 @@ raw token.
    verified email already on file), never merely "no verified email yet" — consistent with
    Part 47/48's explicit transition rule that legacy users must keep working. See
    `docs/WORKSPACE_INVITATIONS.md`'s Phase 4C-5 update.
+
+## Phase 4C-6 update: this identity foundation is now actually used for self-service signup
+
+`docs/SELF_SERVICE_SIGNUP.md` and `docs/WORKSPACE_CREATION.md` build directly on everything
+above: `POST /api/signup` reuses `requestEmailChange` verbatim, and `POST /api/workspaces`
+gates on `session.user.emailVerifiedAt` exactly as documented here. One addition:
+`resolveTenantForUser` (`tenancy.js`) now also checks a new `users.self_registered` flag before
+running its legacy zero-membership auto-attach — see `docs/SELF_SERVICE_SIGNUP.md`'s "a
+critical, pre-existing interaction this phase had to fix" section for why this was a real
+security gap, not a cosmetic addition.

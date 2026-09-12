@@ -200,3 +200,21 @@ subject exclusively from `session.user.id` or a token's own `user_id` — never 
 `session.tenantId` or any request-supplied tenant value, so this new surface introduces no new
 cross-tenant attack path. `workspace_invitations.invitation_mode='EMAIL_BOUND'` (new) still
 enforces its identity check per-tenant-scoped invitation, unaffected by this global layer.
+
+## Phase 4C-6 update: a real, pre-existing cross-tenant access gap, found and closed
+
+This phase found and fixed a genuine security issue in `resolveTenantForUser` itself (§7),
+not merely added a new surface on top of it. Its zero-membership branch has always
+auto-attached a user with no real memberships to the sole existing tenant, **when exactly one
+tenant exists system-wide** — safe when the only way to get a new user was `/api/setup` or an
+owner-created team member (both already scoped to that one tenant), but this precondition
+silently broke the moment self-service public signup could create users unconnected to any
+tenant. Since the real HyperCool deployment has exactly one tenant today, *any stranger signing
+up publicly would have been auto-attached to — and, since `role` defaults to `'owner'` for a
+signup, made an OWNER of — that real production tenant*, before this was caught (by an
+unrelated test assertion, before ever reaching a browser) and fixed with a new
+`users.self_registered` marker that this one auto-attach path now checks and refuses for. See
+`docs/SELF_SERVICE_SIGNUP.md` for the full account, and `docs/WORKSPACE_CREATION.md`/
+`docs/TRIAL_WORKSPACES.md` for the rest of this phase's tenant-creation surface — every new
+route in it resolves its subject from `session.user.id` alone and never accepts a client-
+supplied owner/tenant id (verified directly by test).

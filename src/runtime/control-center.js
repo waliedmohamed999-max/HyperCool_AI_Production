@@ -4,7 +4,7 @@
 // same real services Phase 4B/4B.1 already built (AgentReadinessService, ToolReadinessService,
 // IntegrationConnection, capability-map.js) — never a stored snapshot, never invented.
 import {agents as agentIdentities} from '../domain.js';
-import {getTenant} from '../tenancy.js';
+import {getTenant,isTrialActive,getTrialDaysRemaining} from '../tenancy.js';
 import {getTenantAgentConfig} from './agent-config.js';
 import {evaluateAgentReadiness,evaluateAllToolsReadiness} from './agent-readiness.js';
 import {listToolDefinitions} from './tool-definitions.js';
@@ -71,7 +71,10 @@ function buildAiProvidersSummary(db,tenantId) {
 export function buildControlCenterSummary(db,env,tenantId,role) {
  const tenant=getTenant(db,tenantId);
  return {
-  workspace:{id:tenant.id,name:tenant.name,slug:tenant.slug,role,locale:tenant.defaultLocale,timezone:tenant.timezone,status:tenant.status,defaultAiConnectionId:tenant.defaultAiConnectionId,defaultAiModel:tenant.defaultAiModel,maxAgentLevel:tenant.maxAgentLevel},
+  workspace:{id:tenant.id,name:tenant.name,slug:tenant.slug,role,locale:tenant.defaultLocale,timezone:tenant.timezone,status:tenant.status,defaultAiConnectionId:tenant.defaultAiConnectionId,defaultAiModel:tenant.defaultAiModel,maxAgentLevel:tenant.maxAgentLevel,
+   // Multi-Tenant Phase 4C-6 — real, derived trial state (Part 60); null for any tenant with
+   // no trial timestamps at all (the legacy HyperCool tenant, or any non-self-service tenant).
+   trial:tenant.trialExpiresAt?{active:isTrialActive(tenant),daysRemaining:getTrialDaysRemaining(tenant),expiresAt:tenant.trialExpiresAt}:null},
   agents:buildAgentsSummary(db,env,tenantId),
   tools:buildToolsSummary(db,env,tenantId),
   integrations:buildIntegrationsSummary(db,tenantId),

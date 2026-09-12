@@ -46,6 +46,11 @@ function renderForgotPassword(panel){
  panel.append(backButton());
  panel.querySelector('#forgot-form').onsubmit=async event=>{
   event.preventDefault();
+  // Also stops this from bubbling into app.js's own generic `document`-level submit delegate,
+  // which would otherwise fire a stray, harmless-but-pointless `/api/content/undefined/
+  // undefined` request for any form whose id it doesn't recognize (found via this phase's own
+  // real-browser Playwright testing — see docs/SAAS_ENTRY_FLOW.md).
+  event.stopPropagation();
   const form=event.target,submitBtn=form.querySelector('button');submitBtn.disabled=true;
   const input=Object.fromEntries(new FormData(form));
   try{
@@ -61,6 +66,11 @@ function renderResetPassword(panel){
   <form id="reset-form"><label>${escape(t('account.recovery.resetPasswordLabel'))}<input name="password" type="password" required minlength="12" maxlength="256" autocomplete="new-password"></label><button type="submit">${escape(t('account.recovery.resetSubmit'))}</button></form>`;
  panel.querySelector('#reset-form').onsubmit=async event=>{
   event.preventDefault();
+  // Also stops this from bubbling into app.js's own generic `document`-level submit delegate,
+  // which would otherwise fire a stray, harmless-but-pointless `/api/content/undefined/
+  // undefined` request for any form whose id it doesn't recognize (found via this phase's own
+  // real-browser Playwright testing — see docs/SAAS_ENTRY_FLOW.md).
+  event.stopPropagation();
   const form=event.target,submitBtn=form.querySelector('button');submitBtn.disabled=true;
   const input=Object.fromEntries(new FormData(form));
   try{

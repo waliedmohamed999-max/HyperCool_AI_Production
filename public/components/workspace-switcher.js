@@ -41,13 +41,43 @@ async function activate(workspaceId,csrf) {
 }
 function roleLabel(role){return t(ROLE_LABEL[role]||'')||role;}
 
-/** The full-page "choose your workspace" gate (Part L). Never auto-picks the first item. */
-export function renderWorkspaceGate({reason,workspaces},csrf,onActivated) {
+/**
+ * The full-page "choose your workspace" gate (Part L). Never auto-picks the first item.
+ *
+ * Multi-Tenant Phase 4C-6 (Part 8/9/45) — a VERIFIED user with zero real memberships is no
+ * longer a dead end here: this is now the normal, expected state right after signup/
+ * verification, before they've created their first company. An UNVERIFIED user (just signed
+ * up, hasn't clicked the link yet) sees a distinct prompt pointing at that real blocker
+ * instead — never the same generic "no access" message, since their actual next step is
+ * completely different (verify an email vs. create a workspace).
+ */
+export function renderWorkspaceGate({reason,workspaces},csrf,onActivated,user=null) {
  $('#workspace-select-panel').hidden=false;
  const list=$('#workspace-select-list'),empty=$('#workspace-select-empty');
  list.replaceChildren();
- empty.hidden=reason!=='NO_WORKSPACE_ACCESS' && workspaces.length>0;
- if(empty.hidden===false)return;
+ const zeroAccess=reason==='NO_WORKSPACE_ACCESS' && workspaces.length===0;
+ empty.hidden=!zeroAccess;
+ if(zeroAccess) {
+  empty.replaceChildren();
+  if(user && !user.emailVerifiedAt) {
+   empty.innerHTML=`<strong>${escape(t('workspace.verifyEmailFirstTitle'))}</strong><p>${escape(t('workspace.verifyEmailFirstHint'))}</p>`;
+   const resend=button(t('common.resendVerificationEmail'),{variant:'secondary'});
+   resend.onclick=async()=>{
+    resend.disabled=true;
+    try{await raw('/api/account/email/resend-verification',{},'POST',csrf);const note=document.createElement('p');note.textContent=t('account.deliveredNote');empty.append(note);}
+    catch{resend.disabled=false;}
+   };
+   const go=button(t('workspace.goToAccountSettings'),{variant:'primary'});
+   go.onclick=()=>{location.hash='#account';};
+   empty.append(resend,go);
+  } else {
+   empty.innerHTML=`<strong>${escape(t('workspace.createFirstWorkspaceTitle'))}</strong><p>${escape(t('workspace.createFirstWorkspaceHint'))}</p>`;
+   const go=button(t('workspace.createWorkspaceButton'),{variant:'primary',iconName:'plus'});
+   go.onclick=()=>{location.hash='#new-workspace';};
+   empty.append(go);
+  }
+  return;
+ }
  for(const workspace of workspaces) {
   const row=document.createElement('div');row.className='workspace-select-item';
   const info=document.createElement('div');info.innerHTML=`<strong>${escape(workspace.name)}</strong><span>${escape(roleLabel(workspace.role))}</span>`;
