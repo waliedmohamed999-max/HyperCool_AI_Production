@@ -6,6 +6,14 @@
 > Integrations tab purely because it is a `PUBLISHED` row in the same `integration_definitions`
 > table Salla/Anthropic/OpenAI already use. No marketplace card was hand-written for it.
 
+> **Phase 6F update**: the documented SPA staleness gap below (nav links never refetching data)
+> is now FIXED for both this page and the Platform page — see `app.js`'s `refetchPageIfNeeded`.
+> Publishing a connector and switching tabs shows it immediately; a full reload is no longer
+> required. Also: a Manual Action Runner and Action History now exist on each connection card
+> (`docs/INTEGRATION_OPERATIONS.md`), and the `GET /api/tools/:slug/connections` route — used by
+> the Agent config drawer's own connection dropdown — had a real bug fixed where a generic,
+> capability-only tool (`get_invoices`/`get_orders`/`get_customers`) always got an empty list.
+
 ## The tenant-facing catalog
 
 `GET /api/integrations/catalog` (owner/operator only, `application.js`) returns

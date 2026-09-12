@@ -1,5 +1,12 @@
 # Universal Integration Platform — Integration Builder (Phase 6D)
 
+> **Phase 6F update**: a dedicated "Integration Builder" sidebar entry now links straight here
+> (see `docs/INTEGRATION_PLATFORM_COMPLETE.md`); the landing table gained Adapter/Auth/
+> Capabilities/Action-count/Webhook-count/Updated columns plus status tabs (All/Draft/
+> Published/Disabled); a Platform Admin can now Clone, Export, and Import a connector
+> (`docs/CONNECTOR_IMPORT_EXPORT.md`); the action editor gained a real Mapping Preview; and
+> disabling a connector now shows a live dependency count before the confirmation.
+
 The Integration Builder is the Platform-Admin-only UI (inside `#platform`, `public/pages/
 platform.js`) over the Builder backend described in `docs/DYNAMIC_CONNECTOR_DEFINITIONS.md`. It
 is reachable only when the signed-in session is a Platform Admin (`auth.isPlatformAdmin`, from
