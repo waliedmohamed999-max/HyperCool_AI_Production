@@ -53,7 +53,12 @@ export function normalizeSallaProduct(row,at) {
 // connector code (Anthropic, Salla); every other service must say so honestly instead of
 // pretending to verify a connection it cannot make.
 export async function testAnthropicConnection({env,fetcher=fetch}) {
- if(!connectionStatus(env).anthropic.configured)return {result:'NOT_CONFIGURED',code:'ANTHROPIC_NOT_CONFIGURED'};
+ // Phase 5 pilot fix: this real network call (GET /v1/models) never uses a model at all, so
+ // gating it on connectionStatus().configured — which ALSO requires ANTHROPIC_MODEL, a
+ // platform-wide legacy env var — wrongly rejected every per-tenant credential test (Phase 4B's
+ // "tenant supplies their own key" flow only ever sets the key, never a platform model env var).
+ // Found live on the real production pilot: a real, valid key was rejected as NOT_CONFIGURED.
+ if(!env.ANTHROPIC_API_KEY)return {result:'NOT_CONFIGURED',code:'ANTHROPIC_NOT_CONFIGURED'};
  try {
   await requestJson(fetcher,'https://api.anthropic.com/v1/models',{headers:{'x-api-key':env.ANTHROPIC_API_KEY,'anthropic-version':'2023-06-01'}},AbortSignal.timeout(15000));
   return {result:'OK'};
@@ -63,7 +68,8 @@ export async function testAnthropicConnection({env,fetcher=fetch}) {
  }
 }
 export async function testOpenAIConnection({env,fetcher=fetch}) {
- if(!connectionStatus(env).openai.configured)return {result:'NOT_CONFIGURED',code:'OPENAI_NOT_CONFIGURED'};
+ // Same real fix as testAnthropicConnection above — GET /v1/models needs only the key.
+ if(!env.OPENAI_API_KEY)return {result:'NOT_CONFIGURED',code:'OPENAI_NOT_CONFIGURED'};
  try {
   await requestJson(fetcher,'https://api.openai.com/v1/models',{headers:{authorization:`Bearer ${env.OPENAI_API_KEY}`}},AbortSignal.timeout(15000));
   return {result:'OK'};

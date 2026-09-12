@@ -99,10 +99,10 @@ test('PUT credential (API_KEY flow): a rejected key is never persisted or marked
   if(options.headers['x-api-key']==='sk-bad')return new Response('{}',{status:401});
   return new Response(JSON.stringify({data:[]}),{status:200,headers:{'content-type':'application/json'}});
  };
- // ANTHROPIC_MODEL must already be configured server-side — connectionStatus()/
- // testAnthropicConnection require BOTH the key AND a model before considering the
- // provider "configured" (this route only ever overrides the key, never invents a model).
- const {call,cleanup,ownerA}=await twoTenants({ANTHROPIC_MODEL:'claude-test-model',INTEGRATION_ENCRYPTION_KEY:key32},fetcher);
+ // Phase 5 pilot fix: testAnthropicConnection no longer requires a platform-level
+ // ANTHROPIC_MODEL env var — a tenant's own submitted key is tested on its own merit
+ // (see the dedicated test below proving this with ZERO platform model env var set at all).
+ const {call,cleanup,ownerA}=await twoTenants({INTEGRATION_ENCRYPTION_KEY:key32},fetcher);
  try{
   const created=await call('/api/integrations/connections',{integrationDefinitionId:'anthropic',name:'Claude'},ownerA);
   const id=created.data.id;
@@ -124,6 +124,28 @@ test('PUT credential (API_KEY flow): a rejected key is never persisted or marked
   const sallaConn=await call('/api/integrations/connections',{integrationDefinitionId:'salla',name:'Store'},ownerA);
   const wrongType=await call(`/api/integrations/connections/${sallaConn.data.id}/credential`,{apiKey:'sk-x'},ownerA,{method:'PUT'});
   assert.equal(wrongType.status,400);
+ }finally{await cleanup();}
+});
+
+test('Phase 5 pilot regression — PUT credential (Anthropic AND OpenAI) succeeds with a real valid key even when NO platform-level ANTHROPIC_MODEL/OPENAI_MODEL env var is set at all',async()=>{
+ // This is the exact real bug found live on the production pilot: a tenant submitted a
+ // genuinely correct API key through the UI and was rejected with *_NOT_CONFIGURED, because
+ // testAnthropicConnection/testOpenAIConnection wrongly required a PLATFORM-WIDE model env var
+ // (a legacy, pre-multi-tenant concept) that has nothing to do with a tenant's own per-
+ // connection key. No ANTHROPIC_MODEL/OPENAI_MODEL/OPENAI_DEFAULT_MODEL is set anywhere below —
+ // proving the fix works on the tenant's key alone.
+ const fetcher=async()=>new Response(JSON.stringify({data:[]}),{status:200,headers:{'content-type':'application/json'}});
+ const {call,cleanup,ownerA}=await twoTenants({INTEGRATION_ENCRYPTION_KEY:key32},fetcher);
+ try{
+  const anthropicConn=await call('/api/integrations/connections',{integrationDefinitionId:'anthropic',name:'Claude'},ownerA);
+  const anthropicResult=await call(`/api/integrations/connections/${anthropicConn.data.id}/credential`,{apiKey:'sk-ant-real'},ownerA,{method:'PUT'});
+  assert.equal(anthropicResult.status,200,'a real Anthropic key must be accepted with no platform ANTHROPIC_MODEL set');
+  assert.equal((await call(`/api/integrations/connections/${anthropicConn.data.id}`,undefined,ownerA,{method:'GET'})).data.status,'CONNECTED');
+
+  const openaiConn=await call('/api/integrations/connections',{integrationDefinitionId:'openai',name:'GPT'},ownerA);
+  const openaiResult=await call(`/api/integrations/connections/${openaiConn.data.id}/credential`,{apiKey:'sk-oai-real'},ownerA,{method:'PUT'});
+  assert.equal(openaiResult.status,200,'a real OpenAI key must be accepted with no platform OPENAI_MODEL/OPENAI_DEFAULT_MODEL set');
+  assert.equal((await call(`/api/integrations/connections/${openaiConn.data.id}`,undefined,ownerA,{method:'GET'})).data.status,'CONNECTED');
  }finally{await cleanup();}
 });
 
