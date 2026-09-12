@@ -1,0 +1,48 @@
+{
+  "navLabel": "HyperCool Platform",
+  "title": "Platform Operations Dashboard",
+  "subtitle": "A central view over every tenant — platform admin only.",
+  "kpi": {
+    "totalTenants": "Total Tenants",
+    "active": "Active",
+    "trial": "Trial",
+    "suspended": "Suspended",
+    "expiredTrials": "Expired Trials",
+    "totalUsers": "Total Users",
+    "verifiedUsers": "Verified Users",
+    "connectionsNeedingAttention": "Connections Needing Attention",
+    "agentsFailing": "Blocked Agents",
+    "recentCriticalErrors": "Critical Errors (24h)"
+  },
+  "directoryTitle": "Tenant Directory",
+  "table": {
+    "name": "Name",
+    "status": "Status",
+    "trial": "Trial",
+    "owner": "Owner",
+    "createdAt": "Created",
+    "lastActivity": "Last Activity",
+    "onboarding": "Onboarding",
+    "agents": "Agents",
+    "connections": "Connections",
+    "pilotStatus": "Overall Status",
+    "actions": "Actions"
+  },
+  "pilotStatus": {
+    "READY": "Ready",
+    "NEEDS_ATTENTION": "Needs Attention",
+    "BLOCKED": "Blocked"
+  },
+  "manage": "Manage",
+  "detailTitle": "Tenant Detail",
+  "members": "Members",
+  "recentAudit": "Recent Activity",
+  "suspend": "Suspend Tenant",
+  "suspendConfirm": "\"{name}\" will be suspended immediately — every member loses operational access. Data remains fully preserved.",
+  "reactivate": "Reactivate",
+  "reactivateConfirm": "\"{name}\" will be reactivated immediately (becomes ACTIVE).",
+  "extendTrial": "Extend Trial",
+  "extendTrialDaysLabel": "Number of days",
+  "actionSucceeded": "Action completed successfully",
+  "notPlatformAdmin": "This page is available only to a platform administrator"
+}

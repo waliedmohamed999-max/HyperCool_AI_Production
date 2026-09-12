@@ -110,6 +110,31 @@ function validMembershipsForUser(db,userId) {
  return db.prepare(VALID_MEMBERSHIP_JOIN).all(userId);
 }
 /**
+ * Multi-Tenant Phase 4C-7 (Part 14/15) — a deliberately SEPARATE, read-only query, never
+ * merged into `VALID_MEMBERSHIP_JOIN` above: that function remains the one real security gate
+ * every business route resolves through (Part 26's "immediate block" — unchanged, and still
+ * exactly what `docs/WORKSPACE_ONBOARDING.md`'s own suspended-tenant test already relies on).
+ * This one exists ONLY so the frontend can tell a member "your workspace's trial ended" (or
+ * "was suspended") by NAME instead of the same opaque `NO_WORKSPACE_ACCESS` a genuinely
+ * membership-less user sees — an active member of a SUSPENDED tenant is still a real member,
+ * just of a currently non-operational one, and deserves to know which company and why.
+ */
+function suspendedMembershipsForUser(db,userId) {
+ return db.prepare(`
+  SELECT tm.tenant_id AS tenantId, tm.role AS role, t.name AS name, t.slug AS slug,
+   t.trial_started_at AS trialStartedAt, t.trial_expires_at AS trialExpiresAt
+  FROM tenant_memberships tm JOIN tenants t ON t.id=tm.tenant_id
+  WHERE tm.user_id=? AND tm.status='active' AND t.status='SUSPENDED'
+  ORDER BY t.updated_at DESC`).all(userId);
+}
+/** Part 14 — the real, honest, per-tenant Trial/Suspension reason a member sees. */
+export function listSuspendedWorkspacesForUser(db,userId) {
+ return suspendedMembershipsForUser(db,userId).map(row=>({
+  id:row.tenantId,name:row.name,slug:row.slug,role:row.role,
+  trial:getTrialStatus({status:'SUSPENDED',trialStartedAt:row.trialStartedAt,trialExpiresAt:row.trialExpiresAt})
+ }));
+}
+/**
  * Resolves the tenant a specific logged-in user is CURRENTLY acting in — the one function
  * every authenticated request resolves through (application.js, once per request, right
  * after the session is loaded). `activeTenantIdFromSession` is the value persisted on the
@@ -301,11 +326,50 @@ export function listTenants(db,{statuses=['ACTIVE','TRIAL']}={}) {
 // are pure, real, read-derived helpers over `tenants.status`/`trial_expires_at` — never a
 // separate "subscription" concept.
 export function isTrialActive(tenant) {
- return tenant.status==='TRIAL' && (!tenant.trialExpiresAt || new Date(tenant.trialExpiresAt).getTime()>Date.now());
+ const status=getTrialStatus(tenant).status;
+ return status==='ACTIVE_TRIAL'||status==='EXPIRING_SOON';
 }
 export function getTrialDaysRemaining(tenant) {
- if(tenant.status!=='TRIAL' || !tenant.trialExpiresAt)return null;
- return Math.max(0,Math.ceil((new Date(tenant.trialExpiresAt).getTime()-Date.now())/86400000));
+ const status=getTrialStatus(tenant);
+ return status.status==='NOT_TRIAL'?null:status.daysRemaining;
+}
+/**
+ * Multi-Tenant Phase 4C-7 (Part 11) — the ONE real, centralized trial classification, derived
+ * live from the actual timestamp rather than trusting `tenants.status` to have already been
+ * flipped by the scheduler (Part 17: "لا تعتمد فقط على scheduler changing status... حتى لو
+ * scheduler تأخر: expired trial لا ينفذ action"). This is why `EXPIRED` is computed from
+ * `trial_expires_at < now` directly, not from `status==='SUSPENDED'` — a trial that ran out
+ * one second ago is `EXPIRED` here immediately, even on the one tenant-load that happens
+ * before the next scheduler tick gets around to actually updating the row.
+ *
+ * `NOT_TRIAL` — never had trial timestamps (the legacy HyperCool tenant, or any tenant not
+ * created through the self-service flow). `EXPIRING_SOON` — real trial, ≤3 days left (Part
+ * 13's "أقل من أو يساوي 3 أيام", a stronger warning, never a block by itself).
+ */
+export function getTrialStatus(tenant) {
+ if(!tenant.trialExpiresAt)return {status:'NOT_TRIAL',startedAt:tenant.trialStartedAt||null,expiresAt:null,daysRemaining:null};
+ const msRemaining=new Date(tenant.trialExpiresAt).getTime()-Date.now();
+ if(msRemaining<=0)return {status:'EXPIRED',startedAt:tenant.trialStartedAt,expiresAt:tenant.trialExpiresAt,daysRemaining:0};
+ const daysRemaining=Math.max(0,Math.ceil(msRemaining/86400000));
+ return {status:daysRemaining<=3?'EXPIRING_SOON':'ACTIVE_TRIAL',startedAt:tenant.trialStartedAt,expiresAt:tenant.trialExpiresAt,daysRemaining};
+}
+/**
+ * Part 17/18 — the ONE place every business-critical operation should check tenant
+ * eligibility, instead of each caller re-deriving its own notion of "is this tenant allowed to
+ * run things right now." Covers all three real reasons an operation must be refused: the
+ * tenant is `SUSPENDED` (whether by an expired trial OR a genuine platform/owner-driven
+ * suspension — both already the same real status), `ARCHIVED`, or its trial has run out even
+ * if `status` technically hasn't caught up to `SUSPENDED` yet. Returns a safe reason CODE
+ * (never throws itself — the two real call sites, `runtime.js`'s agent run and the scheduler,
+ * each need to finish their own record/loop iteration cleanly rather than propagate an
+ * exception) or `null` when the tenant is genuinely operational.
+ */
+export function tenantOperationalBlockReason(tenant) {
+ if(!tenant)return 'TENANT_NOT_FOUND';
+ if(tenant.status==='ARCHIVED')return 'TENANT_ARCHIVED';
+ if(getTrialStatus(tenant).status==='EXPIRED')return 'TENANT_TRIAL_EXPIRED';
+ if(tenant.status==='SUSPENDED')return 'TENANT_SUSPENDED';
+ return null;
 }
 /**
  * Part 17/18 — a trial that has run past `trial_expires_at` stops being eligible for

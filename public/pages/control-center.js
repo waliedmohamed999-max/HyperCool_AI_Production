@@ -20,7 +20,8 @@ function statusBadge(status,map=AGENT_STATUS_VARIANT){return badge(t('controlCen
 
 export function installControlCenter(){
  const root=document.querySelector('[data-page="control-center"] #control-center');
- root.innerHTML=`<div id="cc-summary" class="kpi-grid"></div>
+ root.innerHTML=`<div id="cc-trial-banner" hidden></div>
+  <div id="cc-summary" class="kpi-grid"></div>
   <section id="cc-attention" class="report-section" hidden><div class="report-section-head"><h3>${escape(t('controlCenter.needsAttention'))}</h3></div><div id="cc-attention-list"></div></section>
   <div id="cc-tabs"></div>`;
  const panels=['overview','integrations','ai','agents','health','settings'].map(key=>{const el=document.createElement('div');el.id='cc-panel-'+key;el.className='cc-panel';return el;});
@@ -63,6 +64,7 @@ export async function renderControlCenter({api:client,auth}){
  }
  if(staleGuard(generation))return;
  summary=data;
+ renderTrialBanner();
  renderKpis();
  renderAttention();
  renderIntegrationsTab();
@@ -72,6 +74,20 @@ export async function renderControlCenter({api:client,auth}){
  renderSettingsTab();
 }
 
+/** Multi-Tenant Phase 4C-7 (Part 12/13) — real, backend-derived trial state; the day count
+ * and threshold both come straight from `workspace.trial` (Part 12: "No hardcoded 14 if
+ * config differs" — the actual number is never assumed client-side). A stronger visual
+ * treatment (not a block — Part 13: "لكن لا تمنع الاستخدام") kicks in once the backend itself
+ * classifies the trial as `EXPIRING_SOON` (≤3 days), never a second, duplicated threshold
+ * computed here. No fake "Upgrade"/"Pay now" button anywhere (Part 16) — Billing does not
+ * exist yet, so none is offered. */
+function renderTrialBanner(){
+ const banner=$('#cc-trial-banner'),trial=summary.workspace.trial;
+ if(!trial||!trial.active){banner.hidden=true;return;}
+ banner.hidden=false;
+ banner.className=trial.daysRemaining<=3?'notice trial-banner trial-banner-warning':'notice trial-banner';
+ banner.textContent=t('controlCenter.trialBanner',{days:trial.daysRemaining});
+}
 function renderKpis(){
  const {agents,tools,integrations}=summary;
  $('#cc-summary').innerHTML=

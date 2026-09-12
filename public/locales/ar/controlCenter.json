@@ -1,6 +1,7 @@
 {
   "tabs": { "overview": "نظرة عامة", "integrations": "التكاملات", "ai": "مزودو الذكاء الاصطناعي", "agents": "ربط الوكلاء", "health": "الصحة والجاهزية", "settings": "إعدادات مساحة العمل" },
   "runSystemCheck": "تشغيل فحص النظام",
+  "trialBanner": "متبقٍ {days} يومًا من الفترة التجريبية",
   "needsAttention": "يحتاج انتباهك",
   "configure": "إعداد",
   "kpi": {

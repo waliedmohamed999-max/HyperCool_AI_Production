@@ -1,6 +1,7 @@
 {
   "tabs": { "overview": "Overview", "integrations": "Integrations", "ai": "AI Providers", "agents": "Agent Connections", "health": "Health & Readiness", "settings": "Workspace Settings" },
   "runSystemCheck": "Run System Check",
+  "trialBanner": "{days} days left in your trial",
   "needsAttention": "Needs Attention",
   "configure": "Configure",
   "kpi": {

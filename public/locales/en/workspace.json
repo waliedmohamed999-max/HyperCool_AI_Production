@@ -16,6 +16,10 @@
   "createFirstWorkspaceTitle": "You don't have a workspace yet",
   "createFirstWorkspaceHint": "Create your own workspace now to start setting up your agent team.",
   "createWorkspaceButton": "Create Workspace",
+  "trialEndedTitle": "Trial Ended",
+  "suspendedTitle": "Workspace currently suspended",
+  "trialEndedFor": "\"{name}\" is not available right now.",
+  "trialEndedExplain": "Your data is fully preserved and the account has not been deleted — but automation is currently stopped. To continue, contact the platform administration.",
   "newWorkspace": {
     "title": "Create Workspace",
     "subtitle": "Enter your company details to create your own new workspace — it starts on a free trial.",

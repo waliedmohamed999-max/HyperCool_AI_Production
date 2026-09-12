@@ -1,0 +1,48 @@
+{
+  "navLabel": "منصة HyperCool",
+  "title": "لوحة تشغيل المنصة",
+  "subtitle": "نظرة مركزية على كل المنشآت — متاحة فقط لمسؤول المنصة.",
+  "kpi": {
+    "totalTenants": "إجمالي المنشآت",
+    "active": "نشطة",
+    "trial": "تجريبية",
+    "suspended": "موقوفة",
+    "expiredTrials": "تجارب منتهية",
+    "totalUsers": "إجمالي المستخدمين",
+    "verifiedUsers": "مستخدمون موثّقون",
+    "connectionsNeedingAttention": "اتصالات تحتاج انتباهًا",
+    "agentsFailing": "وكلاء متوقفون",
+    "recentCriticalErrors": "أخطاء حرجة (24 ساعة)"
+  },
+  "directoryTitle": "دليل المنشآت",
+  "table": {
+    "name": "الاسم",
+    "status": "الحالة",
+    "trial": "التجربة",
+    "owner": "المالك",
+    "createdAt": "تاريخ الإنشاء",
+    "lastActivity": "آخر نشاط",
+    "onboarding": "الإعداد",
+    "agents": "الوكلاء",
+    "connections": "الاتصالات",
+    "pilotStatus": "الحالة العامة",
+    "actions": "إجراءات"
+  },
+  "pilotStatus": {
+    "READY": "جاهزة",
+    "NEEDS_ATTENTION": "تحتاج انتباهًا",
+    "BLOCKED": "متوقفة"
+  },
+  "manage": "إدارة",
+  "detailTitle": "تفاصيل المنشأة",
+  "members": "الأعضاء",
+  "recentAudit": "آخر العمليات",
+  "suspend": "إيقاف المنشأة",
+  "suspendConfirm": "سيتم إيقاف \"{name}\" فورًا — يفقد كل الأعضاء الوصول التشغيلي. البيانات تبقى محفوظة بالكامل.",
+  "reactivate": "إعادة التفعيل",
+  "reactivateConfirm": "سيتم إعادة تفعيل \"{name}\" فورًا (تصبح ACTIVE).",
+  "extendTrial": "تمديد التجربة",
+  "extendTrialDaysLabel": "عدد الأيام",
+  "actionSucceeded": "تم تنفيذ الإجراء بنجاح",
+  "notPlatformAdmin": "هذه الصفحة متاحة فقط لمسؤول المنصة"
+}

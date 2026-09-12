@@ -34,7 +34,7 @@ async function raw(path,input,method,csrf) {
 export async function resolveActiveWorkspace(csrf) {
  const result=await raw('/api/workspaces/active',null,'GET');
  if(result.status===200)return {ready:true,workspace:result.data};
- return {ready:false,reason:result.data?.error||'TENANT_SELECTION_REQUIRED',workspaces:result.data?.workspaces||[]};
+ return {ready:false,reason:result.data?.error||'TENANT_SELECTION_REQUIRED',workspaces:result.data?.workspaces||[],suspendedWorkspaces:result.data?.suspendedWorkspaces||[]};
 }
 async function activate(workspaceId,csrf) {
  return raw('/api/workspaces/active',{workspaceId},'PUT',csrf);
@@ -51,7 +51,7 @@ function roleLabel(role){return t(ROLE_LABEL[role]||'')||role;}
  * instead — never the same generic "no access" message, since their actual next step is
  * completely different (verify an email vs. create a workspace).
  */
-export function renderWorkspaceGate({reason,workspaces},csrf,onActivated,user=null) {
+export function renderWorkspaceGate({reason,workspaces,suspendedWorkspaces=[]},csrf,onActivated,user=null) {
  $('#workspace-select-panel').hidden=false;
  const list=$('#workspace-select-list'),empty=$('#workspace-select-empty');
  list.replaceChildren();
@@ -59,6 +59,22 @@ export function renderWorkspaceGate({reason,workspaces},csrf,onActivated,user=nu
  empty.hidden=!zeroAccess;
  if(zeroAccess) {
   empty.replaceChildren();
+  // Multi-Tenant Phase 4C-7 (Part 14) — a real member of a suspended/trial-ended workspace
+  // sees a factual, named "Trial Ended" state FIRST — this matters more to them than being
+  // told to create a brand-new, unrelated workspace. Never a fake "Pay now"/"Upgrade"
+  // checkout (Part 16) — Billing does not exist; the only real destination offered is contact.
+  if(suspendedWorkspaces.length) {
+   for(const ws of suspendedWorkspaces) {
+    const card=document.createElement('div');card.className='workspace-select-item';
+    const expired=ws.trial.status==='EXPIRED';
+    card.innerHTML=`<strong>${escape(expired?t('workspace.trialEndedTitle'):t('workspace.suspendedTitle'))}</strong>
+     <p>${escape(t('workspace.trialEndedFor',{name:ws.name}))}</p>
+     <p>${escape(t('workspace.trialEndedExplain'))}</p>`;
+    list.append(card);
+   }
+   empty.hidden=true;
+   return;
+  }
   if(user && !user.emailVerifiedAt) {
    empty.innerHTML=`<strong>${escape(t('workspace.verifyEmailFirstTitle'))}</strong><p>${escape(t('workspace.verifyEmailFirstHint'))}</p>`;
    const resend=button(t('common.resendVerificationEmail'),{variant:'secondary'});

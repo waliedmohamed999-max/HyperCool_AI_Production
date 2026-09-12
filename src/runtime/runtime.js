@@ -7,7 +7,7 @@ import {levels} from '../autonomy.js';
 import {createEscalation} from './escalations.js';
 import {createApproval} from './approvals.js';
 import {getAgent} from './registry.js';
-import {resolveActiveTenantId,getTenant} from '../tenancy.js';
+import {resolveActiveTenantId,getTenant,tenantOperationalBlockReason} from '../tenancy.js';
 import {getTenantAgentConfig} from './agent-config.js';
 import {resolveToolConnection} from './tool-assignments.js';
 import {evaluateAgentReadiness} from './agent-readiness.js';
@@ -135,6 +135,13 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
    const enabled=tenantConfig?tenantConfig.enabled:!!registryRow.enabled;
    if(!enabled)return finishDisabled(db,agentId,triggerType,triggerId,user,resolvedTenantId);
    const tenant=getTenant(db,resolvedTenantId);
+   // Multi-Tenant Phase 4C-7 (Part 17/18) — the ONE central eligibility check every agent run
+   // passes through, checked from the real tenant row directly rather than trusting the
+   // scheduler to have already flipped an expired trial to SUSPENDED (Part 17's own explicit
+   // warning: "حتى لو scheduler تأخر: expired trial لا ينفذ action"). A manual run triggered
+   // the same instant a trial expires is blocked here immediately, not one tick later.
+   const blockReason=tenantOperationalBlockReason(tenant);
+   if(blockReason)return finishTenantNotOperational(db,agentId,triggerType,triggerId,user,resolvedTenantId,blockReason);
    const level=effectiveLevel(levelOf(db,agentId,resolvedTenantId),env,tenant?.maxAgentLevel||null);
    // Phase 34 — readiness precheck BEFORE spending any AI tokens. Only a genuinely BLOCKED
    // REQUIRED TOOL short-circuits here with AGENT_NOT_READY (a required tool that is
@@ -297,5 +304,14 @@ function finishNotReady(db,agentId,triggerType,triggerId,user,tenantId,input,rea
  const run={id:randomUUID(),tenantId,agentId,triggerType,triggerId,parentRunId:null,status:'CANCELLED',inputContext:input,startedAt:new Date().toISOString(),actorId:user?.id||null,actorName:user?.name||null};
  insertRun(db,run);
  finishRun(db,run.id,{status:'CANCELLED',error:'AGENT_NOT_READY',output:{status:'AGENT_NOT_READY',blockers:readiness.blockers}});
+ return {...getRun(db,run.id,tenantId),toolCalls:[]};
+}
+// Multi-Tenant Phase 4C-7 (Part 17/18) — same real, visible-in-history outcome shape as the
+// two above, for the one new reason a run can be refused before ever reaching the LLM: the
+// tenant itself (suspended, archived, or trial expired) is not currently operational.
+function finishTenantNotOperational(db,agentId,triggerType,triggerId,user,tenantId,reason) {
+ const run={id:randomUUID(),tenantId,agentId,triggerType,triggerId,parentRunId:null,status:'CANCELLED',inputContext:{},startedAt:new Date().toISOString(),actorId:user?.id||null,actorName:user?.name||null};
+ insertRun(db,run);
+ finishRun(db,run.id,{status:'CANCELLED',error:reason,output:{status:'TENANT_NOT_OPERATIONAL',reason}});
  return {...getRun(db,run.id,tenantId),toolCalls:[]};
 }

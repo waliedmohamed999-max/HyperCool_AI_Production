@@ -4,7 +4,14 @@ import { initialState } from './domain.js';
 
 export function openStore(path, legacyPath) {
   const db = new DatabaseSync(path);
-  db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
+  // Multi-Tenant Phase 4C-7 (Part 45/46) — without this, SQLite's default busy timeout is 0:
+  // a writer that finds the database locked by another connection's write fails IMMEDIATELY
+  // with SQLITE_BUSY instead of waiting, which real concurrency testing (a webhook write and
+  // a scheduler tick landing in the same instant, for one) can trigger even at pilot scale.
+  // 5s lets a normal write simply wait out a brief lock instead of surfacing a raw DB error to
+  // the caller; it does not fix multi-PROCESS write contention (see docs/PILOT_RUNBOOK.md's
+  // SQLite section for that real, documented limit).
+  db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
     CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','reviewer','operator')), password TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), csrf TEXT NOT NULL, expires INTEGER NOT NULL);

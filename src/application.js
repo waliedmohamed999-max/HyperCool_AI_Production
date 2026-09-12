@@ -33,11 +33,14 @@ import {promotionEligibility} from './runtime/permissions.js';
 import {installGate,getGateStatus,setPaused,isPaused} from './runtime/gate.js';
 import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
-import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants,listWorkspacesForUser,activateWorkspaceForUser,listActiveMembers,getMembership,updateMembershipRole,updateMembershipStatus} from './tenancy.js';
+import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants,listWorkspacesForUser,activateWorkspaceForUser,listActiveMembers,getMembership,updateMembershipRole,updateMembershipStatus,listSuspendedWorkspacesForUser} from './tenancy.js';
 import {installInvitations,createInvitation,listInvitations,resendInvitation,revokeInvitation,previewInvitation,acceptInvitation,roleForValidToken,checkInvitationRateLimit} from './invitations.js';
 import {installPlatformIdentity,getUserIdentity,requestEmailChange,resendEmailVerification,verifyEmailToken,requestPasswordReset,consumePasswordResetToken,checkForgotPasswordRateLimit,checkEmailVerificationRateLimit,recordPlatformAudit,registerPublicUser,checkSignupRateLimit} from './platform-identity.js';
 import {installPlatformMail,platformMailStatus,sendVerificationEmail,sendPasswordResetEmail,sendInvitationEmail,sendSecurityNotice} from './runtime/platform-mail.js';
 import {bootstrapWorkspaceForOwner,assertCanSelfCreateWorkspace,selfServicePolicy} from './workspace-provisioning.js';
+import {isPlatformAdmin,requirePlatformAdmin,buildPlatformOverview,listTenantDirectory,getTenantDetail,suspendTenantByPlatform,reactivateTenantByPlatform,extendTrialByPlatform} from './platform-admin.js';
+import {checkGlobalSignupLimit,checkWorkspaceCreationIpLimit,checkTotalTrialWorkspacesLimit} from './runtime/pilot-limits.js';
+import {botProtectionStatus,captchaRequiredFor,verifyBotProtection} from './runtime/bot-protection.js';
 import {isTrialActive,getTrialDaysRemaining,countSelfCreatedWorkspaces} from './tenancy.js';
 import {installContent,listContent,getContent,getContentOrNull,insertContent,writeContent} from './content.js';
 import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
@@ -359,7 +362,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
        try{session.tenantId=resolveTenantForUser(store.db,session.user.id,session.activeTenantId);}
        catch(error){tenantResolutionError=error;}
       }
-      if(req.method==='GET' && url.pathname==='/api/auth') return send(200,{needsSetup:auth.needsSetup(),user:session?.user||null,csrf:session?.csrf||null});
+      if(req.method==='GET' && url.pathname==='/api/auth') return send(200,{needsSetup:auth.needsSetup(),user:session?.user||null,csrf:session?.csrf||null,isPlatformAdmin:isPlatformAdmin(env,session?.user)});
       if(req.method==='POST' && ['/api/setup','/api/login'].includes(url.pathname)) {
         const input=await body(req);
         let result;
@@ -377,8 +380,19 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // `/api/setup`/`/api/login`, before the generic authorize()+CSRF gate, since a signing-up
       // visitor has no session yet.
       if(req.method==='POST' && url.pathname==='/api/signup') {
+        // Multi-Tenant Phase 4C-7 (Part 3/64) — a pilot can go "invite-only" without any code
+        // change at all: setting this to 'false' closes public registration outright while
+        // leaving invitation registration (which never touches this route) completely
+        // unaffected — Part 46/47's own "signup vs invite are separate intents" holds exactly
+        // because they were already two different code paths before this phase.
+        if(env.ALLOW_PUBLIC_SIGNUP==='false')fail(403,'التسجيل العام غير متاح حاليًا على هذه المنصة');
         checkSignupRateLimit(req.socket.remoteAddress);
+        checkGlobalSignupLimit(env);
         const input=await body(req);
+        if(captchaRequiredFor(env,'signup')) {
+          const captcha=await verifyBotProtection({env,fetcher},input.captchaToken,req.socket.remoteAddress);
+          if(!captcha.ok)fail(400,captcha.errorCode);
+        }
         const {user,token,normalizedEmail}=registerPublicUser(store.db,auth,{name:input.name,username:input.username,email:input.email,password:input.password});
         const verifyUrl=`${baseUrl}/#verify-email/${token}`;
         const locale=['ar','en'].includes(input.locale)?input.locale:'ar';
@@ -434,6 +448,10 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && url.pathname==='/api/auth/forgot-password') {
         checkForgotPasswordRateLimit(req.socket.remoteAddress);
         const input=await body(req);
+        if(captchaRequiredFor(env,'forgotPassword')) {
+          const captcha=await verifyBotProtection({env,fetcher},input.captchaToken,req.socket.remoteAddress);
+          if(!captcha.ok)fail(400,captcha.errorCode); // orthogonal to Part 24's no-enumeration rule — this never reveals account existence, only whether a challenge was solved
+        }
         const {token,userId}=requestPasswordReset(store.db,input.email);
         if(token) {
           const resetUrl=`${baseUrl}/#reset-password/${token}`;
@@ -477,7 +495,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         return send(200,listWorkspacesForUser(store.db,session.user.id,tenantResolutionError?null:session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/workspaces/active') {
-        if(tenantResolutionError)return send(tenantResolutionError.status||409,{error:tenantResolutionError.message,workspaces:listWorkspacesForUser(store.db,session.user.id,null)});
+        // Part 14 — when there is genuinely no operational workspace, also tell the frontend
+        // WHICH real, named workspace(s) this member belongs to that are merely suspended
+        // (trial-expired or otherwise) — never silently indistinguishable from "no membership
+        // at all" (the same generic NO_WORKSPACE_ACCESS a brand-new signup sees).
+        if(tenantResolutionError)return send(tenantResolutionError.status||409,{error:tenantResolutionError.message,workspaces:listWorkspacesForUser(store.db,session.user.id,null),suspendedWorkspaces:listSuspendedWorkspacesForUser(store.db,session.user.id)});
         const active=listWorkspacesForUser(store.db,session.user.id,session.tenantId).find(w=>w.isActive);
         return send(200,active);
       }
@@ -537,7 +559,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         workspaceCreationInFlight.add(session.user.id);
         try {
           assertCanSelfCreateWorkspace(store.db,env,session.user);
+          checkWorkspaceCreationIpLimit(env,req.socket.remoteAddress); // Part 4 — per-IP daily cap, distinct from the per-user permanent cap above
+          checkTotalTrialWorkspacesLimit(store.db,env); // Part 4 — platform-wide TRIAL ceiling for the pilot
           const input=await body(req);
+          if(captchaRequiredFor(env,'workspaceCreation')) {
+            const captcha=await verifyBotProtection({env,fetcher},input.captchaToken,req.socket.remoteAddress);
+            if(!captcha.ok)fail(400,captcha.errorCode);
+          }
           let created;
           try { created=bootstrapWorkspaceForOwner(store.db,env,{companyName:input.companyName,slug:input.slug,defaultLocale:input.defaultLocale,timezone:input.timezone},session.user.id); }
           catch(error) { if(error.code==='WORKSPACE_SLUG_TAKEN')return send(409,{error:error.message,suggestion:error.suggestion});throw error; }
@@ -551,6 +579,43 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_TRIAL_STARTED',itemId:tenantId,actorId:session.user.id,actorName:session.user.name,at:now},tenantId);
           return send(201,{id:tenantId,slug,trialExpiresAt});
         } finally { workspaceCreationInFlight.delete(session.user.id); }
+      }
+      // Multi-Tenant Phase 4C-7 (Part 19-27) — Platform Admin. Deliberately tenant-independent
+      // (same placement rationale as every route above this line): a platform admin inspecting
+      // or acting on a tenant they may not even be a member of obviously cannot go through
+      // per-session tenant resolution. `requirePlatformAdmin` is the ONE real gate — never a
+      // tenant owner's own role, however senior (Part 20/58).
+      if(url.pathname==='/api/platform/overview' && req.method==='GET') {
+        requirePlatformAdmin(env,session);
+        return send(200,buildPlatformOverview(store.db,env));
+      }
+      if(url.pathname==='/api/platform/tenants' && req.method==='GET') {
+        requirePlatformAdmin(env,session);
+        return send(200,listTenantDirectory(store.db,env));
+      }
+      const platformTenantDetail=url.pathname.match(/^\/api\/platform\/tenants\/([\w-]+)$/);
+      if(platformTenantDetail && req.method==='GET') {
+        requirePlatformAdmin(env,session);
+        return send(200,getTenantDetail(store.db,env,platformTenantDetail[1]));
+      }
+      const platformSuspend=url.pathname.match(/^\/api\/platform\/tenants\/([\w-]+)\/suspend$/);
+      if(platformSuspend && req.method==='POST') {
+        requirePlatformAdmin(env,session);
+        suspendTenantByPlatform(store.db,platformSuspend[1],session.user,(await body(req)).reason);
+        return send(200,{ok:true});
+      }
+      const platformReactivate=url.pathname.match(/^\/api\/platform\/tenants\/([\w-]+)\/reactivate$/);
+      if(platformReactivate && req.method==='POST') {
+        requirePlatformAdmin(env,session);
+        reactivateTenantByPlatform(store.db,platformReactivate[1],session.user);
+        return send(200,{ok:true});
+      }
+      const platformExtendTrial=url.pathname.match(/^\/api\/platform\/tenants\/([\w-]+)\/extend-trial$/);
+      if(platformExtendTrial && req.method==='POST') {
+        requirePlatformAdmin(env,session);
+        const input=await body(req);
+        const tenant=extendTrialByPlatform(store.db,platformExtendTrial[1],{days:Number(input.days)},session.user);
+        return send(200,{id:tenant.id,status:tenant.status,trialExpiresAt:tenant.trialExpiresAt});
       }
       // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only
