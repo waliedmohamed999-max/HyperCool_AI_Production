@@ -576,6 +576,78 @@ async function openConnectorWizard(summary){
   const addButton=button(t('platform.builder.addTrigger'),{variant:'primary',iconName:'plus'});
   addButton.onclick=()=>openTriggerForm();
   webhooksPanel.append(addButton);
+  // Phase 6H, Part 10-12 — Bulk Webhook Reprocess, offered whenever this connector declares at
+  // least one trigger (the only case any webhook_events row could ever exist for it).
+  if(list.length){
+   const reprocessButton=button(t('platform.builder.bulkReprocess.button'),{variant:'secondary'});
+   reprocessButton.onclick=()=>openBulkReprocessDrawer();
+   webhooksPanel.append(reprocessButton);
+  }
+ }
+ // Phase 6H, Part 10-12 — Bulk Webhook Reprocess drawer: a real, live, network-free preview
+ // (exact total count + a bounded oldest-first sample + a per-error-code breakdown) before any
+ // reprocessing runs, an explicit per-event selection (never a silent "all matching" at execution
+ // time), and results that clearly distinguish PROCESSED from STILL_FAILED/SKIPPED/FAILED.
+ function openBulkReprocessDrawer(){
+  const node=document.createElement('div');
+  node.innerHTML=`
+   <label>${escape(t('platform.builder.bulkReprocess.tenantId'))}<input name="tenantId" dir="ltr" placeholder="${escape(t('platform.builder.bulkReprocess.optional'))}"></label>
+   <label>${escape(t('platform.builder.bulkReprocess.errorCode'))}<input name="errorCode" dir="ltr" placeholder="WEBHOOK_MAPPING_FAILED"></label>
+   <label>${escape(t('platform.builder.bulkReprocess.fromDate'))}<input name="fromDate" type="date"></label>
+   <label>${escape(t('platform.builder.bulkReprocess.toDate'))}<input name="toDate" type="date"></label>
+   <div class="report-actions" id="reprocess-filter-actions"></div>
+   <div id="reprocess-preview"></div>
+   <div id="reprocess-list"></div>
+   <div class="report-actions" id="reprocess-actions"></div>
+   <div id="reprocess-results"></div>`;
+  const dialog=drawer(t('platform.builder.bulkReprocess.button'),node);
+  function filterParams(){
+   const val=name=>node.querySelector(`[name=${name}]`).value.trim();
+   const tenantId=val('tenantId'),errorCode=val('errorCode'),fromDate=val('fromDate'),toDate=val('toDate');
+   return {tenantId:tenantId||null,errorCode:errorCode||null,fromDate:fromDate||null,toDate:toDate||null};
+  }
+  async function refreshPreview(){
+   const {tenantId,errorCode,fromDate,toDate}=filterParams();
+   const previewHost=node.querySelector('#reprocess-preview'),listHost=node.querySelector('#reprocess-list'),actionsHost=node.querySelector('#reprocess-actions');
+   actionsHost.innerHTML='';node.querySelector('#reprocess-results').innerHTML='';
+   previewHost.innerHTML=skeleton(t('common.loading'));
+   const qs=new URLSearchParams({connectorSlug:detail.slug});
+   if(tenantId)qs.set('tenantId',tenantId);if(errorCode)qs.set('errorCode',errorCode);
+   if(fromDate)qs.set('fromDate',fromDate);if(toDate)qs.set('toDate',toDate);
+   let preview;
+   try{preview=await apiClient(`/api/platform/bulk/webhook-reprocess/preview?${qs.toString()}`);}
+   catch(error){previewHost.innerHTML=empty(t('controlCenter.loadFailed'),error.message);listHost.innerHTML='';return;}
+   previewHost.innerHTML=`<div class="kpi-grid">
+    ${['totalMatched','willAttempt','tenants'].map(k=>`<div class="kpi-card"><span class="kpi-label">${escape(t('platform.builder.bulkReprocess.'+k))}</span><strong class="kpi-value">${preview[k]}</strong></div>`).join('')}
+   </div>`+(Object.keys(preview.byErrorCode).length?`<p>${Object.entries(preview.byErrorCode).map(([code,count])=>`<span dir="ltr">${escape(code)}: ${count}</span>`).join(' · ')}</p>`:'');
+   if(!preview.events.length){listHost.innerHTML=empty(t('common.noResults'));return;}
+   listHost.innerHTML=preview.events.map(e=>`<label class="check"><input type="checkbox" name="evt" value="${escape(e.id)}" checked> <span dir="ltr">${escape(e.errorCode||'—')}</span> — <span dir="ltr" class="kpi-context">${escape(e.tenantId)}</span> — ${new Date(e.receivedAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA')}</label>`).join('');
+   const reprocessButton=button(t('platform.builder.bulkReprocess.reprocessSelected'),{variant:'primary'});
+   reprocessButton.onclick=async()=>{
+    const selected=[...listHost.querySelectorAll('[name=evt]:checked')].map(el=>el.value);
+    if(!selected.length){toastError(t('platform.builder.bulk.noneSelected'));return;}
+    const confirmed=await promptDrawer(t('platform.builder.bulkReprocess.reprocessSelected'),n=>{n.innerHTML=`<p>${escape(t('platform.builder.bulkReprocess.reprocessConfirm',{count:selected.length}))}</p>`;},{confirmLabel:t('platform.builder.bulkReprocess.reprocessSelected')});
+    if(!confirmed)return;
+    try{
+     const result=await apiClient('/api/platform/bulk/webhook-reprocess',{connectorSlug:detail.slug,eventIds:selected});
+     renderReprocessResults(node.querySelector('#reprocess-results'),result);
+    }catch(error){toastError(error.message);}
+   };
+   actionsHost.append(reprocessButton);
+  }
+  const filterButton=button(t('platform.builder.bulkReprocess.applyFilter'),{variant:'ghost'});
+  filterButton.onclick=refreshPreview;
+  node.querySelector('#reprocess-filter-actions').append(filterButton);
+  refreshPreview();
+ }
+ function renderReprocessResults(host,result){
+  host.innerHTML=`<h4>${escape(t('platform.builder.bulk.resultsTitle'))}</h4>
+   <div class="kpi-grid">
+    ${['processed','stillFailed','skipped','failed'].map(k=>`<div class="kpi-card"><span class="kpi-label">${escape(t('platform.builder.bulkReprocess.'+k))}</span><strong class="kpi-value">${result.summary[k]}</strong></div>`).join('')}
+   </div>`+table(
+    [t('platform.builder.bulkReprocess.eventId'),t('controlCenter.statusLabel'),'reason'],
+    result.results.map(r=>[`<span dir="ltr">${escape(r.eventId)}</span>`,badge(r.status,r.status==='PROCESSED'?'CONNECTED':r.status==='SKIPPED'?'PENDING':'ERROR'),escape(r.reason||'—')])
+   );
  }
  function openTriggerForm(){
   promptDrawer(t('platform.builder.addTrigger'),n=>{

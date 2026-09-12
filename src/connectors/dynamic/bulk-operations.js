@@ -12,6 +12,7 @@ import {getVersionSnapshot} from './store.js';
 import {migrateConnectionVersion} from './connection-versions.js';
 import {findAssignmentsUsingConnection} from '../../runtime/tool-assignments.js';
 import {getToolDefinition} from '../../runtime/tool-definitions.js';
+import {reprocessFailedWebhookEvent} from '../generic-webhook/operations.js';
 
 function fail(status,code,message){const e=new Error(message||code);e.status=status;e.code=code;throw e;}
 function requirePlatformAdmin(env,user) {
@@ -137,4 +138,104 @@ export async function bulkRollbackOperation({db,env,fetcher,resolver,transport,a
  const summary={ready:results.filter(r=>r.status==='READY').length,skipped:0,failed:results.filter(r=>r.status==='FAILED').length};
  const newOperationId=recordBulkOperation(db,{type:'VERSION_MIGRATION_ROLLBACK',actorId:actorUser.id,params:{sourceOperationId:operationId},results});
  return {operationId:newOperationId,summary,results};
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 6H, Part 10-12 — Bulk Webhook Reprocess. Reuses the EXACT SAME single-event safe
+// reprocess pipeline (`reprocessFailedWebhookEvent`, generic-webhook/operations.js — the
+// FAILED->REPROCESSING->PROCESSED/FAILED CAS transition against the ORIGINAL stored payload)
+// for every selected event, one at a time — never a second reprocessing implementation. Only
+// ever selects rows with status='FAILED' at the DB level (PROCESSED/DUPLICATE rows are
+// structurally never matched, so "duplicate" in the summary is always 0 — reported anyway so the
+// caller sees the same four counters the spec calls for). `webhook_events` rows are scoped by
+// (tenant_id, source=connector:<slug>), not by an individual connection id (Phase 6C's own
+// design — see webhook-events.js), so for a connector used more than once by the same tenant
+// (MULTI connectionMode) reprocessing attaches to that tenant's oldest connection for this
+// connector; this is an existing, documented framework limitation, not something introduced here.
+const MAX_BULK_REPROCESS_BATCH=100;
+
+function buildFailedEventFilter({connectorSlug,tenantId,fromDate,toDate,errorCode}) {
+ const conditions=['source=?',"status='FAILED'"];
+ const params=[`connector:${connectorSlug}`];
+ if(tenantId){conditions.push('tenant_id=?');params.push(tenantId);}
+ if(fromDate){conditions.push('received_at>=?');params.push(fromDate);}
+ if(toDate){conditions.push('received_at<=?');params.push(toDate);}
+ if(errorCode){conditions.push('error=?');params.push(errorCode);}
+ return {where:conditions.join(' AND '),params};
+}
+
+/** Part 10 — a real, live, read-only preview: the exact total count of matching FAILED events
+ * (never capped) plus a bounded sample (`MAX_BULK_REPROCESS_BATCH`, oldest-first — the same
+ * order execution uses) so the operator can see exactly what a first execution batch would
+ * contain, and a breakdown by tenant/error code to judge whether the filter is well-targeted
+ * before running anything. */
+export function previewBulkWebhookReprocess(db,env,actorUser,{connectorSlug,tenantId=null,fromDate=null,toDate=null,errorCode=null}={}) {
+ requirePlatformAdmin(env,actorUser);
+ if(!connectorSlug)fail(400,'CONNECTOR_REQUIRED','يجب تحديد الموصل');
+ const {where,params}=buildFailedEventFilter({connectorSlug,tenantId,fromDate,toDate,errorCode});
+ const totalMatched=db.prepare(`SELECT COUNT(*) c FROM webhook_events WHERE ${where}`).get(...params).c;
+ const rows=db.prepare(`SELECT id,tenant_id,error,received_at FROM webhook_events WHERE ${where} ORDER BY received_at ASC LIMIT ${MAX_BULK_REPROCESS_BATCH}`).all(...params);
+ const byErrorCode={};
+ for(const row of rows)byErrorCode[row.error||'UNKNOWN']=(byErrorCode[row.error||'UNKNOWN']||0)+1;
+ return {
+  connectorSlug,totalMatched,willAttempt:rows.length,
+  tenants:[...new Set(rows.map(r=>r.tenant_id))].length,
+  byErrorCode,
+  events:rows.map(r=>({id:r.id,tenantId:r.tenant_id,errorCode:r.error,receivedAt:r.received_at}))
+ };
+}
+
+/** Part 11 — the real bulk reprocess. Selects either an explicit, pre-confirmed `eventIds` list
+ * (mirroring Part 8's "never inferred silently at execution time" rule for version migration) or
+ * — if none given — the same filter used by the preview, oldest-first, bounded to
+ * `MAX_BULK_REPROCESS_BATCH` (Part 47 — no unbounded synchronous loop). Every event goes through
+ * the exact same atomic CAS-guarded single-event reprocess; a mapping failure on retry (the event
+ * genuinely still fails) is reported as `STILL_FAILED`, distinct from `SKIPPED` (a structurally
+ * safe refusal — already claimed by another operator, its trigger no longer exists, etc.) and
+ * from an unexpected `FAILED`. */
+export async function bulkReprocessWebhookEvents({db,env,eventBus,actorUser,connectorSlug,tenantId=null,fromDate=null,toDate=null,errorCode=null,eventIds=null}) {
+ requirePlatformAdmin(env,actorUser);
+ if(!connectorSlug)fail(400,'CONNECTOR_REQUIRED','يجب تحديد الموصل');
+ let rows;
+ if(Array.isArray(eventIds) && eventIds.length) {
+  if(eventIds.length>MAX_BULK_REPROCESS_BATCH)fail(400,'BATCH_TOO_LARGE',`الحد الأقصى لكل عملية جماعية هو ${MAX_BULK_REPROCESS_BATCH} حدث`);
+  const placeholders=eventIds.map(()=>'?').join(',');
+  rows=db.prepare(`SELECT id,tenant_id,error FROM webhook_events WHERE source=? AND status='FAILED' AND id IN (${placeholders})`).all(`connector:${connectorSlug}`,...eventIds);
+ } else {
+  const {where,params}=buildFailedEventFilter({connectorSlug,tenantId,fromDate,toDate,errorCode});
+  rows=db.prepare(`SELECT id,tenant_id,error FROM webhook_events WHERE ${where} ORDER BY received_at ASC LIMIT ${MAX_BULK_REPROCESS_BATCH}`).all(...params);
+ }
+ if(!rows.length)fail(400,'NO_EVENTS_SELECTED','لا توجد أحداث فاشلة مطابقة لإعادة المعالجة');
+
+ const connectionCache=new Map();
+ function resolveConnectionId(tid) {
+  if(connectionCache.has(tid))return connectionCache.get(tid);
+  const row=db.prepare('SELECT id FROM integration_connections WHERE tenant_id=? AND integration_definition_id=? ORDER BY created_at ASC LIMIT 1').get(tid,connectorSlug);
+  connectionCache.set(tid,row?.id||null);
+  return row?.id||null;
+ }
+
+ const results=[];
+ for(const row of rows) {
+  const connectionId=resolveConnectionId(row.tenant_id);
+  if(!connectionId){results.push({eventId:row.id,tenantId:row.tenant_id,status:'SKIPPED',reason:'NO_CONNECTION_FOUND'});continue;}
+  try {
+   reprocessFailedWebhookEvent({db,eventBus,connectionId,tenantId:row.tenant_id,eventId:row.id});
+   results.push({eventId:row.id,tenantId:row.tenant_id,status:'PROCESSED'});
+  } catch(error) {
+   const skippable=new Set(['NOT_REPROCESSABLE','CONCURRENT_REPROCESS','TRIGGER_NO_LONGER_EXISTS','EVENT_NOT_FOUND']);
+   if(error.code==='WEBHOOK_MAPPING_FAILED')results.push({eventId:row.id,tenantId:row.tenant_id,status:'STILL_FAILED',reason:error.code});
+   else if(skippable.has(error.code))results.push({eventId:row.id,tenantId:row.tenant_id,status:'SKIPPED',reason:error.code});
+   else results.push({eventId:row.id,tenantId:row.tenant_id,status:'FAILED',reason:error.code||'UNKNOWN_ERROR'});
+  }
+ }
+ const summary={
+  processed:results.filter(r=>r.status==='PROCESSED').length,
+  stillFailed:results.filter(r=>r.status==='STILL_FAILED').length,
+  skipped:results.filter(r=>r.status==='SKIPPED').length,
+  duplicate:0, // structurally impossible — only FAILED-status rows are ever selected (see comment above)
+  failed:results.filter(r=>r.status==='FAILED').length
+ };
+ const operationId=recordBulkOperation(db,{type:'WEBHOOK_REPROCESS',actorId:actorUser.id,params:{connectorSlug,tenantId,fromDate,toDate,errorCode,eventIds},results});
+ return {operationId,summary,results};
 }

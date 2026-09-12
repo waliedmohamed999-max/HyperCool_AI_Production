@@ -12,7 +12,7 @@ import {connectionStatus,importSalla,ConnectorError,testAnthropicConnection,test
 import {processGenericWebhook} from './connectors/generic-webhook/webhook.js';
 import {installDynamicConnectorTables} from './connectors/dynamic/store.js';
 import {installDraftOverlayTables} from './connectors/dynamic/draft-store.js';
-import {installBulkOperations,previewBulkVersionMigration,bulkMigrateConnections,bulkRollbackOperation,listBulkOperations,getBulkOperation} from './connectors/dynamic/bulk-operations.js';
+import {installBulkOperations,previewBulkVersionMigration,bulkMigrateConnections,bulkRollbackOperation,listBulkOperations,getBulkOperation,previewBulkWebhookReprocess,bulkReprocessWebhookEvents} from './connectors/dynamic/bulk-operations.js';
 import {resolveConnectorDynamic} from './connectors/dynamic/registry.js';
 import {listCompatibleConnections} from './connectors/dynamic/compatibility.js';
 import {
@@ -894,6 +894,16 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const bulkOperationItem=url.pathname.match(/^\/api\/platform\/bulk\/operations\/([\w-]+)$/);
       if(bulkOperationItem && req.method==='GET') {
         return send(200,getBulkOperation(store.db,env,session.user,bulkOperationItem[1]));
+      }
+      // Phase 6H, Part 10-12 — Bulk Webhook Reprocess (Platform Admin only, Part 46).
+      if(url.pathname==='/api/platform/bulk/webhook-reprocess/preview' && req.method==='GET') {
+        return send(200,previewBulkWebhookReprocess(store.db,env,session.user,{connectorSlug:url.searchParams.get('connectorSlug'),tenantId:url.searchParams.get('tenantId')||null,fromDate:url.searchParams.get('fromDate')||null,toDate:url.searchParams.get('toDate')||null,errorCode:url.searchParams.get('errorCode')||null}));
+      }
+      if(url.pathname==='/api/platform/bulk/webhook-reprocess' && req.method==='POST') {
+        const input=await body(req);
+        const result=await bulkReprocessWebhookEvents({db:store.db,env,eventBus,actorUser:session.user,connectorSlug:input.connectorSlug,tenantId:input.tenantId||null,fromDate:input.fromDate||null,toDate:input.toDate||null,errorCode:input.errorCode||null,eventIds:input.eventIds||null});
+        recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'BULK_WEBHOOK_REPROCESS_EXECUTED',itemId:result.operationId,detail:JSON.stringify(result.summary),actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
+        return send(200,result);
       }
       // Every OTHER /api/ route requires a successfully resolved tenant — unchanged behavior
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only

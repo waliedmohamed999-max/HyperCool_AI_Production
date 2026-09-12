@@ -221,6 +221,25 @@
    "rollbackOperation": "Rollback this operation",
    "rollbackConfirm": "Only rolls back the connections this specific operation actually migrated, each through the same safety checks."
   },
+  "bulkReprocess": {
+   "button": "Bulk Reprocess Failed Webhooks",
+   "tenantId": "Tenant ID",
+   "errorCode": "Error code",
+   "fromDate": "From date",
+   "toDate": "To date",
+   "optional": "Optional — all tenants",
+   "applyFilter": "Apply Filter",
+   "totalMatched": "Total matched events",
+   "willAttempt": "Will attempt in this batch",
+   "tenants": "Tenants",
+   "reprocessSelected": "Reprocess Selected",
+   "reprocessConfirm": "Real mapping and dispatch will be re-run for each of the {count} selected events against their exact original stored payload — no event that already processed successfully will ever be re-sent.",
+   "eventId": "Event ID",
+   "processed": "Processed",
+   "stillFailed": "Still failed",
+   "skipped": "Skipped",
+   "failed": "Unexpected failure"
+  },
   "tabAnalytics": "Analytics",
   "analytics": {
    "connections": "Connections",
