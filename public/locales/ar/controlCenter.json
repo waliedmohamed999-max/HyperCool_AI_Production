@@ -5,7 +5,8 @@
   "ai": "مزودو الذكاء الاصطناعي",
   "agents": "ربط الوكلاء",
   "health": "الصحة والجاهزية",
-  "settings": "إعدادات مساحة العمل"
+  "settings": "إعدادات مساحة العمل",
+  "agentMap": "خريطة الوكلاء"
  },
  "runSystemCheck": "تشغيل فحص النظام",
  "trialBanner": "متبقٍ {days} يومًا من الفترة التجريبية",
@@ -190,5 +191,33 @@
   "usageWebhookReceived": "أحداث Webhook مستلمة",
   "usageWebhookFailed": "أحداث Webhook فاشلة",
   "usageLastUsed": "آخر استخدام: {when}"
+ },
+ "agentMap": {
+  "hint": "عرض حي لكل ربط وكيل ← أداة ← قدرة ← موصل ← اتصال ← إصدار ← حالة صحة، مبني على نفس حسابات الجاهزية التي يستخدمها تبويب الوكلاء.",
+  "connectorFilterPlaceholder": "تصفية حسب اسم الموصل",
+  "tool": "الأداة",
+  "capability": "القدرة",
+  "connector": "الموصل",
+  "connection": "الاتصال",
+  "version": "الإصدار",
+  "health": "الصحة",
+  "compatibilityTitle": "التوافق بين الأدوات والاتصالات",
+  "compatibleConnections": "اتصالات متوافقة",
+  "assignedAgents": "الوكلاء المرتبطون"
+ },
+ "customConnectors": {
+  "title": "موصلاتي المخصصة",
+  "hint": "أنشئ موصلك الخاص (REST بسيط) وأرسله لمراجعة مسؤول المنصة قبل أن يصبح قابلًا للاستخدام — يظل خاصًا بمنشأتك دائمًا.",
+  "newDraft": "مسودة موصل جديد",
+  "emptyState": "لا توجد موصلات مخصصة بعد.",
+  "reviewStatus": "حالة المراجعة",
+  "reviewStatusValue": {
+   "PENDING": "بانتظار المراجعة",
+   "APPROVED": "مُعتمد",
+   "REJECTED": "مرفوض",
+   "CHANGES_REQUESTED": "مطلوب تعديلات"
+  },
+  "submit": "إرسال للمراجعة",
+  "policyNote": "يُسمح فقط بمصادقة NONE/API_KEY/BEARER_TOKEN/BASIC ورابط HTTPS عام — لا OAuth2، ولا قدرات محجوزة (platform./security./admin./permissions.*)."
  }
 }

@@ -5,7 +5,8 @@
   "ai": "AI Providers",
   "agents": "Agent Connections",
   "health": "Health & Readiness",
-  "settings": "Workspace Settings"
+  "settings": "Workspace Settings",
+  "agentMap": "Agent Map"
  },
  "runSystemCheck": "Run System Check",
  "trialBanner": "{days} days left in your trial",
@@ -190,5 +191,33 @@
   "usageWebhookReceived": "Webhook events received",
   "usageWebhookFailed": "Webhook events failed",
   "usageLastUsed": "Last used: {when}"
+ },
+ "agentMap": {
+  "hint": "A live view of every Agent -> Tool -> Capability -> Connector -> Connection -> Version -> Health link, built on the exact same readiness computation the Agents tab uses.",
+  "connectorFilterPlaceholder": "Filter by connector slug",
+  "tool": "Tool",
+  "capability": "Capability",
+  "connector": "Connector",
+  "connection": "Connection",
+  "version": "Version",
+  "health": "Health",
+  "compatibilityTitle": "Tool / Connection compatibility",
+  "compatibleConnections": "Compatible connections",
+  "assignedAgents": "Agents assigned"
+ },
+ "customConnectors": {
+  "title": "My custom connectors",
+  "hint": "Create your own simple REST connector and submit it for Platform Admin review before it can be used — it always stays private to your workspace.",
+  "newDraft": "New connector draft",
+  "emptyState": "No custom connectors yet.",
+  "reviewStatus": "Review status",
+  "reviewStatusValue": {
+   "PENDING": "Pending review",
+   "APPROVED": "Approved",
+   "REJECTED": "Rejected",
+   "CHANGES_REQUESTED": "Changes requested"
+  },
+  "submit": "Submit for review",
+  "policyNote": "Only NONE/API_KEY/BEARER_TOKEN/BASIC auth and a public HTTPS URL are allowed — no OAuth2, and no reserved capabilities (platform./security./admin./permissions.*)."
  }
 }

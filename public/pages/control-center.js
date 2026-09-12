@@ -31,15 +31,16 @@ export function installControlCenter(){
   <div id="cc-summary" class="kpi-grid"></div>
   <section id="cc-attention" class="report-section" hidden><div class="report-section-head"><h3>${escape(t('controlCenter.needsAttention'))}</h3></div><div id="cc-attention-list"></div></section>
   <div id="cc-tabs"></div>`;
- const panels=['overview','integrations','ai','agents','health','settings'].map(key=>{const el=document.createElement('div');el.id='cc-panel-'+key;el.className='cc-panel';return el;});
+ const panels=['overview','integrations','ai','agents','agentMap','health','settings'].map(key=>{const el=document.createElement('div');el.id='cc-panel-'+key;el.className='cc-panel';return el;});
  root.querySelector('#cc-tabs').append(...panels);
  tabs(root.querySelector('#cc-tabs'),[
   [t('controlCenter.tabs.overview'),panels[0]],
   [t('controlCenter.tabs.integrations'),panels[1]],
   [t('controlCenter.tabs.ai'),panels[2]],
   [t('controlCenter.tabs.agents'),panels[3]],
-  [t('controlCenter.tabs.health'),panels[4]],
-  [t('controlCenter.tabs.settings'),panels[5]]
+  [t('controlCenter.tabs.agentMap'),panels[4]],
+  [t('controlCenter.tabs.health'),panels[5]],
+  [t('controlCenter.tabs.settings'),panels[6]]
  ]);
  const header=document.querySelector('[data-page="control-center"] .page-actions');
  const testButton=button(t('controlCenter.runSystemCheck'),{variant:'secondary',iconName:'check'});
@@ -81,6 +82,7 @@ export async function renderControlCenter({api:client,auth}){
  renderIntegrationsTab();
  renderAiTab();
  renderAgentsTab();
+ renderAgentMapTab();
  renderHealthTab();
  renderSettingsTab();
 }
@@ -191,6 +193,87 @@ function renderIntegrationsTab(){
   }
   card.append(actions);grid.append(card);
  }
+ if(currentAuth?.user?.role==='owner')renderTenantCustomConnectors(container);
+}
+// Phase 6G, Part 28-38 — Tenant Custom Connector Governance. The section itself only renders
+// once the backend confirms the flag is actually on for this deployment (never guessed/assumed
+// client-side) — `enabled:false` renders nothing at all, matching "when false: no tenant
+// creation API/UI" exactly.
+async function renderTenantCustomConnectors(container){
+ let data;
+ try{data=await api('/api/integrations/custom-connectors');}catch{return;}
+ if(!data.enabled)return;
+ const host=document.createElement('section');host.className='report-section';host.id='cc-custom-connectors';
+ host.innerHTML=`<div class="report-section-head"><h3>${escape(t('controlCenter.customConnectors.title'))}</h3></div>
+  <p class="kpi-context">${escape(t('controlCenter.customConnectors.hint'))}</p>
+  <div id="cc-custom-list"></div>`;
+ container.append(host);
+ const newButton=button(t('controlCenter.customConnectors.newDraft'),{variant:'primary',iconName:'plus'});
+ newButton.onclick=()=>openCustomConnectorDraftForm();
+ host.querySelector('.report-section-head').append(newButton);
+ paintCustomConnectorsList(host.querySelector('#cc-custom-list'),data.connectors);
+}
+function paintCustomConnectorsList(host,list){
+ if(!list.length){host.innerHTML=empty(t('controlCenter.customConnectors.emptyState'));return;}
+ host.innerHTML=table(
+  [t('platform.builder.table.name'),t('platform.builder.table.status'),t('controlCenter.customConnectors.reviewStatus'),t('platform.builder.table.actions')],
+  list.map(c=>[
+   `${escape(getLocale()==='en'?c.nameEn:c.nameAr)} <span dir="ltr" class="kpi-context">${escape(c.slug)}</span>`,
+   badge(t('platform.builder.status.'+c.status)||c.status,c.status==='PUBLISHED'?'CONNECTED':'PENDING'),
+   c.reviewStatus?badge(t('controlCenter.customConnectors.reviewStatusValue.'+c.reviewStatus)||c.reviewStatus,c.reviewStatus==='APPROVED'?'CONNECTED':c.reviewStatus==='REJECTED'?'ERROR':'PENDING'):'—',
+   `<span data-custom-row="${escape(c.id)}"></span>`
+  ])
+ );
+ for(const c of list){
+  const cell=host.querySelector(`[data-custom-row="${CSS.escape(c.id)}"]`);
+  if(c.status==='DRAFT'){
+   const edit=button(t('platform.builder.manage'),{variant:'secondary'});
+   edit.onclick=()=>openCustomConnectorDraftForm(c);
+   cell.append(edit);
+   if(!c.reviewStatus||c.reviewStatus==='CHANGES_REQUESTED'||c.reviewStatus==='REJECTED'){
+    const submit=button(t('controlCenter.customConnectors.submit'),{variant:'primary'});
+    submit.onclick=async()=>{
+     try{await api(`/api/integrations/custom-connectors/${c.id}/submit`,{},'POST');toast(t('common.savedSuccessfully'));renderControlCenter({api:apiClient,auth:currentAuth});}
+     catch(error){toastError(error.message);}
+    };
+    cell.append(submit);
+   }
+  }
+ }
+}
+function openCustomConnectorDraftForm(existing){
+ promptDrawer(existing?t('platform.builder.manage'):t('controlCenter.customConnectors.newDraft'),n=>{
+  n.innerHTML=`
+   <label>${escape(t('platform.builder.fields.slug'))}<input name="slug" dir="ltr" ${existing?'disabled':''} value="${escape(existing?.slug||'')}" required pattern="[a-z][a-z0-9_-]*" maxlength="60"></label>
+   <label>${escape(t('platform.builder.fields.nameAr'))}<input name="nameAr" value="${escape(existing?.nameAr||'')}" required maxlength="100"></label>
+   <label>${escape(t('platform.builder.fields.nameEn'))}<input name="nameEn" dir="ltr" value="${escape(existing?.nameEn||'')}" required maxlength="100"></label>
+   <label>${escape(t('platform.builder.fields.baseUrl'))}<input name="baseUrl" dir="ltr" value="${escape(existing?.restConfig?.baseUrl||'')}" required placeholder="https://api.example.com"></label>
+   <label>${escape(t('platform.builder.fields.authType'))}<select name="authType" ${existing?'disabled':''}>${['API_KEY','BEARER_TOKEN','BASIC','NONE'].map(a=>`<option value="${a}" ${(existing?.authConfig?.type||'API_KEY')===a?'selected':''}>${escape(a)}</option>`).join('')}</select></label>
+   <label>${escape(t('platform.builder.fields.headerName'))}<input name="headerName" dir="ltr" value="${escape(existing?.authConfig?.headerName||'X-Api-Key')}"></label>
+   <label>${escape(t('platform.builder.fields.capabilities'))}<input name="capabilities" dir="ltr" value="${escape((existing?.capabilities||[]).join(' '))}" placeholder="commerce.orders.read"></label>
+   <p class="notice">${escape(t('controlCenter.customConnectors.policyNote'))}</p>`;
+  return {
+   value:()=>{
+    const val=name=>n.querySelector(`[name=${name}]`).value.trim();
+    const authType=n.querySelector('[name=authType]').value;
+    return {
+     slug:val('slug'),nameAr:val('nameAr'),nameEn:val('nameEn'),connectionMode:'SINGLE',
+     auth:authType==='API_KEY'?{type:'API_KEY',headerName:val('headerName')||'X-Api-Key'}:authType==='NONE'?{type:'NONE',allowNone:true}:{type:authType},
+     capabilities:val('capabilities')?val('capabilities').split(/\s+/).filter(Boolean):[],
+     rest:{baseUrl:val('baseUrl')}
+    };
+   },
+   focus:()=>n.querySelector('[name=slug]').focus()
+  };
+ },{confirmLabel:t('common.save')}).then(async result=>{
+  if(!result)return;
+  try{
+   if(existing)await api(`/api/integrations/custom-connectors/${existing.id}`,{nameAr:result.nameAr,nameEn:result.nameEn,capabilities:result.capabilities,rest:result.rest},'PATCH');
+   else await api('/api/integrations/custom-connectors',result);
+   toast(t('common.savedSuccessfully'));
+   renderControlCenter({api:apiClient,auth:currentAuth});
+  }catch(error){toastError(error.message);}
+ });
 }
 /** Honest add-connection gating (Phase 4C-2 Part 10/73, extended Phase 6D): Salla's real
  * multi-store OAuth and Anthropic/OpenAI's real API-key flow keep their own dedicated paths; any
@@ -418,6 +501,66 @@ function paintAgentReadiness(panel,readiness){
   <p>${escape(t('controlCenter.aiStatus'))}: ${escape(readiness.required.ai)}</p>
   <p>${escape(t('controlCenter.toolsStatus'))}: ${escape(readiness.required.tools)}</p>
   ${readiness.optional_missing.length?`<p><strong>${escape(t('controlCenter.optionalMissing'))}:</strong> ${readiness.optional_missing.map(escape).join('، ')}</p>`:''}`;
+}
+
+// --- Agent Connection Map (Phase 6G, Part 43-47) ------------------------------------------
+// Agent -> Tool -> Capability -> Connector -> Connection -> Version -> Health, one real,
+// live table built entirely from the same readiness/compatibility computations the Agents tab
+// above already uses — never a second, divergent readiness engine.
+
+let agentMapFilters={agentId:'',connectorSlug:'',status:'',capability:''};
+function renderAgentMapTab(){
+ const container=document.getElementById('cc-panel-agentMap');
+ container.innerHTML=`<p class="kpi-context">${escape(t('controlCenter.agentMap.hint'))}</p>
+  <div class="table-toolbar">
+   <select id="am-agent"><option value="">${escape(t('common.all'))}</option>${summary.agents.items.map(a=>`<option value="${escape(a.id)}">${escape(a.name)}</option>`).join('')}</select>
+   <select id="am-status"><option value="">${escape(t('common.all'))}</option>${['READY','CONNECTION_REQUIRED','CONNECTION_UNHEALTHY','CONNECTION_CAPABILITY_MISSING','DISABLED'].map(s=>`<option value="${s}">${escape(t('controlCenter.toolStatus.'+s)||s)}</option>`).join('')}</select>
+   <input type="search" id="am-connector" placeholder="${escape(t('controlCenter.agentMap.connectorFilterPlaceholder'))}" dir="ltr">
+  </div>
+  <div id="am-table"></div>
+  <h4>${escape(t('controlCenter.agentMap.compatibilityTitle'))}</h4>
+  <div id="am-compat"></div>`;
+ container.querySelector('#am-agent').onchange=e=>{agentMapFilters.agentId=e.target.value;paintAgentMapTable();};
+ container.querySelector('#am-status').onchange=e=>{agentMapFilters.status=e.target.value;paintAgentMapTable();};
+ container.querySelector('#am-connector').oninput=e=>{agentMapFilters.connectorSlug=e.target.value.trim();paintAgentMapTable();};
+ paintAgentMapTable();
+ paintToolCompatibility();
+}
+async function paintAgentMapTable(){
+ const host=document.getElementById('am-table');if(!host)return;
+ host.innerHTML=skeleton(t('common.loading'));
+ const params=new URLSearchParams();
+ if(agentMapFilters.agentId)params.set('agentId',agentMapFilters.agentId);
+ if(agentMapFilters.status)params.set('status',agentMapFilters.status);
+ let rows;
+ try{rows=await api(`/api/agent-connection-map?${params}`);}catch(error){host.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+ if(agentMapFilters.connectorSlug)rows=rows.filter(r=>(r.connectorSlug||'').includes(agentMapFilters.connectorSlug));
+ if(!rows.length){host.innerHTML=empty(t('common.noResults'));return;}
+ host.innerHTML=table(
+  [t('controlCenter.agent'),t('controlCenter.agentMap.tool'),t('controlCenter.agentMap.capability'),t('controlCenter.agentMap.connector'),t('controlCenter.agentMap.connection'),t('controlCenter.agentMap.version'),t('controlCenter.agentMap.health'),t('controlCenter.readinessLabel')],
+  rows.map(r=>[
+   escape(r.agentName),`<span dir="ltr">${escape(r.toolSlug)}</span>`,`<span dir="ltr">${escape(r.capability||'—')}</span>`,
+   `<span dir="ltr">${escape(r.connectorSlug||'—')}</span>`,escape(r.connectionName||'—'),escape(r.connectorVersion??'—'),
+   r.healthStatus?statusBadge(r.healthStatus,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',DISCONNECTED:'DISCONNECTED'}):'—',
+   badge(t('controlCenter.toolStatus.'+r.readinessStatus)||r.readinessStatus,r.readinessStatus==='READY'?'CONNECTED':r.readinessStatus==='DISABLED'?'DISCONNECTED':'ERROR')
+  ])
+ );
+}
+async function paintToolCompatibility(){
+ const host=document.getElementById('am-compat');if(!host)return;
+ host.innerHTML=skeleton(t('common.loading'));
+ let view;
+ try{view=await api('/api/tool-compatibility');}catch(error){host.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+ const withData=view.filter(v=>v.capability);
+ if(!withData.length){host.innerHTML=empty(t('common.noResults'));return;}
+ host.innerHTML=table(
+  [t('controlCenter.agentMap.tool'),t('controlCenter.agentMap.capability'),t('controlCenter.agentMap.compatibleConnections'),t('controlCenter.agentMap.assignedAgents')],
+  withData.map(v=>[
+   `<span dir="ltr">${escape(v.toolSlug)}</span>`,`<span dir="ltr">${escape(v.capability)}</span>`,
+   escape(v.compatibleConnections.length),
+   escape(v.assignments.filter(a=>a.connectionId).length)+'/'+escape(v.assignments.length)
+  ])
+ );
 }
 
 // --- Health & Readiness tab ---------------------------------------------------------------
