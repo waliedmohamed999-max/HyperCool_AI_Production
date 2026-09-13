@@ -8,7 +8,7 @@
     "build": "node --check app.cjs && node --check src/server.js && node --check src/application.js",
     "workflows:build": "npm run build",
     "test": "node --test",
-    "test:e2e": "node tests/e2e/builder-marketplace.e2e.mjs && node tests/e2e/tenant-connect-journey.e2e.mjs && node tests/e2e/versioning-journey.e2e.mjs && node tests/e2e/webhook-operations-journey.e2e.mjs && node tests/e2e/tenant-custom-governance-journey.e2e.mjs && node tests/e2e/phase6h-closure-journey.e2e.mjs",
+    "test:e2e": "node tests/e2e/builder-marketplace.e2e.mjs && node tests/e2e/tenant-connect-journey.e2e.mjs && node tests/e2e/versioning-journey.e2e.mjs && node tests/e2e/webhook-operations-journey.e2e.mjs && node tests/e2e/tenant-custom-governance-journey.e2e.mjs && node tests/e2e/phase6h-closure-journey.e2e.mjs && node tests/e2e/investor-demo-journey.e2e.mjs",
     "test:ui": "node scripts/ui-qa.mjs",
     "ui:screenshots": "node scripts/ui-baseline.mjs",
     "agents:extract": "node scripts/extract-agents.js",
