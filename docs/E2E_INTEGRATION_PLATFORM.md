@@ -1,8 +1,8 @@
-# Integration Platform — Playwright E2E Suite (Phase 6F/6G)
+# Integration Platform — Playwright E2E Suite (Phase 6F/6G/6H)
 
-Five real browser journeys against a real, ephemeral instance of the actual application (a fresh
+Six real browser journeys against a real, ephemeral instance of the actual application (a fresh
 temp SQLite data directory + a real HTTP server on an ephemeral port) — zero mocking of the app
-itself. Run all five with:
+itself. Run all six with:
 
 ```
 npm run test:e2e
@@ -59,7 +59,28 @@ signup form itself). The Tenant Owner creates a custom connector draft and submi
 the Platform Admin's real "Pending Custom Connectors" queue shows it and approves it; the
 connector becomes visible ONLY in the submitting tenant's own catalog (verified against a THIRD,
 separate tenant's catalog, which never sees it); the tenant connects to their own newly-approved
-connector. **12/12 checks pass.**
+connector.
+
+## Journey 6 — Phase 6H Closure (`tests/e2e/phase6h-closure-journey.e2e.mjs`, Phase 6H)
+
+Covers the real, UI-observable surfaces of the Phase 6H framework gaps that a browser journey
+adds genuine value over the existing deterministic backend suites for: publishes v1 → connects
+(pinned to v1) → publishes v2 → opens the real **Bulk Migrate Connections** drawer from the
+Versions tab, verifies the live preview's affected-connection count, executes, and confirms the
+connection is actually pinned to v2 afterward → opens the real **Analytics** tab and verifies the
+rendered KPI cards reflect real data → seeds a real tool/agent assignment and verifies the
+**Agent Connection Map**'s row renders it, that clicking the Agent cell opens the real Agent
+drawer, and that clicking the Connector cell (as Platform Admin) navigates to the Builder and
+opens the real definition → in a second, genuinely separate tenant session, creates a **Tenant
+Custom Connector Webhook Trigger** through the real UI while still DRAFT, submits for review, and
+confirms Platform Admin approval still succeeds with the trigger intact.
+
+This journey's own header comment documents a deliberate scoping decision: it does NOT add
+browser E2E for Automatic Webhook Retry's backoff/dead-letter state machine, the per-tenant
+custom connector limit, or the Proactive Token Expiry badge — each already has stronger,
+deterministic coverage in a dedicated backend test file (fake-clock-driven for the time-based
+retry logic, and a real HTTP end-to-end test for the Platform Admin route), and building a
+browser-driven equivalent was judged to add flakiness without adding confidence.
 
 ## Why these specific safe-network choices
 

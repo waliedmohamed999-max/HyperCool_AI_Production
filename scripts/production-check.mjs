@@ -62,11 +62,17 @@ warn('DATA_DIR set explicitly', !!env.DATA_DIR, env.DATA_DIR ? env.DATA_DIR : 'u
 // tenant limits, forbidden-capability/SSRF/write-approval policy are now REAL (see
 // src/connectors/dynamic/tenant-custom.js, docs/TENANT_CUSTOM_CONNECTORS.md) — the flag
 // genuinely gates a real code path today, unlike Phase 6F's own honest "gates nothing" note.
+// Phase 6H, Part 37-42 — a Platform Admin can now ALSO override this per-tenant (nullable
+// `tenants.custom_connector_limit`, set via POST /api/platform/tenants/:id/custom-connector-
+// limit from the tenant detail drawer) — the env var below is only the GLOBAL default any
+// tenant without an explicit override falls back to; it is no longer the only lever.
 const tenantCustomConnectorsEnabled = env.ENABLE_TENANT_CUSTOM_CONNECTORS === 'true';
-info('ENABLE_TENANT_CUSTOM_CONNECTORS', `${tenantCustomConnectorsEnabled} (default false)${tenantCustomConnectorsEnabled ? ' — real Draft/Review/Approve governance is implemented (Phase 6G); still missing: a Platform-Admin UI to change MAX_CUSTOM_CONNECTORS_PER_TENANT per-tenant (env-wide only today) and a failed/rejected-history view for the tenant' : ''}`);
+info('ENABLE_TENANT_CUSTOM_CONNECTORS', `${tenantCustomConnectorsEnabled} (default false)${tenantCustomConnectorsEnabled ? ' — real Draft/Review/Approve governance is implemented (Phase 6G), including a real per-tenant custom-connector-limit override and per-connector webhook triggers (Phase 6H); still missing: a failed/rejected-history view for the tenant' : ''}`);
 if (tenantCustomConnectorsEnabled) {
  const maxCustom = Number(env.MAX_CUSTOM_CONNECTORS_PER_TENANT);
- info('MAX_CUSTOM_CONNECTORS_PER_TENANT', Number.isFinite(maxCustom) && maxCustom > 0 ? String(maxCustom) : '3 (default)');
+ info('MAX_CUSTOM_CONNECTORS_PER_TENANT (global default)', Number.isFinite(maxCustom) && maxCustom > 0 ? String(maxCustom) : '3 (default) — a Platform Admin may still override this for any one specific tenant');
+ const maxTriggers = Number(env.MAX_CUSTOM_CONNECTOR_TRIGGERS);
+ info('MAX_CUSTOM_CONNECTOR_TRIGGERS', Number.isFinite(maxTriggers) && maxTriggers > 0 ? String(maxTriggers) : '3 (default)');
 }
 
 const zidVars = ['ZID_CLIENT_ID', 'ZID_CLIENT_SECRET', 'ZID_REDIRECT_URI'];
@@ -84,6 +90,20 @@ info('Dynamic connector webhook security', 'per-connection, Vault-encrypted (no 
 // row; nothing platform-wide to configure beyond that.
 info('Webhook Console operations (rotation/reprocess)', 'ready — reuses INTEGRATION_ENCRYPTION_KEY and the per-connection Vault, no separate configuration');
 
+// Phase 6H, Part 13-18 — Automatic Webhook Retry: a bounded 1min/5min/15min backoff ladder,
+// running once per existing scheduler tick (SCHEDULER_INTERVAL_MS, default 300000ms — no
+// separate timer/cron is created), moving a FAILED event to DEAD_LETTER once its retry budget
+// is exhausted (still manually reprocessable from the Webhook Console). WEBHOOK_MAX_RETRIES is
+// the ONLY new env var this feature introduces.
+const maxRetries = Number(env.WEBHOOK_MAX_RETRIES);
+info('WEBHOOK_MAX_RETRIES', Number.isFinite(maxRetries) && maxRetries >= 0 ? String(maxRetries) : '3 (default)');
+info('Automatic Webhook Retry (Phase 6H)', 'ready — runs inside the existing scheduler tick, no separate cron/timer; visible cross-tenant at GET /api/platform/webhooks/{dead-letters,pending-retries} (Platform Admin only)');
+// Phase 6H, Part 6-12 — Bulk Connection Version Migration + Bulk Webhook Reprocess. Both reuse
+// the exact same single-item safety pipeline (per-connection health check / per-event CAS
+// reprocess) one at a time, bounded (200 connections / 100 events per call) — nothing platform-
+// wide to configure beyond INTEGRATION_ENCRYPTION_KEY, already validated above.
+info('Bulk Operations (version migration + webhook reprocess, Phase 6H)', 'ready — Platform Admin only, audited to the bulk_operations table, bounded batch sizes (200/100)');
+
 // Phase 6G, Part 18-24 — the Generic OAuth2 Framework. A Platform-Admin-authored GENERIC_REST
 // OAuth2 connector references its real client id/secret only by ENV VAR NAME
 // (clientIdEnvKey/clientSecretEnvKey, stored on the connector definition — never a value this
@@ -93,6 +113,10 @@ info('Webhook Console operations (rotation/reprocess)', 'ready — reuses INTEGR
 // (GENERIC_OAUTH2_NOT_CONFIGURED) rather than silently — this is an architectural guarantee,
 // not something this script can additionally verify from env alone.
 info('Generic OAuth2 Framework (Phase 6G)', 'ready — each connector references its client id/secret by env var NAME only; a missing referenced var fails safely at connect time (GENERIC_OAUTH2_NOT_CONFIGURED), never silently');
+// Phase 6H, Part 19-25 — the Token Expiry badge and Connector Analytics tab are both pure,
+// additive DISPLAY layers over data already computed/stored today (the Vault's own
+// `expiresAt`, the existing audit log + webhook_events ledger) — nothing new to configure.
+info('Proactive Token Expiry UI + Platform Connector Analytics (Phase 6H)', 'ready — no configuration; both read exclusively from already-validated existing data');
 
 console.log('\n=== HyperCool Production Config Check ===\n');
 let hasBlocker = false;
