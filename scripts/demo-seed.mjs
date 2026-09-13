@@ -35,7 +35,7 @@ import { listRuns } from '../src/runtime/runtime.js';
 import { randomUUID } from 'node:crypto';
 import {
  DEMO_SLUGS, DEMO_USERNAME, DEMO_MARKER, makeRng, pick, pickWeighted, randInt, randFloat, shuffle,
- daysAgoIso, daysAgoDate, dateOnly, mostRecentSunday, patchJsonRow,
+ daysAgoIso, daysAgoDate, dateOnly, mostRecentSunday, patchJsonRow, designAssetDataUri, DESIGN_THEMES,
  NOVA_TEAM, VERTEX_TEAM, NOVA_CUSTOMER_FIRST, NOVA_CUSTOMER_LAST, NOVA_PRODUCTS,
  VERTEX_CLIENT_NAMES, VERTEX_PROJECT_THEMES, NOVA_ACTIVITY_NARRATIVES, VERTEX_ACTIVITY_NARRATIVES
 } from './demo/shared.mjs';
@@ -211,9 +211,17 @@ function seedNova() {
    platform, date: dateOnly(daysAgoDate(daysBack)), url: 'https://hyper-cool.com/demo/campaign/' + (i + 1)
   });
   item.createdAt = daysAgoIso(daysBack);
+  // `createContent`'s own validation only accepts a real https:// assetUrl (a hosted creative
+  // asset) — by design, since a real user's asset is always something actually uploaded
+  // somewhere. This demo pack must never reference any real external host at all, so instead of
+  // loosening that production validation, a real, self-contained data: URI "design" (see
+  // designAssetDataUri, scripts/demo/shared.mjs — zero network calls, a visible DEMO watermark)
+  // is attached directly to the already-validated object, exactly the same "patch after the
+  // real function runs" pattern already used elsewhere in this script for backdating timestamps.
+  item.assetUrl = designAssetDataUri({ lines: [theme], subtitle: `متجر نوفا · ${platform}`, theme: pick(rng, DESIGN_THEMES) });
   const finalStatus = pickWeighted(rng, [['DRAFT', 2], ['REVIEWED', 2], ['APPROVED', 2], ['PUBLISHED', 4]]);
   if (['REVIEWED', 'APPROVED', 'PUBLISHED'].includes(finalStatus)) {
-   item = reviewContent(item, { reviewer: 'سارة التجريبية', evidence: 'تم التحقق من الأسعار والادعاءات (بيانات تجريبية)', facts: true, claims: true, link: true });
+   item = reviewContent(item, { reviewer: 'سارة التجريبية', evidence: 'تم التحقق من الأسعار والادعاءات (بيانات تجريبية)', facts: true, claims: true, link: true, asset: true });
    item.review.at = daysAgoIso(Math.max(0, daysBack - 1));
   }
   if (['APPROVED', 'PUBLISHED'].includes(finalStatus)) {
@@ -367,8 +375,9 @@ function seedVertex() {
   const daysBack = randInt(rng, 1, 89);
   let item = createContent({ title: `تحديث نجاح عميل — LinkedIn ${i + 1}`, body: 'محتوى تجريبي (Demo) لمنشور نجاح عميل. نص عرض تجريبي فقط.', platform: 'LinkedIn', date: dateOnly(daysAgoDate(daysBack)), url: 'https://hyper-cool.com/demo/vertex-post/' + (i + 1) });
   item.createdAt = daysAgoIso(daysBack);
+  item.assetUrl = designAssetDataUri({ lines: ['نجاح عميل'], subtitle: 'فيرتكس للحلول · LinkedIn', theme: pick(rng, DESIGN_THEMES) });
   if (rng() < 0.6) {
-   item = reviewContent(item, { reviewer: 'منيرة التجريبية', evidence: 'تم التحقق من البيانات (بيانات تجريبية)', facts: true, claims: true, link: true });
+   item = reviewContent(item, { reviewer: 'منيرة التجريبية', evidence: 'تم التحقق من البيانات (بيانات تجريبية)', facts: true, claims: true, link: true, asset: true });
    item = approveContent(item, { owner: 'عبدالله التجريبي' });
    item.status = 'PUBLISHED'; item.publishedAt = daysAgoIso(Math.max(0, daysBack - 2));
   }

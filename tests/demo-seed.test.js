@@ -157,6 +157,12 @@ test('demo:seed produces two real, isolated, clearly-marked demo tenants with ri
   const realAuth = createAuth(realApp.store.db);
   const realOwner = realAuth.createUser({ username: 'real_customer_owner', name: 'Real Customer', password: 'a-real-customer-password-123' }, 'owner');
   const realTenantId = createTenant(realApp.store.db, { name: 'Real Customer Co', slug: 'real-customer-co' }, realOwner.id);
+  // A real login (e.g. an operator actually trying the demo in a browser, exactly as happened
+  // during this pack's own development) creates a real `sessions` row referencing investor_demo
+  // via a real FK — reset must still succeed (by cleaning up that session first), not throw.
+  realAuth.login({ username: DEMO_USERNAME, password: DEMO_PASSWORD }, '127.0.0.1');
+  const sessionCountBefore = realApp.store.db.prepare('SELECT COUNT(*) n FROM sessions').get().n;
+  assert.ok(sessionCountBefore > 0, 'the test setup itself must have created a real session row');
   realApp.store.close();
 
   run(RESET_SCRIPT, env);
@@ -168,6 +174,7 @@ test('demo:seed produces two real, isolated, clearly-marked demo tenants with ri
   const realTenantStillThere = db3.prepare('SELECT id FROM tenants WHERE id=?').get(realTenantId);
   assert.ok(realTenantStillThere, 'reset must NEVER delete a real, non-demo tenant');
   assert.ok(db3.prepare('SELECT id FROM users WHERE username=?').get('real_customer_owner'), 'reset must NEVER delete a real user');
+  assert.equal(db3.prepare('SELECT COUNT(*) n FROM sessions').get().n, 0, 'the real session created for investor_demo must be cleaned up alongside the user, not left orphaned or blocking deletion');
   db3.close();
  } finally { await rm(directory, { recursive: true, force: true }); }
 });

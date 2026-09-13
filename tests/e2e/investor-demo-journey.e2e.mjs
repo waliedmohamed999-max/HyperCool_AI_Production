@@ -31,10 +31,39 @@ const page = await browser.newPage();
 const failures = [];
 function check(label, cond) { if (cond) console.log('OK  -', label); else { console.log('FAIL-', label); failures.push(label); } }
 page.on('pageerror', err => { console.log('  [page error]', err.message); failures.push('page error: ' + err.message); });
+// A blocked/failed image load (e.g. a Content-Security-Policy violation on the design preview's
+// data: URI) shows up only as a browser console error, never a `pageerror` — surface it as a
+// real, named check failure instead of letting it pass silently.
+page.on('console', msg => { if (msg.type() === 'error' && /content security policy|blocked/i.test(msg.text())) failures.push('console error: ' + msg.text().slice(0, 200)); });
 
 async function pageHasRealContent(dataPage, minLength = 80) {
  const text = (await page.locator(`[data-page="${dataPage}"]`).innerText().catch(() => '')).trim();
  return text.length >= minLength && !/lorem ipsum/i.test(text);
+}
+// After a form submit inside a drawer, the app's own render() cycle rebuilds #items from
+// scratch — but nothing ever calls .close() on whichever <dialog class="drawer"> was showing
+// the now-stale, already-submitted card, so it (and any dialog stacked on top of it, since
+// drawer() opens a genuinely new <dialog> each time openContentItem() is called on a fresh
+// post-render node) is left open indefinitely, blocking every click on the page underneath.
+// Closes every currently-open dialog via its real header close button — exactly what a real
+// user would do — looping until none remain.
+async function closeAnyOpenDialogs() {
+ for (let i = 0; i < 5; i++) {
+  const open = page.locator('dialog[open]');
+  const count = await open.count();
+  if (count === 0) return;
+  await open.last().locator('.dialog-head button').first().click({ timeout: 2000 }).catch(() => {});
+  await page.waitForTimeout(200);
+ }
+}
+// Submitting a form whose data-action is "approve"/"reject" (or an autonomy change) first opens
+// a real, separate "Are you sure?" confirmation prompt (confirmAction, public/components/ui/
+// index.js — a `dialog.confirmation`, distinct from the drawer itself) BEFORE the actual API
+// call ever fires — clicking "تأكيد" (Confirm) accepts it and lets the real request proceed.
+async function confirmActionPrompt() {
+ const dlg = page.locator('dialog.confirmation[open]');
+ await dlg.waitFor({ state: 'visible', timeout: 5000 });
+ await dlg.getByRole('button', { name: 'تأكيد', exact: true }).click();
 }
 
 // --- Login as the real investor demo account --------------------------------------------------
@@ -82,6 +111,71 @@ check('Nova CRM has real content', await pageHasRealContent('crm'));
 await page.click('a[href="#content"]');
 await page.waitForTimeout(700);
 check('Nova content/approvals page has real content', await pageHasRealContent('content'));
+
+// --- Content: real design previews + a real, interactive Review -> Approve walkthrough -------
+// The Content page's own "Content" tab hides its review/approve forms by default (CSS
+// `#items>.card>details,#items>.card>form{display:none}`) — the real, intended interaction is
+// through the dedicated "Approvals" tab (#content-approval-view), which lists only
+// DRAFT/REVIEWED items with an "Open" button that moves the real card into a drawer
+// (openContentItem, public/pages/workspace.js) — outside #items, where the form becomes visible.
+const assetPreview = page.locator('#items .content-asset-preview').first();
+check('at least one content card shows a real design preview image', await assetPreview.count() > 0);
+if (await assetPreview.count() > 0) {
+ const src = await assetPreview.getAttribute('src');
+ check('the design preview is a real, self-contained image (data: URI, zero external network calls)', !!src && src.startsWith('data:image/svg+xml'));
+}
+
+await page.locator('[data-page="content"]').getByRole('tab', { name: 'الموافقات', exact: true }).click();
+await page.waitForTimeout(400);
+const approvalRow = page.locator('#content-approval-view tbody tr').first();
+if (await approvalRow.count() > 0) {
+ // Several demo content items can share the same generated title (random theme x platform
+ // combination) — every subsequent lookup for "the same item" MUST key off its real, unique id
+ // (data-content-open), never its title text, or a duplicate-titled row could be opened by
+ // mistake, silently reviewing/approving the WRONG item while this one is never touched.
+ const itemId = await approvalRow.locator('button[data-content-open]').getAttribute('data-content-open');
+ const itemRow = () => page.locator(`#content-approval-view tbody tr:has(button[data-content-open="${itemId}"])`);
+ await approvalRow.locator('button[data-content-open]').click();
+ await page.waitForSelector('dialog.drawer[open]', { state: 'visible', timeout: 5000 });
+ const drawerBody = page.locator('dialog.drawer[open]');
+ check('the opened drawer shows the real design preview', await drawerBody.locator('.content-asset-preview').count() > 0);
+
+ const reviewForm = drawerBody.locator('form[data-action=review]');
+ if (await reviewForm.count() > 0) {
+  // The review form lives inside a native <details> (collapsed by default, distinct from the
+  // separate "compliance-check" details rendered before it) — expand the RIGHT one first.
+  await drawerBody.locator('details:not(.compliance-check) summary').first().click();
+  check('the review form (real, in-drawer) exposes the asset-review checkbox', await reviewForm.locator('input[name=asset]').count() > 0);
+  await reviewForm.locator('textarea[name=evidence]').fill('تم التحقق من التصميم والنص لأغراض العرض على المستثمر (بيانات تجريبية).');
+  for (const name of ['facts', 'claims', 'link', 'asset']) await reviewForm.locator(`input[name=${name}]`).check();
+  await reviewForm.locator('button').click();
+  await page.waitForTimeout(1000);
+  await closeAnyOpenDialogs();
+
+  // Re-open the Approvals tab (a full render cycle ran after submit) and approve this EXACT item.
+  await page.locator('[data-page="content"]').getByRole('tab', { name: 'الموافقات', exact: true }).click();
+  await page.waitForTimeout(400);
+  check('the item now needs approval (moved from Draft to Reviewed) after a real review submission', await itemRow().count() > 0);
+  if (await itemRow().count() > 0) {
+   await itemRow().locator('button[data-content-open]').click();
+   await page.waitForSelector('dialog.drawer[open]', { state: 'visible', timeout: 5000 });
+   const approveForm = page.locator(`dialog.drawer[open] form[data-action=approve][data-id="${itemId}"]`);
+   check('the drawer now shows a real Approve form for this EXACT item', await approveForm.count() > 0);
+   if (await approveForm.count() > 0) {
+    await approveForm.locator('button').click();
+    await confirmActionPrompt(); // approve/reject always ask for confirmation first
+    await page.waitForTimeout(1000);
+    await closeAnyOpenDialogs();
+    // Confirm directly against the real backend state (authoritative — never inferred from a
+    // UI list that could itself be stale/mid-transition).
+    const finalStatus = await page.evaluate(async id => (await (await fetch('/api/state')).json()).content.find(c => c.id === id)?.status, itemId);
+    check('the content item was actually reviewed AND approved live through the real UI (real backend status is APPROVED)', finalStatus === 'APPROVED');
+   }
+  }
+ }
+}
+await page.locator('[data-page="content"]').getByRole('tab', { name: 'المحتوى', exact: true }).click();
+await page.waitForTimeout(300);
 
 await page.click('a[href="#planning"]');
 await page.waitForTimeout(500);

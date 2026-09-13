@@ -185,6 +185,33 @@ across the last 90 days (see "Honest limitations" — these two functions hardco
 internally, so the seed script patches just the timestamp field in the row's own JSON afterward,
 never touching any other field).
 
+## M2. Content designs — real, self-contained visual previews + a live Review → Approve demo
+
+Every Nova content item (and every Vertex LinkedIn post) carries a real `assetUrl` — a small,
+generated SVG "design" (campaign title + subtitle, a themed gradient, a visible "DEMO" corner
+badge) encoded directly as a `data:image/svg+xml;base64,...` URI (`designAssetDataUri`,
+`scripts/demo/shared.mjs`). This is a **real, previously-unused field** in the content model
+(`src/domain.js`'s `createContent` already validated it; nothing in the UI ever rendered it as an
+image before this pack) — two small, genuine product additions were made alongside seeding it:
+
+- **`public/app.js`**: a content card now shows `item.assetUrl` as an actual `<img>` preview
+  (`.content-asset-preview`), not just the pre-existing text link to it.
+- **`src/application.js`**: the page's Content-Security-Policy gained `img-src 'self' data:`
+  (previously only `default-src 'self'`, which silently *blocked* every `data:` image from ever
+  rendering — a real bug this pack's own E2E journey caught). Every other CSP directive
+  (script-src, style-src, frame-ancestors, …) is unchanged.
+
+The **existing** review/approve flow (Content page → "الموافقات" tab → "فتح المراجعة" → a real
+drawer) already required an asset-review checkbox (`addContentActions`, `public/planning.js`) —
+that was working correctly and did not need duplicating.
+
+`tests/e2e/investor-demo-journey.e2e.mjs` exercises this live: opens a real DRAFT item's drawer,
+confirms the design image is visible, checks facts/claims/link/asset and submits a real review,
+re-opens the now-REVIEWED item, submits a real approval (including the confirmation prompt every
+approve/reject action asks for — `confirmAction`, easy to miss and a real source of E2E flake
+until handled), and confirms the item's status is genuinely `APPROVED` in the database — not just
+on-screen.
+
 ## N. Tasks populated
 
 **Mapped to `agent_escalations` — see the honest note below.** There is no separate Tasks table
@@ -256,8 +283,27 @@ uncaught page errors.
 ## W. Tests
 
 `tests/demo-seed.test.js` (5 tests): production guard, missing-password guard, the full
-seed→status→reset cycle with cross-tenant isolation and real-tenant-survives-reset assertions,
-and the no-external-call structural check.
+seed→status→reset cycle with cross-tenant isolation and real-tenant-survives-reset assertions
+(including a real login/session for investor_demo, covering the FK-cleanup fix below), and the
+no-external-call structural check.
+
+## W2. A real, pre-existing bug found along the way (not introduced by this pack)
+
+Running `demo:reset` against the real local database for the first time surfaced a genuine,
+dormant data-integrity issue: `crm_messages.lead_id` still declares
+`REFERENCES "crm_leads_pre_tenant"(id)` — a table name from the one-time pre-multi-tenant
+migration in `src/crm.js` (`ALTER TABLE crm_leads RENAME TO crm_leads_pre_tenant`, later dropped
+and replaced by the real, multi-tenant `crm_leads`). SQLite does not rewrite a *dependent*
+table's own foreign-key declaration when the table it references is renamed away — so with
+`PRAGMA foreign_keys=ON` (this app's default), **any** `DELETE` that touches `crm_messages` on a
+real, already-migrated database fails with `no such table: main.crm_leads_pre_tenant`. This had
+likely never been hit before simply because no code path in the app itself ever deletes a
+`crm_messages` row.
+
+`scripts/demo-reset.mjs` works around this locally (`PRAGMA foreign_keys=OFF` for the duration of
+its own bounded, tenant-scoped deletes only) — it does **not** touch the actual schema bug, which
+is out of scope for this task and a decision for you to make separately (a real migration
+correcting the stale FK, whenever a maintenance window makes sense).
 
 ## X-Z. Build / Backup / DB integrity
 

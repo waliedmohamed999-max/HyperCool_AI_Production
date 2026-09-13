@@ -2178,7 +2178,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const file=files[url.pathname];
         const contents=await readFile(new URL('../public/'+file,import.meta.url));
         const type=file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'text/javascript; charset=utf-8':file.endsWith('.css')?'text/css; charset=utf-8':file.endsWith('.woff2')?'font/woff2':file.endsWith('.webmanifest')?'application/manifest+json':file.endsWith('.png')?'image/png':file.endsWith('.json')?'application/json; charset=utf-8':'text/html; charset=utf-8';
-        const headers={'Content-Type':type,'Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"};
+        // `img-src` explicitly allows `data:` alongside `'self'` — a real, existing feature
+        // (a content item's optional `assetUrl`, src/domain.js) can be a self-contained inline
+        // image with no outbound network request at all; every other directive is untouched
+        // (script-src/style-src stay 'self'-only, so this never opens any script/style vector —
+        // data: URIs are permitted for images only).
+        const headers={'Content-Type':type,'Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"};
         if(file.endsWith('.woff2')||file.endsWith('.png'))headers['Cache-Control']='public, max-age=31536000, immutable';
         res.writeHead(200,headers);
         return res.end(contents);

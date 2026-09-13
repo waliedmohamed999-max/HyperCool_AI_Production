@@ -84,6 +84,38 @@ export function patchEscalationTimestamp(db, id, createdAtIso) {
 }
 
 // --- Name / content pools (Arabic, clearly fictional demo identities) ----------------------
+// --- Self-contained "design" assets (data: URIs — zero network calls, zero external hosts) ---
+// A real content item can carry a real `assetUrl` (see src/domain.js's createContent) that the
+// Content page now renders as an actual image preview during review/approval. Rather than
+// linking to any real external image host (which would be an outbound network dependency this
+// demo pack explicitly must never have), every "design" here is a small, generated SVG encoded
+// directly as a data: URI — guaranteed to render with no network access at all, and each one
+// visibly stamps its own "DEMO" badge in the corner so it can never be mistaken for real creative.
+function escapeXml(text) {
+ return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+export const DESIGN_THEMES = [
+ ['#0f766e', '#134e4a'], ['#b45309', '#78350f'], ['#1d4ed8', '#1e3a8a'],
+ ['#be123c', '#7f1d1d'], ['#4338ca', '#312e81'], ['#0369a1', '#0c4a6e']
+];
+export function designAssetDataUri({ lines, subtitle, theme = DESIGN_THEMES[0], badge = 'DEMO' }) {
+ const width = 800, height = 450;
+ const titleLines = (Array.isArray(lines) ? lines : [lines]).slice(0, 2);
+ const startY = titleLines.length > 1 ? 190 : 215;
+ const [colorFrom, colorTo] = theme;
+ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${colorFrom}"/><stop offset="100%" stop-color="${colorTo}"/></linearGradient></defs>
+  <rect width="${width}" height="${height}" fill="url(#g)"/>
+  <circle cx="${width - 70}" cy="70" r="130" fill="#ffffff" fill-opacity="0.08"/>
+  <circle cx="70" cy="${height - 50}" r="100" fill="#ffffff" fill-opacity="0.06"/>
+  ${titleLines.map((line, i) => `<text x="${width / 2}" y="${startY + i * 62}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="46" font-weight="700" fill="#ffffff" direction="rtl">${escapeXml(line)}</text>`).join('')}
+  ${subtitle ? `<text x="${width / 2}" y="${startY + titleLines.length * 62 + 16}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="21" fill="#ffffffcc" direction="rtl">${escapeXml(subtitle)}</text>` : ''}
+  <rect x="24" y="24" width="100" height="34" rx="17" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="74" y="47" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="${colorTo}">${escapeXml(badge)}</text>
+ </svg>`;
+ return 'data:image/svg+xml;base64,' + Buffer.from(svg, 'utf8').toString('base64');
+}
+
 export const NOVA_TEAM = [
  { name: 'أحمد التجريبي', username: 'ahmed_demo_nova', role: 'owner' },
  { name: 'سارة التجريبية', username: 'sara_demo_nova', role: 'reviewer' },

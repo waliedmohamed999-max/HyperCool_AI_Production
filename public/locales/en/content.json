@@ -22,6 +22,7 @@
   "checkFacts": "I verified the prices and specifications mentioned",
   "checkClaims": "I checked the claims against approved information",
   "checkLink": "I opened the link and confirmed it's correct",
+  "designPreviewAlt": "Preview of the design attached to this content",
   "recordReview": "Record Review",
   "reviewerLabel": "Reviewer",
   "approverName": "Approver Name",
