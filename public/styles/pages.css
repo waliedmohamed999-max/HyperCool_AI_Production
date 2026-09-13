@@ -169,3 +169,8 @@ body.signed-out .fab-shortcut{display:none}
 @media(max-width:700px){#auth-panel.auth-experience{display:flex;flex-direction:column;width:100%;margin:0;border:0;border-radius:0;min-height:100svh}.auth-story{padding:24px;order:1}.auth-brand{font-size:20px}.auth-brand-symbol{width:32px;height:32px;font-size:20px}.auth-story-body{padding:28px 0 18px}.auth-slides{min-height:168px}.auth-slide h1{font-size:30px;line-height:1.35;margin-bottom:14px}.auth-slide p{max-width:100%;font-size:12px;line-height:1.9}.auth-workflow{display:none}.auth-slide-controls{margin-top:18px}.auth-story-footer{display:none}.auth-entry{order:2;padding:22px 24px}.auth-card{max-width:430px;padding:30px 0}.auth-entry-icon{display:none}.auth-card #auth-title{font-size:26px}.auth-intro{margin-bottom:24px}.auth-entry-footer{padding-bottom:8px}.auth-card input{font-size:16px}}
 @media(prefers-reduced-motion:no-preference){.auth-slide:not([hidden]){animation:auth-appear .3s ease-out}@keyframes auth-appear{from{opacity:.3;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}}
 .auth-entry-top,.auth-intro,.auth-trust,.auth-entry-footer{color:#596b72}
+.report-week-picker{display:flex;align-items:center;gap:8px;margin:0;flex:0 0 auto;font-size:13px;font-weight:500;color:var(--ink-muted)}
+.report-week-picker select{margin:0;min-width:220px}
+.report-trend-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.report-trend-card{border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;min-width:0}
+.report-trend-card h4{margin:0 0 12px;font-size:13px;color:var(--ink-muted);font-weight:600}

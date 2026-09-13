@@ -1,0 +1,14 @@
+Noto Naskh Arabic
+==================
+
+Files: NotoNaskhArabic-Regular.ttf, NotoNaskhArabic-Bold.ttf
+
+Source: Google Fonts (https://fonts.google.com/noto/specimen/Noto+Naskh+Arabic),
+distributed via the npm package @fontsource/noto-naskh-arabic, decompressed from
+WOFF2 to a standalone TTF with the `wawoff2` tool for use with pdfkit (pdfkit's
+font subsetter has a reproducible bug when embedding these fonts directly from
+their WOFF2 form — see src/reportExport.js for the full explanation). No glyph
+data was modified; only the container format changed (WOFF2 -> TTF).
+
+License: SIL Open Font License, Version 1.1.
+Full license text: https://scripts.sil.org/OFL

@@ -1,9 +1,18 @@
-import {fmtNum,fmtSAR,fmtDateRange,empty,miniStat,kpiCard,renderBarChart,renderFunnel,stageNames} from './format.js';
+import {fmtNum,fmtSAR,fmtDate,fmtDateRange,empty,miniStat,kpiCard,renderBarChart,renderFunnel,stageNames,renderTrendChart,installTrendChart,chartColors} from './format.js';
 import {t,getLocale} from './i18n.js';
 const $=selector=>document.querySelector(selector);
 const actionTypeNames=new Proxy({},{get:(_,code)=>{const key='weeklyReport.actionType'+code.split('_').map(p=>p.charAt(0).toUpperCase()+p.slice(1).toLowerCase()).join('');const value=t(key);return value===key?undefined:value;}});
-let lastData=null;
+let lastData=null,viewedWeekStart=null;
 function dateLocale(){return getLocale()==='en'?'en-US':'ar-SA';}
+// Same "current + saved reports, deduped by week, sorted, last 8" shape as the Overview page's
+// own weeklySeries (public/pages/workspace.js) — kept as a small local copy rather than a shared
+// export since it's five lines and this page already has its own dateLocale()-style local helpers.
+function weeklySeries(data,pick) {
+ const byWeek=new Map();
+ for(const entry of data?.saved||[])if(entry.kpis)byWeek.set(entry.weekStart,entry);
+ if(data?.current?.kpis)byWeek.set(data.current.weekStart,data.current);
+ return [...byWeek.values()].sort((a,b)=>a.weekStart.localeCompare(b.weekStart)).slice(-8).map(entry=>({label:fmtDate(entry.weekStart),value:pick(entry.kpis)}));
+}
 
 function renderPipeline(pipeline,escape) {
  if(!pipeline.hasData)return empty(t('weeklyReport.pipelineNoDataTitle'),t('weeklyReport.pipelineNoDataHint'));
@@ -60,6 +69,18 @@ function renderNextWeek(plan,escape) {
  if(plan.calendarMissing)return empty(t('weeklyReport.noNextWeekCalendarTitle'),t('weeklyReport.noNextWeekCalendarHint'));
  return `<div class="week-grid">${plan.days.map((day,index)=>`<div class="week-day"><h5>${dayNames[index]}</h5>${day.planned?`<span>${day.planned} ${escape(t('weeklyReport.scheduledSuffix'))}</span>`:''}${day.gaps.map(g=>`<span class="gap-tag">${escape(t('weeklyReport.gapPrefix',{platform:g.platform}))}</span>`).join('')}${!day.planned&&!day.gaps.length?'<small>—</small>':''}</div>`).join('')}</div>`;
 }
+function renderTrends(data,escape) {
+ const metrics=[
+  ['trendRevenue',k=>k.wonRevenue.value,chartColors[0]],
+  ['trendLeads',k=>k.leadsCreated.value,chartColors[1]],
+  ['trendWonDeals',k=>k.wonDeals.value,chartColors[2]],
+  ['trendContentPlanned',k=>k.contentPlanned.value,chartColors[3]]
+ ];
+ return `<div class="report-trend-grid">${metrics.map(([key,pick,colorClass])=>{
+  const points=weeklySeries(data,pick);
+  return `<div class="report-trend-card"><h4>${escape(t('weeklyReport.'+key))}</h4>${renderTrendChart(points,escape,colorClass)}</div>`;
+ }).join('')}</div>`;
+}
 function renderSavedReports(saved,escape) {
  if(!saved.length)return empty(t('weeklyReport.noSavedReportsTitle'),t('weeklyReport.noSavedReportsHint'));
  return `<div class="report-cards">${saved.map((report,index)=>{
@@ -110,35 +131,72 @@ function renderBody(r,saved,escape) {
  <div class="report-section"><div class="report-section-head"><h3>${escape(t('weeklyReport.competitorSignals'))}</h3></div>${renderMarket(r.market,escape)}</div>
  <div class="report-section"><div class="report-section-head"><h3>${escape(t('weeklyReport.nextWeekFocus'))}</h3></div>${renderRecommendations(r.quickSummary,escape)}</div>
  <div class="report-section"><div class="report-section-head"><h3>${escape(t('weeklyReport.nextWeekPlan'))}</h3></div>${renderNextWeek(r.nextWeekPlan,escape)}</div>
+ <div class="report-section"><div class="report-section-head"><h3>${escape(t('weeklyReport.trendsHeading'))}</h3><span>${escape(t('weeklyReport.trendsSubtitle'))}</span></div>${renderTrends({current:r,saved},escape)}</div>
  <div class="report-section"><div class="report-section-head"><h3>${escape(t('weeklyReport.savedReports'))}</h3></div>${renderSavedReports(saved,escape)}</div>`;
 }
-export async function renderReports({api,escape}) {
+// Options are real, already-known Sundays only (the current week + every saved week) —
+// deliberately not a free date input, so every value this control can send back is guaranteed
+// to be a real Sunday the server already knows about (no client-side week-math duplication).
+function populateWeekSelect(data) {
+ const select=$('#report-week-select');
+ if(!select)return;
+ const seen=new Set([data.current.weekStart]);
+ const options=[{weekStart:data.current.weekStart,weekEnd:data.current.weekEnd,isCurrent:true}];
+ for(const report of data.saved) {
+  if(seen.has(report.weekStart))continue;
+  seen.add(report.weekStart);
+  options.push({weekStart:report.weekStart,weekEnd:report.weekEnd});
+ }
+ options.sort((a,b)=>b.weekStart.localeCompare(a.weekStart));
+ select.innerHTML=options.map(o=>`<option value="${o.weekStart}">${o.isCurrent?t('weeklyReport.weekPickerCurrentOption')+' — ':''}${fmtDateRange(o.weekStart,o.weekEnd)}</option>`).join('');
+ select.value=data.current.weekStart;
+}
+export async function renderReports({api,escape,weekStart}={}) {
  const weekLabel=$('#report-week-label');
  try {
-  const data=await api('/api/reports/weekly');
+  const data=await api('/api/reports/weekly'+(weekStart?`?weekStart=${encodeURIComponent(weekStart)}`:''));
   lastData=data;
+  viewedWeekStart=data.current.weekStart;
   const r=data.current;
   weekLabel.innerHTML=`<b dir="ltr">${fmtDateRange(r.period.start,r.period.end)}</b><small>${escape(t('weeklyReport.compareToWeekLabel',{range:fmtDateRange(r.period.previousStart,r.period.previousEnd)}))}</small>`;
     $('#report-content').innerHTML=renderBody(r,data.saved,escape);
     const {enhance}=await import('./components/ui/index.js');enhance($('#report-content'));
+    installTrendChart($('#report-content'));
+    populateWeekSelect(data);
  } catch(error) {
   weekLabel.textContent=t('weeklyReport.loadFailed');
   $('#report-content').innerHTML=`<div class="panel report-error"><p>${escape(t('weeklyReport.loadFailedBody'))}</p><button type="button" id="report-retry">${escape(t('weeklyReport.retryButton'))}</button></div>`;
   console.error('weekly report load failed:',error);
  }
 }
+// Same-origin GET with the real session cookie already attached by the browser — a transient
+// anchor click lets the browser handle the save dialog itself via the server's real
+// Content-Disposition: attachment header, exactly like a normal file download link.
+function downloadReport(kind) {
+ const weekStart=viewedWeekStart||lastData?.current?.weekStart;
+ const url=`/api/reports/weekly/export.${kind}?locale=${encodeURIComponent(getLocale())}`+(weekStart?`&weekStart=${encodeURIComponent(weekStart)}`:'');
+ const a=document.createElement('a');
+ a.href=url;a.rel='noopener';
+ document.body.append(a);a.click();a.remove();
+}
 export async function clickReportAction(target,api,escape) {
- if(target.id==='report-refresh'||target.id==='report-retry'){await renderReports({api,escape});return true;}
+ if(target.id==='report-refresh'||target.id==='report-retry'){await renderReports({api,escape,weekStart:viewedWeekStart});return true;}
  if(target.id==='report-print'){window.print();return true;}
+ if(target.id==='report-export-xlsx'){downloadReport('xlsx');return true;}
+ if(target.id==='report-export-pdf'){downloadReport('pdf');return true;}
  const navEl=target.closest('[data-report-nav]');
  if(navEl){document.querySelector(`nav a[href="#${navEl.dataset.reportNav}"]`)?.click();return true;}
  const viewButton=target.closest('[data-view-saved]');
  if(viewButton && lastData){
   const report=lastData.saved[Number(viewButton.dataset.viewSaved)];
   const detail=document.querySelector('#saved-report-detail');
-  if(detail && report){const {drawer,enhance}=await import('./components/ui/index.js');const node=document.createElement('div');node.innerHTML=renderBody(report,[],escape);drawer(t('weeklyReport.savedReportDrawerTitle'),node,{restore:true});enhance(node);}
+  if(detail && report){const {drawer,enhance}=await import('./components/ui/index.js');const node=document.createElement('div');node.innerHTML=renderBody(report,[],escape);drawer(t('weeklyReport.savedReportDrawerTitle'),node,{restore:true});enhance(node);installTrendChart(node);}
   return true;
  }
+ return false;
+}
+export async function changeReportAction(target,api,escape) {
+ if(target.id==='report-week-select'){await renderReports({api,escape,weekStart:target.value});return true;}
  return false;
 }
 export async function clickSaveReport(api) {

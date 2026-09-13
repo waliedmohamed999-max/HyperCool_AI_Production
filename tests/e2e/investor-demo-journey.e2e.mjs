@@ -96,6 +96,32 @@ await page.click('a[href="#reports"]');
 await page.waitForTimeout(700);
 check('Nova reports page has real content', await pageHasRealContent('reports'));
 
+// --- Reports: real Excel/PDF downloads, the week picker, and the trend charts (Part 48+) -----
+check('trend section renders real multi-week charts (demo seed saves 4 real weekly reports)', await page.locator('.report-trend-grid .trend-chart').count() >= 4);
+const weekOptions = await page.locator('#report-week-select option').count();
+check('week picker lists multiple real known weeks', weekOptions >= 2);
+
+const [xlsxDownload] = await Promise.all([
+ page.waitForEvent('download'),
+ page.click('#report-export-xlsx')
+]);
+check('Excel export triggers a real download with the right filename', /hypercool-report-.*\.xlsx$/.test(xlsxDownload.suggestedFilename()));
+
+const [pdfDownload] = await Promise.all([
+ page.waitForEvent('download'),
+ page.click('#report-export-pdf')
+]);
+check('PDF export triggers a real download with the right filename', /hypercool-report-.*\.pdf$/.test(pdfDownload.suggestedFilename()));
+
+// Switch to an older known week via the picker and confirm the page actually re-rendered that
+// different period (not just a no-op click).
+const weekLabelBefore = await page.locator('#report-week-label').innerText();
+const otherWeekValue = await page.locator('#report-week-select option').nth(1).getAttribute('value');
+await page.selectOption('#report-week-select', otherWeekValue);
+await page.waitForTimeout(500);
+const weekLabelAfter = await page.locator('#report-week-label').innerText();
+check('selecting a different week in the picker actually re-renders a different period', weekLabelBefore !== weekLabelAfter);
+
 await page.click('a[href="#agents"]');
 await page.waitForTimeout(500);
 check('Nova agents page has real content', await pageHasRealContent('agents'));

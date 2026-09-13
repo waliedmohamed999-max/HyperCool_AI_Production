@@ -54,6 +54,7 @@ import {buildMemoryWorkspace,computeMemoryUsage} from './memory-ops.js';
 import {assertRoleChangeAllowed,assertDeactivationAllowed,buildTeamDashboard} from './team-ops.js';
 import {installAutonomy,currentAutonomy,setAutonomy,listAutonomyLog} from './autonomy.js';
 import {installReporting,buildExecutiveReport,saveWeeklyReport,listWeeklyReports,currentWeekStart} from './reporting.js';
+import {buildReportWorkbook,buildReportPdfBuffer} from './reportExport.js';
 import {installRegistry,seedRegistry,listAgents as listRegistryAgents,getAgent,setEnabled,setModelConfig} from './runtime/registry.js';
 import {installRuntimeTables,createAgentRuntime,listRuns,getRun,listToolCalls} from './runtime/runtime.js';
 import {installEvents,createEventBus} from './runtime/events.js';
@@ -2120,8 +2121,29 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && url.pathname==='/api/schedule') {authorize(session,['owner']);return send(201,scheduleContent(store,await body(req),session.user,undefined,session.tenantId));}
       if(req.method==='POST' && url.pathname==='/api/schedule/prepare') {authorize(session,['owner']);return send(200,prepareDue(store,session.user,Date.now(),eventBus,env,session.tenantId));}
       if(req.method==='POST' && url.pathname==='/api/brief') {authorize(session,['owner']);return send(200,saveDailyBrief(store,riyadhDate(),session.user,session.tenantId));}
-      if(req.method==='GET' && url.pathname==='/api/reports/weekly')return send(200,{current:buildExecutiveReport(store,currentWeekStart(),{...reportExtras(session.tenantId),tenantId:session.tenantId}),saved:listWeeklyReports(store.db,session.tenantId)});
+      // `?weekStart=` lets the UI view (and export) any past Sunday on demand, not only the
+      // current week or an explicitly-saved one — buildWeeklyReport already rejects a non-Sunday
+      // date with its own Arabic message, so only the "not a future week" guard is added here.
+      function resolveReportWeekStart() {
+        const requested=url.searchParams.get('weekStart');
+        if(!requested)return currentWeekStart();
+        if(requested>currentWeekStart())fail(400,'لا يمكن عرض تقرير لأسبوع مستقبلي');
+        return requested;
+      }
+      if(req.method==='GET' && url.pathname==='/api/reports/weekly')return send(200,{current:buildExecutiveReport(store,resolveReportWeekStart(),{...reportExtras(session.tenantId),tenantId:session.tenantId}),saved:listWeeklyReports(store.db,session.tenantId)});
       if(req.method==='POST' && url.pathname==='/api/reports/weekly') {authorize(session,['owner']);const input=await body(req);return send(201,saveWeeklyReport(store,input.weekStart||currentWeekStart(),session.user,reportExtras(session.tenantId),session.tenantId));}
+      if(req.method==='GET' && (url.pathname==='/api/reports/weekly/export.xlsx'||url.pathname==='/api/reports/weekly/export.pdf')) {
+        const isXlsx=url.pathname.endsWith('.xlsx');
+        const weekStart=resolveReportWeekStart();
+        const locale=url.searchParams.get('locale')==='en'?'en':'ar';
+        const report=buildExecutiveReport(store,weekStart,{...reportExtras(session.tenantId),tenantId:session.tenantId});
+        const buffer=isXlsx?Buffer.from(await (await buildReportWorkbook(report,{locale})).xlsx.writeBuffer()):await buildReportPdfBuffer(report,{locale});
+        const contentType=isXlsx?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'application/pdf';
+        res.writeHead(200,{'Content-Type':contentType,'Content-Disposition':`attachment; filename="hypercool-report-${weekStart}.${isXlsx?'xlsx':'pdf'}"`,'Cache-Control':'no-store'});
+        res.end(buffer);
+        logRequest({request_id:requestId,method:req.method,path:req.url.split('?')[0],status:200,duration_ms:Date.now()-startedAt,user_id:userId});
+        return;
+      }
       if(req.method==='POST' && url.pathname==='/api/schedule/cancel') {authorize(session,['owner']);const input=await body(req);if(typeof input.contentId!=='string')fail(400,'معرف المحتوى مطلوب');return send(200,store.mutate(state=>cancelJobs(store,state,input.contentId,session.user,session.tenantId)));}
       const log=(action,item)=>recordAudit(store.db,{id:crypto.randomUUID(),action,itemId:item.id,actorId:session.user.id,actorName:session.user.name,actorRole:session.user.role,at:new Date().toISOString()},session.tenantId);
       if(req.method==='POST' && url.pathname==='/api/content') {
