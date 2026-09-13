@@ -46,10 +46,10 @@ test('Control Center summary: real readiness, never enabled=true => READY (no AI
  try{
   const summary=await call('/api/control-center/summary',null,ownerA,{method:'GET'});
   assert.equal(summary.status,200);
-  assert.equal(summary.data.agents.total,12);
-  assert.equal(summary.data.agents.enabled,12); // enabled by legacy default...
+  assert.equal(summary.data.agents.total,13);
+  assert.equal(summary.data.agents.enabled,13); // enabled by legacy default...
   assert.equal(summary.data.agents.ready,0); // ...but NOT ready, since no AI provider is configured
-  assert.equal(summary.data.agents.blocked,12);
+  assert.equal(summary.data.agents.blocked,13);
   for(const agent of summary.data.agents.items)assert.equal(agent.status,'BLOCKED');
  }finally{await cleanup();}
 });
@@ -58,7 +58,7 @@ test('Control Center summary: tool/integration/AI-provider counts reflect the re
  const {call,cleanup,ownerA}=await twoTenants();
  try{
   const summary=(await call('/api/control-center/summary',null,ownerA,{method:'GET'})).data;
-  assert.equal(summary.tools.total,31); // Phase 6D added get_invoices; Phase 6E added get_orders/get_customers (generic, capability-only)
+  assert.equal(summary.tools.total,38); // Phase 6D added get_invoices; Phase 6E added get_orders/get_customers (generic, capability-only); Phase 7A added 7 Frost Command Center tools
   assert.equal(summary.tools.unavailable,2); // canva_generateAsset, salla_syncOrders — honestly NOT_IMPLEMENTED
   assert.equal(summary.integrations.providers.length,10);
   assert.equal(summary.integrations.configuredProviders,0); // no connection created yet

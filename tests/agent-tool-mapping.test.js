@@ -64,10 +64,10 @@ const salesDecision=(over={})=>({status:'OK',action:'REPLY',rationale:'ok',verif
 
 // --- ToolDefinition ----------------------------------------------------------------------
 
-test('ToolDefinition: seeded exclusively from the real Tool Registry — 29 tools, Canva/salla_syncOrders honestly NOT_IMPLEMENTED',()=>{
+test('ToolDefinition: seeded exclusively from the real Tool Registry — 38 tools, Canva/salla_syncOrders honestly NOT_IMPLEMENTED',()=>{
  const {store}=fixture();try{
   const tools=listToolDefinitions(store.db);
-  assert.equal(tools.length,31); // Phase 6D added get_invoices; Phase 6E added get_orders/get_customers (generic, capability-only)
+  assert.equal(tools.length,38); // Phase 6D added get_invoices; Phase 6E added get_orders/get_customers (generic, capability-only); Phase 7A added 7 Frost Command Center tools
   const canva=getToolDefinition(store.db,'canva_generateAsset');
   assert.equal(canva.isAvailable,false);
   const salla=getToolDefinition(store.db,'salla_syncOrders');

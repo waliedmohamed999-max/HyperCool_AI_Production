@@ -206,7 +206,7 @@ test('Safety snapshot is real and read-only: reflects actual current autonomy le
  try{
   const snapshot=await call('/api/onboarding/safety',null,ownerA,{method:'GET'});
   assert.equal(snapshot.status,200);
-  assert.equal(snapshot.data.agentLevels.length,12);
+  assert.equal(snapshot.data.agentLevels.length,13);
   assert.ok(snapshot.data.agentLevels.every(a=>a.level==='L0'));
   assert.equal(snapshot.data.flags.externalMessaging,false);
   assert.equal(snapshot.data.flags.l2Autonomy,false); // DEFAULT_OFF unless explicitly enabled

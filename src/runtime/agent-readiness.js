@@ -27,13 +27,14 @@ const REQUIRED_TOOLS={
  frost:[],strategy:['search_brand_memory'],copy:['search_brand_memory'],creative:['search_brand_memory'],
  compliance:['search_brand_memory'],publishing:[],leads:['create_lead','search_crm'],
  sales:['get_lead','create_lead','update_lead','search_crm'],followup:['get_recent_replies','create_followup'],
- intelligence:['get_competitor_data'],performance:['get_metrics'],memory:['search_brand_memory','propose_memory_update']
+ intelligence:['get_competitor_data'],performance:['get_metrics'],memory:['search_brand_memory','propose_memory_update'],
+ frost_commander:[]
 };
 const OPTIONAL_TOOLS={
  frost:[],strategy:['get_competitor_data'],copy:[],creative:['canva_generateAsset'],compliance:[],
  publishing:['meta_publish','x_publish','linkedin_publish'],leads:['get_current_price','get_stock'],
  sales:['get_product','get_current_price','get_stock','whatsapp_send','microsoft_sendEmail','create_calendar_event','get_calendar_availability'],
- followup:['whatsapp_send','microsoft_sendEmail'],intelligence:[],performance:[],memory:[]
+ followup:['whatsapp_send','microsoft_sendEmail'],intelligence:[],performance:[],memory:[],frost_commander:[]
 };
 export function requiredToolsFor(agentId) { return REQUIRED_TOOLS[agentId]||[]; }
 export function optionalToolsFor(agentId) { return OPTIONAL_TOOLS[agentId]||[]; }

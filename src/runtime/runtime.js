@@ -98,7 +98,13 @@ function resolveAiConnectionForRun(db,env,tenantId,tenantConfig,tenant) {
  */
 export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
  const db=store.db;
- const toolRegistry=buildToolRegistry({store,env,eventBus,fetcher});
+ // `runtimeRef` breaks the construction-order circularity for the one tool
+ // (run_followup_sweep, see tools.js) that itself needs to trigger a nested agent run — the
+ // registry is built before this factory's own return value (the real AgentRuntime) exists,
+ // so the tool handler closes over this mutable ref instead and only dereferences it at call
+ // time, long after `runtimeRef.current` is set below. No other tool needs this.
+ const runtimeRef={current:null};
+ const toolRegistry=buildToolRegistry({store,env,eventBus,fetcher,runtimeRef});
  // One provider-driven attempt cycle: up to 2 tries against the SAME provider, repairing a
  // schema-invalid reply once via the provider's own internal repair step (see llmProvider.js)
  // plus once more here if the repaired reply still fails validateAgentDecision. Throws the
@@ -114,7 +120,7 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
   }
   return {decision,usage};
  }
- return {
+ const api={
   toolRegistry,
   // Multi-Tenant Phase 2 (spec Part 9/11 — Agent + Frost tenant context): every execution
   // resolves its real tenant ONCE, up front, and threads it through the run row, every
@@ -276,6 +282,8 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
    return output;
   }
  };
+ runtimeRef.current=api;
+ return api;
 }
 function priorityFor(decision) {
  if(decision.status==='BLOCKED')return 'P0';

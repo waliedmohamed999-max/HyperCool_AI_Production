@@ -51,15 +51,15 @@ function seedProductAndMemory(store){
  saveMemory(store.db,{key:'voice',kind:'brand_voice',value:'Clear',source:'Guide',changeReason:'init',status:'APPROVED',expectedVersion:0},user);
 }
 
-test('agent registry seeds all 12 agents once and is idempotent',()=>{
+test('agent registry seeds all 13 agents once and is idempotent',()=>{
  const store=fixture();
  try{
   const rows=listAgents(store.db);
-  assert.equal(rows.length,12);
+  assert.equal(rows.length,13);
   assert.ok(rows.every(row=>row.enabled===1));
   const second=seedRegistry(store.db);
   assert.equal(second.created,0);
-  assert.equal(listAgents(store.db).length,12);
+  assert.equal(listAgents(store.db).length,13);
  }finally{store.close();}
 });
 

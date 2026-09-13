@@ -75,8 +75,8 @@ test('legacy migration runs once and transaction failure rolls back',async()=>{
 });
 
 test('all source prompts load and malformed decisions fail closed',()=>{
- assert.equal(agentDefinitions.length,12);
- assert.equal(new Set(agentDefinitions.map(a=>a.id)).size,12);
+ assert.equal(agentDefinitions.length,13);
+ assert.equal(new Set(agentDefinitions.map(a=>a.id)).size,13);
  for(const agent of agentDefinitions)assert.match(agent.prompt,/SYSTEM/);
  const decision={status:'OK',action:'DRAFT',rationale:'Source provided',verification:[],risk_level:'LOW',escalation_required:false,missing_data:[],payload:{}};
  assert.equal(validateDecision(decision),decision);

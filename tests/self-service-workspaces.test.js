@@ -99,7 +99,7 @@ test('Tenant creation is correct: real tenant, single owner membership, TRIAL st
   assert.equal(memberships[0].is_owner,1);
 
   const agentConfigs=app.store.db.prepare('SELECT * FROM tenant_agent_configs WHERE tenant_id=?').all(tenantId);
-  assert.equal(agentConfigs.length,12);
+  assert.equal(agentConfigs.length,13);
   assert.ok(agentConfigs.every(c=>!c.ai_connection_id));
 
   const connections=app.store.db.prepare('SELECT COUNT(*) n FROM integration_connections WHERE tenant_id=?').get(tenantId);
@@ -251,7 +251,7 @@ test('New self-service workspace starts with real, honest empty Control Center s
   const session=await signupAndVerify(call,app,{username:'empty_state',email:'empty-state@example.com'});
   const ws=await call('/api/workspaces',{companyName:'Empty State Co'},session);
   const summary=await call('/api/control-center/summary',null,session,{method:'GET'});
-  assert.equal(summary.data.agents.total,12);
+  assert.equal(summary.data.agents.total,13);
   assert.equal(summary.data.agents.ready,0); // no AI configured yet — never fake-ready
   assert.equal(summary.data.integrations.configuredProviders,0);
   assert.equal(summary.data.aiProviders.length,0);

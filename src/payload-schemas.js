@@ -15,5 +15,10 @@ export const payloadSchemas={
  followup:object({sequence_name:string,touch_number:{type:'integer',minimum:0},channel:{enum:['WhatsApp','Email']},send_or_hold:{enum:['SEND','HOLD']},message_ar:string,message_en:string,reason:string,next_followup_date:nullable,stop_condition:nullable,crm_update:{type:'object'}}),
  intelligence:object({signals:{type:'array',items:object({topic_or_competitor:string,observed_change:string,date:string,source:string,fact:string,inference:string,confidence,why_it_matters:string,content_opportunity:string,sales_opportunity:string,recommended_action:string,urgency:{enum:['LOW','MEDIUM','HIGH']}})}}),
  performance:object({data_quality:string,KPI_summary:records,top_wins:strings,top_issues:strings,funnel_bottleneck:nullable,possible_drivers:strings,stop_doing:strings,double_down:strings,experiments_next_week:{type:'array',items:object({hypothesis:string,change:string,primary_metric:string,guardrail_metric:string,duration_or_sample:string,success_threshold:string})},data_gaps:strings}),
- memory:object({proposed_memory_updates:{type:'array',items:object({type:{enum:['approved_claim','product_fact','price_reference','faq','objection','winning_hook','losing_hook','lost_deal_reason','process_rule','customer_pattern']},key:string,old_value:nullable,new_value:string,evidence:strings,confidence,action:{enum:['ADD','UPDATE','REJECT','HOLD']},requires_human_approval:boolean,retention_scope:string})}})
+ memory:object({proposed_memory_updates:{type:'array',items:object({type:{enum:['approved_claim','product_fact','price_reference','faq','objection','winning_hook','losing_hook','lost_deal_reason','process_rule','customer_pattern']},key:string,old_value:nullable,new_value:string,evidence:strings,confidence,action:{enum:['ADD','UPDATE','REJECT','HOLD']},requires_human_approval:boolean,retention_scope:string})}}),
+ // Frost Command Center (Phase 7A) — a conversational, tool-calling agent, not a content
+ // generator. `answer` is the only text shown as the chat reply; `data_sources` names which
+ // real reads backed it (freshness/traceability, spec item 48); `follow_up_suggestions` are
+ // optional quick-reply chips, never a promise of an action not actually taken.
+ frost_commander:object({answer:string,data_sources:strings,follow_up_suggestions:strings})
 };

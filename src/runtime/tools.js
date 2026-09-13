@@ -1,5 +1,5 @@
 import {listProducts,currentMemory} from '../knowledge.js';
-import {listLeads,leadDetail,getLead,createLead,updateLead,createFollowups,recordMessage,recordChannelMessage,maybeEscalateHotLead,searchLeads} from '../crm.js';
+import {listLeads,listFollowups,leadDetail,getLead,createLead,updateLead,createFollowups,recordMessage,recordChannelMessage,maybeEscalateHotLead,searchLeads} from '../crm.js';
 import {createContent} from '../domain.js';
 import {getContent,getContentOrNull,insertContent,writeContent} from '../content.js';
 import {resolveActiveTenantId} from '../tenancy.js';
@@ -17,8 +17,13 @@ import {publishLinkedInPost} from './linkedin-publishing.js';
 import {resolveLinkedInAccessToken} from './linkedin-oauth.js';
 import {createEscalation} from './escalations.js';
 import {isEnabled,featureDisabled} from './feature-flags.js';
-import {getConnectionOrNull} from '../integrations/connections.js';
+import {getConnectionOrNull,listConnections} from '../integrations/connections.js';
 import {executeConnectorAction} from '../connectors/core/runtime.js';
+import {buildAgentConnectionMap} from './agent-connection-map.js';
+import {getAssignment,upsertAssignment} from './tool-assignments.js';
+import {searchContextItems} from './context-items.js';
+import {sweepFollowupGaps} from './scheduler.js';
+import {computeCompanyHealth} from './command-health.js';
 
 export function integrationStatus(env,db=null) {
  // A Meta/WhatsApp OAuth connection (see runtime/meta-oauth.js) counts as configured too —
@@ -46,7 +51,7 @@ export function integrationStatus(env,db=null) {
 }
 // Which integration(s) gate this agent's external actions, for the team-page status line.
 // Purely descriptive — the real gate is each tool's own `integration` field above.
-export const AGENT_INTEGRATIONS={frost:[],strategy:[],copy:[],creative:['canva'],compliance:[],publishing:['meta','x','linkedin'],leads:[],sales:['whatsapp'],followup:['whatsapp','microsoft365'],intelligence:[],performance:[],memory:[]};
+export const AGENT_INTEGRATIONS={frost:[],strategy:[],copy:[],creative:['canva'],compliance:[],publishing:['meta','x','linkedin'],leads:[],sales:['whatsapp'],followup:['whatsapp','microsoft365'],intelligence:[],performance:[],memory:[],frost_commander:[]};
 export function agentActor(agentId,nameAr) {
  return {id:'agent:'+agentId,name:nameAr?`وكيل ${nameAr}`:('وكيل '+agentId),role:'agent'};
 }
@@ -153,7 +158,31 @@ const TOOL_METADATA={
  get_orders:{description:'List orders from whichever commerce platform this tenant has connected.',inputSchema:obj({page:{type:'number'},perPage:{type:'number'}},[]),minLevel:'L0',
   category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:true,isReadOnly:true,capability:'commerce.orders.read'},
  get_customers:{description:'List customers from whichever commerce platform this tenant has connected.',inputSchema:obj({page:{type:'number'},perPage:{type:'number'}},[]),minLevel:'L0',
-  category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:true,isReadOnly:true,capability:'commerce.customers.read'}
+  category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:true,isReadOnly:true,capability:'commerce.customers.read'},
+
+ // --- Frost Command Center (Phase 7A) — internal read/aggregate tools with zero external
+ // dependency (integrationSlug:null, requiresConnection:false), reusing existing list/read
+ // functions verbatim rather than a second data-access layer. `allowedAgents` deliberately
+ // omitted (like get_metrics/search_crm above) so any future agent could use them too, not
+ // just frost_commander — there is nothing commander-specific about reading real state.
+ get_company_health:{description:'Aggregate real operational health: pending approvals, open escalations/tasks, connection health, and a basic weekly snapshot.',inputSchema:obj({}),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.health.read'},
+ get_followups_needing_attention:{description:'List real overdue follow-ups (draft, past due date) and hot leads in a follow-up-eligible stage with no active sequence.',inputSchema:obj({}),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.crm.followups.read'},
+ get_integrations_health:{description:'List every real integration connection for this tenant with its current status.',inputSchema:obj({}),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.integrations.read'},
+ get_agent_tool_status:{description:'Real Agent -> Tool -> Capability -> Connection map for this tenant (the same data behind the Control Center Agent Map).',inputSchema:obj({}),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.agents.read'},
+ search_context:{description:'Search manually-recorded company context/Company Brain items (facts, decisions, rules the team recorded) by free-text query and/or type.',inputSchema:obj({query:string,type:string},[]),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.context.read'},
+ // Configuration/automation actions: usable starting L1, but requiresApprovalBelowLevel:'L2'
+ // means L1 (frost_commander's likely level for a while, per the same one-step-at-a-time
+ // promotion ladder every other agent follows) always pauses for a real human approval before
+ // ever reaching the handler — identical mechanism to whatsapp_send above, not a new gate.
+ update_agent_tool_connection:{description:'Change which real connection a specific tool is pinned to for a specific agent. Always requires human approval.',inputSchema:obj({targetAgentId:string,toolSlug:string,connectionId:string},['targetAgentId','toolSlug','connectionId']),minLevel:'L1',requiresApprovalBelowLevel:'L2',
+  category:'Command',riskLevel:'MEDIUM',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.config.write'},
+ run_followup_sweep:{description:'Run the existing automated follow-up gap sweep now (finds leads needing a follow-up and lets the real Follow-up agent decide what to do — never sends anything itself). Always requires human approval.',inputSchema:obj({}),minLevel:'L1',requiresApprovalBelowLevel:'L2',
+  category:'Command',riskLevel:'MEDIUM',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.automation.followup_sweep'}
 };
 /** Static metadata only — no store/env/handler required. Used to seed `tool_definitions` at boot (src/runtime/tool-definitions.js) and by anything else that needs the catalog without a live registry instance. */
 export function listToolMetadata() {
@@ -167,7 +196,7 @@ export function listToolMetadata() {
 function withinCustomerServiceWindow(lead) {
  return !!lead.lastInboundAt && Date.now()-Date.parse(lead.lastInboundAt)<=86400000;
 }
-export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
+export function buildToolRegistry({store,env,eventBus,fetcher=fetch,runtimeRef=null}) {
  const db=store.db;
  // Shared by every publish tool (meta_publish/x_publish/linkedin_publish) so the
  // content-item bookkeeping, schedule_jobs status, audit trail and event emission are
@@ -373,7 +402,35 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch}) {
    return getCalendarAvailability({store,env,fetcher},input,ctx.tenantId);
   },
   canva_generateAsset:()=>blocked('canva','generate_asset'),
-  salla_syncOrders:()=>blocked('salla_webhooks','sync_orders')
+  salla_syncOrders:()=>blocked('salla_webhooks','sync_orders'),
+
+  // --- Frost Command Center (Phase 7A) ---------------------------------------------------
+  get_company_health:(input,ctx)=>computeCompanyHealth(store,ctx.tenantId),
+  get_followups_needing_attention:(input,ctx)=>{
+   const now=Date.now();
+   const followups=listFollowups(db,ctx.tenantId).filter(f=>f.status==='DRAFT'&&f.dueAt&&Date.parse(f.dueAt)<now);
+   const eligibleStages=['QUOTE_SENT','DEMO','POST_PURCHASE'];
+   const hotLeads=listLeads(db,ctx.tenantId).filter(l=>l.temperature==='HOT'&&eligibleStages.includes(l.stage)&&!l.optOut&&!l.humanHold);
+   return {
+    overdueFollowupsCount:followups.length,
+    overdueFollowups:followups.slice(0,10).map(f=>({id:f.id,leadId:f.leadId,dueAt:f.dueAt})),
+    hotLeadsNeedingAttentionCount:hotLeads.length,
+    hotLeadsNeedingAttention:hotLeads.slice(0,10).map(l=>({id:l.id,name:l.name||l.company||null,stage:l.stage,city:l.city||null}))
+   };
+  },
+  get_integrations_health:(input,ctx)=>listConnections(db,{},ctx.tenantId).map(c=>({id:c.id,name:c.name,integration:c.integrationDefinitionId,status:c.status,lastHealthCheck:c.lastHealthCheck,lastErrorCode:c.lastErrorCode})),
+  get_agent_tool_status:(input,ctx)=>buildAgentConnectionMap(db,env,ctx.tenantId,{}),
+  search_context:({query,type}={},ctx)=>searchContextItems(db,ctx.tenantId,{query,type}).slice(0,15),
+  update_agent_tool_connection:({targetAgentId,toolSlug,connectionId},ctx)=>{
+   const before=getAssignment(db,ctx.tenantId,targetAgentId,toolSlug);
+   const updated=upsertAssignment(db,ctx.tenantId,targetAgentId,toolSlug,{connectionId});
+   recordAudit(db,{id:crypto.randomUUID(),action:'COMMAND_AGENT_TOOL_CONNECTION_CHANGED',itemId:updated.id,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:new Date().toISOString(),detail:{targetAgentId,toolSlug,previousConnectionId:before?.connectionId||null,newConnectionId:connectionId}},ctx.tenantId);
+   return {targetAgentId,toolSlug,previousConnectionId:before?.connectionId||null,newConnectionId:updated.connectionId};
+  },
+  run_followup_sweep:async(input,ctx)=>{
+   if(!runtimeRef?.current)return {status:'ERROR',error:'RUNTIME_NOT_READY'};
+   return sweepFollowupGaps({store,agentRuntime:runtimeRef.current,env,tenantId:ctx.tenantId});
+  }
  };
  const tools=Object.entries(TOOL_METADATA).map(([name,meta])=>({name,...meta,handler:HANDLERS[name]}));
  return {

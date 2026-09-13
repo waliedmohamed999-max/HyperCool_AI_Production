@@ -60,6 +60,10 @@ import {installRuntimeTables,createAgentRuntime,listRuns,getRun,listToolCalls} f
 import {installEvents,createEventBus} from './runtime/events.js';
 import {installApprovals,listApprovals,decideApproval,createApproval} from './runtime/approvals.js';
 import {installEscalations,listEscalations,resolveEscalation} from './runtime/escalations.js';
+import {installContextItems,createContextItem,listContextItems,updateContextItem,archiveContextItem} from './runtime/context-items.js';
+import {installSuggestions,syncSuggestions,listSuggestions,acceptSuggestion,dismissSuggestion,createTaskFromSuggestion} from './runtime/suggestions.js';
+import {installCommandChat,createConversation,listConversations,renameConversation,archiveConversation,listMessages,sendCommandMessage} from './runtime/command-chat.js';
+import {computeCompanyHealth} from './runtime/command-health.js';
 import {installOrchestrator,buildDailyBrief} from './runtime/orchestrator.js';
 import {integrationStatus,AGENT_INTEGRATIONS} from './runtime/tools.js';
 import {providerStatus} from './runtime/llmProvider.js';
@@ -201,6 +205,9 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installEvents(store.db);
   installApprovals(store.db);
   installEscalations(store.db);
+  installContextItems(store.db);
+  installSuggestions(store.db);
+  installCommandChat(store.db);
   installGate(store.db);
   installIntegrationDefinitions(store.db); // Multi-Tenant Phase 4A — global integration catalog, see docs/INTEGRATION_CONNECTION_ARCHITECTURE.md
   installIntegrationConnections(store.db);
@@ -1318,6 +1325,91 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner']);
         return send(200,resolveEscalation(store.db,escalationResolve[1],session.user,session.tenantId));
       }
+      // ---------------------------------------------------------------------------------
+      // Frost Command Center (Phase 7A) — chat, live operations, data & context, suggestions.
+      // Chat execution goes through the exact same agentRuntime.run('frost_commander',...)
+      // every other agent uses (see src/runtime/command-chat.js's module doc) — no second
+      // orchestrator/tool registry/approval engine here, only the thin session bookkeeping
+      // (conversations/messages) and read-only aggregation routes below.
+      // ---------------------------------------------------------------------------------
+      if(url.pathname==='/api/command/conversations') {
+        if(req.method==='GET')return send(200,listConversations(store.db,session.tenantId));
+        if(req.method==='POST') {
+          const input=await body(req);
+          return send(201,createConversation(store.db,session.user,session.tenantId,typeof input.title==='string'?input.title.slice(0,200):null));
+        }
+      }
+      const conversationRename=url.pathname.match(/^\/api\/command\/conversations\/([\w-]+)$/);
+      if(req.method==='PATCH' && conversationRename) {
+        const input=await body(req);
+        return send(200,renameConversation(store.db,conversationRename[1],input.title,session.tenantId));
+      }
+      const conversationArchive=url.pathname.match(/^\/api\/command\/conversations\/([\w-]+)\/archive$/);
+      if(req.method==='POST' && conversationArchive)return send(200,archiveConversation(store.db,conversationArchive[1],session.tenantId));
+      const conversationMessages=url.pathname.match(/^\/api\/command\/conversations\/([\w-]+)\/messages$/);
+      if(conversationMessages) {
+        if(req.method==='GET')return send(200,listMessages(store.db,conversationMessages[1],session.tenantId));
+        if(req.method==='POST') {
+          authorize(session,['owner','operator']);
+          checkLlmRateLimit(session.user.id);
+          const input=await body(req);
+          const {assistantMessage,run}=await sendCommandMessage({store,agentRuntime,env,tenantId:session.tenantId,user:session.user,conversationId:conversationMessages[1],text:input.text});
+          return send(201,{assistantMessage,runStatus:run.status});
+        }
+      }
+      if(req.method==='GET' && url.pathname==='/api/command/health')return send(200,computeCompanyHealth(store,session.tenantId));
+      // Data Inbox (spec item 14) — a real, merged, tenant-scoped feed across every existing
+      // data source already found in this codebase (CRM, Content, Tasks/Escalations,
+      // Integrations, Webhooks) — no new table, no fabricated rows, never the raw webhook
+      // payload (only its type/source/status).
+      if(req.method==='GET' && url.pathname==='/api/command/inbox') {
+        const items=[];
+        for(const lead of listLeads(store.db,session.tenantId).slice(0,20))items.push({kind:'crm_lead',id:lead.id,title:lead.company||lead.name,at:lead.createdAt});
+        for(const followup of listFollowups(store.db,session.tenantId).slice(0,20))items.push({kind:'crm_followup',id:followup.id,title:followup.sequence||'متابعة',at:followup.createdAt||followup.dueAt});
+        for(const item of listContent(store.db,session.tenantId).slice(0,20))items.push({kind:'content',id:item.id,title:item.title,at:item.createdAt});
+        for(const escalation of listEscalations(store.db,{},session.tenantId).slice(0,20))items.push({kind:'escalation',id:escalation.id,title:escalation.reason,at:escalation.created_at});
+        for(const connection of listConnections(store.db,{},session.tenantId).slice(0,20))items.push({kind:'connection',id:connection.id,title:connection.name,at:connection.createdAt});
+        for(const source of ['salla','meta']) {
+          try{for(const event of listWebhookEvents(store.db,{source,limit:10},session.tenantId))items.push({kind:'webhook',id:event.id,title:`${source} · ${event.type}`,at:event.received_at});}
+          catch{/* source table may not exist in a bare fixture */}
+        }
+        const sorted=items.filter(i=>i.at).sort((a,b)=>(b.at||'').localeCompare(a.at||'')).slice(0,60);
+        return send(200,{items:sorted});
+      }
+      if(req.method==='GET' && url.pathname==='/api/command/operations') {
+        const runs=listRuns(store.db,{limit:40},session.tenantId).map(r=>({kind:'agent_run',id:r.id,agentId:r.agent_id,triggerType:r.trigger_type,status:r.status,at:r.started_at,finishedAt:r.finished_at,latencyMs:r.latency_ms,actorName:r.actor_name}));
+        const auditEntries=listAuditLog(store.db,{tenantId:session.tenantId,limit:40}).map(a=>({kind:'audit',id:a.id,action:a.action,at:a.at,actorName:a.actorName||null}));
+        const items=[...runs,...auditEntries].sort((a,b)=>(b.at||'').localeCompare(a.at||'')).slice(0,60);
+        return send(200,{items});
+      }
+      if(url.pathname==='/api/command/context') {
+        if(req.method==='GET')return send(200,listContextItems(store.db,session.tenantId,{type:url.searchParams.get('type')||undefined,status:url.searchParams.get('status')||'ACTIVE'}));
+        if(req.method==='POST') {
+          authorize(session,['owner','operator']);
+          const input=await body(req);
+          return send(201,createContextItem(store.db,input,session.user,session.tenantId));
+        }
+      }
+      const contextUpdate=url.pathname.match(/^\/api\/command\/context\/([\w-]+)$/);
+      if(req.method==='PATCH' && contextUpdate) {
+        authorize(session,['owner','operator']);
+        const input=await body(req);
+        return send(200,updateContextItem(store.db,contextUpdate[1],input,session.user,session.tenantId));
+      }
+      const contextArchive=url.pathname.match(/^\/api\/command\/context\/([\w-]+)\/archive$/);
+      if(req.method==='POST' && contextArchive) {
+        authorize(session,['owner','operator']);
+        return send(200,archiveContextItem(store.db,contextArchive[1],session.user,session.tenantId));
+      }
+      if(req.method==='GET' && url.pathname==='/api/command/suggestions')return send(200,syncSuggestions(store.db,session.tenantId).filter(s=>(url.searchParams.get('status')||'OPEN')===s.status));
+      const suggestionAccept=url.pathname.match(/^\/api\/command\/suggestions\/([\w-]+)\/accept$/);
+      if(req.method==='POST' && suggestionAccept) {authorize(session,['owner','operator']);return send(200,acceptSuggestion(store.db,suggestionAccept[1],session.user,session.tenantId));}
+      const suggestionDismiss=url.pathname.match(/^\/api\/command\/suggestions\/([\w-]+)\/dismiss$/);
+      if(req.method==='POST' && suggestionDismiss) {authorize(session,['owner','operator']);return send(200,dismissSuggestion(store.db,suggestionDismiss[1],session.user,session.tenantId));}
+      const suggestionTask=url.pathname.match(/^\/api\/command\/suggestions\/([\w-]+)\/create-task$/);
+      if(req.method==='POST' && suggestionTask) {authorize(session,['owner','operator']);return send(201,createTaskFromSuggestion(store.db,suggestionTask[1],session.user,session.tenantId));}
+      if(req.method==='GET' && url.pathname==='/api/command/system-map')return send(200,buildAgentConnectionMap(store.db,env,session.tenantId,{}));
+
       if(req.method==='GET' && url.pathname==='/api/frost/daily-brief')return send(200,buildDailyBrief({store,db:store.db,listEscalations,listRuns,buildBriefFn:buildBrief}));
       if(req.method==='GET' && url.pathname==='/api/frost/status')return send(200,{gate:getGateStatus(store.db),schedulerRunning:scheduler.running(),routes:orchestratorRoutes});
       if(req.method==='POST' && url.pathname==='/api/frost/pause') {authorize(session,['owner']);const input=await body(req);return send(200,setPaused(store.db,true,session.user,typeof input.reason==='string'?input.reason.slice(0,1000):null));}
@@ -2193,8 +2285,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js','pages/command-center.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
       if(req.method==='GET' && files[url.pathname]) {
         const file=files[url.pathname];

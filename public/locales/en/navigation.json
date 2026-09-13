@@ -1,5 +1,6 @@
 {
   "overview": { "title": "Overview", "description": "A summary of your business and the decisions that need your attention today." },
+  "command-center": { "title": "Command Center", "description": "Chat with Frost, watch live operations, add company context, and review suggestions — all in one place." },
   "crm": { "title": "Customers & Sales", "description": "Follow your deals from the first conversation to close." },
   "planning": { "title": "Calendar & Scheduling", "description": "Plan content and review scheduled posts in one place." },
   "reports": { "title": "Weekly Report", "description": "This week's performance, opportunities, and data-driven decisions." },

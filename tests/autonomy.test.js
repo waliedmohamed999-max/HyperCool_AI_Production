@@ -11,7 +11,7 @@ test('every agent defaults to L0 with no history',()=>{
  const store=fixture();
  try{
   const state=currentAutonomy(store.db);
-  assert.equal(Object.keys(state).length,12);
+  assert.equal(Object.keys(state).length,13);
   assert.ok(Object.values(state).every(entry=>entry.level==='L0'&&entry.version===0));
   assert.deepEqual(listAutonomyLog(store.db,'copy'),[]);
  }finally{store.close();}

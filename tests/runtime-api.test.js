@@ -22,7 +22,7 @@ test('agent runtime is exposed over HTTP with correct role gating, and the seede
   const reviewer=await call('/api/login',{username:'reviewer',password:'test-password-long'});
 
   const agents=await call('/api/agents',null,owner);
-  assert.equal(agents.data.length,12);
+  assert.equal(agents.data.length,13);
   const sales=agents.data.find(a=>a.id==='sales');
   assert.equal(sales.runtimeStatus,'WAITING_INTEGRATION');
   assert.match(sales.runtimeLabel,/واتساب/);
