@@ -127,13 +127,25 @@ if (await assetPreview.count() > 0) {
 
 await page.locator('[data-page="content"]').getByRole('tab', { name: 'الموافقات', exact: true }).click();
 await page.waitForTimeout(400);
-const approvalRow = page.locator('#content-approval-view tbody tr').first();
+// The Approvals tab lists BOTH DRAFT and REVIEWED items (public/pages/workspace.js:
+// `content.filter(c => ['DRAFT','REVIEWED'].includes(c.status))`), and which status lands in
+// row .first() shifts with the demo data pack's own deterministic PRNG sequence (any new rng()
+// consumption anywhere in demo-seed.mjs re-shuffles every later draw — expected, documented
+// behavior, not a bug). Picking a row at random would make this walkthrough's review-then-approve
+// path flaky — exercise it deliberately, against a real item confirmed DRAFT via the backend.
+const draftId = await page.evaluate(async () => {
+ const state = await (await fetch('/api/state')).json();
+ return state.content.find(c => c.status === 'DRAFT')?.id ?? null;
+});
+const approvalRow = draftId
+ ? page.locator(`#content-approval-view tbody tr:has(button[data-content-open="${draftId}"])`)
+ : page.locator('#content-approval-view tbody tr').first();
 if (await approvalRow.count() > 0) {
  // Several demo content items can share the same generated title (random theme x platform
  // combination) — every subsequent lookup for "the same item" MUST key off its real, unique id
  // (data-content-open), never its title text, or a duplicate-titled row could be opened by
  // mistake, silently reviewing/approving the WRONG item while this one is never touched.
- const itemId = await approvalRow.locator('button[data-content-open]').getAttribute('data-content-open');
+ const itemId = draftId ?? await approvalRow.locator('button[data-content-open]').getAttribute('data-content-open');
  const itemRow = () => page.locator(`#content-approval-view tbody tr:has(button[data-content-open="${itemId}"])`);
  await approvalRow.locator('button[data-content-open]').click();
  await page.waitForSelector('dialog.drawer[open]', { state: 'visible', timeout: 5000 });
@@ -174,6 +186,9 @@ if (await approvalRow.count() > 0) {
   }
  }
 }
+// Defensive: whichever branch above ran (or didn't — e.g. no DRAFT item existed to find), never
+// leave a stale open drawer behind to block the next navigation click.
+await closeAnyOpenDialogs();
 await page.locator('[data-page="content"]').getByRole('tab', { name: 'المحتوى', exact: true }).click();
 await page.waitForTimeout(300);
 

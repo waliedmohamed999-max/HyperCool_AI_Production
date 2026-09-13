@@ -98,21 +98,100 @@ export const DESIGN_THEMES = [
  ['#0f766e', '#134e4a'], ['#b45309', '#78350f'], ['#1d4ed8', '#1e3a8a'],
  ['#be123c', '#7f1d1d'], ['#4338ca', '#312e81'], ['#0369a1', '#0c4a6e']
 ];
-export function designAssetDataUri({ lines, subtitle, theme = DESIGN_THEMES[0], badge = 'DEMO' }) {
- const width = 800, height = 450;
+// Five genuinely different layouts (not just a recolored copy of one template) so a reviewer
+// scrolling the content list sees real visual variety, matching what an actual creative/design
+// review queue would look like. Callers pick one via `template` (0-4) — demo-seed.mjs seeds it
+// from the same deterministic rng as everything else, so results stay reproducible.
+export const DESIGN_TEMPLATE_COUNT = 5;
+const PLATFORM_GLYPHS = { Instagram: 'IG', Facebook: 'FB', X: 'X', LinkedIn: 'in', TikTok: 'TT', Snapchat: 'SC' };
+
+function demoBadge(x, y, colorTo, badge) {
+ return `<rect x="${x}" y="${y}" width="100" height="34" rx="17" fill="#ffffff" fill-opacity="0.92"/><text x="${x + 50}" y="${y + 23}" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="${colorTo}">${escapeXml(badge)}</text>`;
+}
+function platformBadge(cx, cy, r, platform, colorTo) {
+ if (!platform) return '';
+ const label = PLATFORM_GLYPHS[platform] || String(platform).slice(0, 2).toUpperCase();
+ return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#ffffff"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colorTo}" stroke-width="3"/><text x="${cx}" y="${cy + r * 0.32}" text-anchor="middle" font-family="Arial, sans-serif" font-size="${Math.round(r * 0.62)}" font-weight="700" fill="${colorTo}">${escapeXml(label)}</text>`;
+}
+function titleBlock(cx, startY, lines, size, color, anchor, lineHeight) {
+ return lines.map((line, i) => `<text x="${cx}" y="${startY + i * lineHeight}" text-anchor="${anchor}" font-family="Tahoma, Arial, sans-serif" font-size="${size}" font-weight="700" fill="${color}" direction="rtl">${escapeXml(line)}</text>`).join('');
+}
+
+const DESIGN_TEMPLATES = [
+ // 0 — Center Hero: bold centered title over a soft gradient with two translucent orbs.
+ function centerHero({ titleLines, subtitle, colorFrom, colorTo, badge, platform }) {
+  const startY = titleLines.length > 1 ? 188 : 213;
+  return `<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${colorFrom}"/><stop offset="100%" stop-color="${colorTo}"/></linearGradient></defs>
+  <rect width="800" height="450" fill="url(#g)"/>
+  <circle cx="730" cy="70" r="130" fill="#ffffff" fill-opacity="0.08"/>
+  <circle cx="70" cy="400" r="100" fill="#ffffff" fill-opacity="0.06"/>
+  ${titleBlock(400, startY, titleLines, 46, '#ffffff', 'middle', 62)}
+  ${subtitle ? `<text x="400" y="${startY + titleLines.length * 62 + 16}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="21" fill="#ffffffcc" direction="rtl">${escapeXml(subtitle)}</text>` : ''}
+  ${demoBadge(24, 24, colorTo, badge)}
+  ${platformBadge(730, 392, 34, platform, colorTo)}`;
+ },
+ // 1 — Diagonal Split: two-tone diagonal banner, right-aligned headline (RTL reading flow).
+ function diagonalSplit({ titleLines, subtitle, colorFrom, colorTo, badge, platform }) {
+  const startY = titleLines.length > 1 ? 128 : 150;
+  const dots = Array.from({ length: 15 }, (_, i) => {
+   const col = i % 5, row = Math.floor(i / 5);
+   return `<circle cx="${610 + col * 26}" cy="${30 + row * 26}" r="3" fill="#ffffff" fill-opacity="0.35"/>`;
+  }).join('');
+  return `<rect width="800" height="450" fill="${colorTo}"/>
+  <polygon points="0,0 800,0 800,190 0,330" fill="${colorFrom}"/>
+  <line x1="0" y1="330" x2="800" y2="190" stroke="#ffffff" stroke-opacity="0.25" stroke-width="3"/>
+  ${dots}
+  ${titleBlock(740, startY, titleLines, 42, '#ffffff', 'end', 56)}
+  ${subtitle ? `<text x="740" y="${startY + titleLines.length * 56 + 14}" text-anchor="end" font-family="Tahoma, Arial, sans-serif" font-size="19" fill="#ffffffcc" direction="rtl">${escapeXml(subtitle)}</text>` : ''}
+  ${demoBadge(24, 24, colorFrom, badge)}
+  ${platformBadge(730, 392, 34, platform, colorTo)}`;
+ },
+ // 2 — Bottom Banner: textured light top zone, solid title banner along the bottom edge.
+ function bottomBanner({ titleLines, subtitle, colorFrom, colorTo, badge, platform }) {
+  const stripes = Array.from({ length: 9 }, (_, i) => `<line x1="${-100 + i * 110}" y1="0" x2="${-100 + i * 110 + 300}" y2="270" stroke="${colorFrom}" stroke-opacity="0.12" stroke-width="26"/>`).join('');
+  const bannerTop = 270;
+  const startY = titleLines.length > 1 ? bannerTop + 66 : bannerTop + 92;
+  return `<rect width="800" height="450" fill="#f8fafc"/>
+  <rect width="800" height="${bannerTop}" fill="#eef2f6"/>
+  ${stripes}
+  <rect x="0" y="${bannerTop}" width="800" height="${450 - bannerTop}" fill="${colorTo}"/>
+  ${titleBlock(400, startY, titleLines, 38, '#ffffff', 'middle', 50)}
+  ${subtitle ? `<text x="400" y="${startY + titleLines.length * 50 + 14}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="18" fill="#ffffffcc" direction="rtl">${escapeXml(subtitle)}</text>` : ''}
+  ${platformBadge(400, bannerTop, 38, platform, colorTo)}
+  ${demoBadge(676, 24, colorFrom, badge)}`;
+ },
+ // 3 — Card Frame: gradient backdrop with an inset light "print" card holding the headline.
+ function cardFrame({ titleLines, subtitle, colorFrom, colorTo, badge, platform }) {
+  const startY = titleLines.length > 1 ? 195 : 220;
+  return `<defs><linearGradient id="g" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="${colorFrom}"/><stop offset="100%" stop-color="${colorTo}"/></linearGradient></defs>
+  <rect width="800" height="450" fill="url(#g)"/>
+  <rect x="60" y="70" width="680" height="310" rx="18" fill="#ffffff" fill-opacity="0.97"/>
+  ${titleBlock(400, startY, titleLines, 38, colorTo, 'middle', 52)}
+  <rect x="370" y="${startY + titleLines.length * 52 - 28}" width="60" height="4" rx="2" fill="${colorFrom}"/>
+  ${subtitle ? `<text x="400" y="${startY + titleLines.length * 52 + 6}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="18" fill="#475569" direction="rtl">${escapeXml(subtitle)}</text>` : ''}
+  ${demoBadge(24, 24, colorTo, badge)}
+  ${platformBadge(740, 380, 34, platform, colorTo)}`;
+ },
+ // 4 — Wave Footer: gradient with a soft double-wave silhouette anchoring the bottom edge.
+ function waveFooter({ titleLines, subtitle, colorFrom, colorTo, badge, platform }) {
+  const startY = titleLines.length > 1 ? 150 : 172;
+  return `<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${colorFrom}"/><stop offset="100%" stop-color="${colorTo}"/></linearGradient></defs>
+  <rect width="800" height="450" fill="url(#g)"/>
+  <path d="M0,340 C150,300 300,380 450,340 C600,300 750,360 800,330 L800,450 L0,450 Z" fill="#ffffff" fill-opacity="0.10"/>
+  <path d="M0,380 C200,420 500,340 800,390 L800,450 L0,450 Z" fill="#ffffff" fill-opacity="0.16"/>
+  ${titleBlock(400, startY, titleLines, 44, '#ffffff', 'middle', 58)}
+  ${subtitle ? `<text x="400" y="${startY + titleLines.length * 58 + 16}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="20" fill="#ffffffcc" direction="rtl">${escapeXml(subtitle)}</text>` : ''}
+  ${platformBadge(730, 60, 34, platform, colorTo)}
+  ${demoBadge(24, 392, colorFrom, badge)}`;
+ }
+];
+
+export function designAssetDataUri({ lines, subtitle, theme = DESIGN_THEMES[0], badge = 'DEMO', platform, template = 0 }) {
  const titleLines = (Array.isArray(lines) ? lines : [lines]).slice(0, 2);
- const startY = titleLines.length > 1 ? 190 : 215;
  const [colorFrom, colorTo] = theme;
- const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${colorFrom}"/><stop offset="100%" stop-color="${colorTo}"/></linearGradient></defs>
-  <rect width="${width}" height="${height}" fill="url(#g)"/>
-  <circle cx="${width - 70}" cy="70" r="130" fill="#ffffff" fill-opacity="0.08"/>
-  <circle cx="70" cy="${height - 50}" r="100" fill="#ffffff" fill-opacity="0.06"/>
-  ${titleLines.map((line, i) => `<text x="${width / 2}" y="${startY + i * 62}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="46" font-weight="700" fill="#ffffff" direction="rtl">${escapeXml(line)}</text>`).join('')}
-  ${subtitle ? `<text x="${width / 2}" y="${startY + titleLines.length * 62 + 16}" text-anchor="middle" font-family="Tahoma, Arial, sans-serif" font-size="21" fill="#ffffffcc" direction="rtl">${escapeXml(subtitle)}</text>` : ''}
-  <rect x="24" y="24" width="100" height="34" rx="17" fill="#ffffff" fill-opacity="0.92"/>
-  <text x="74" y="47" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="${colorTo}">${escapeXml(badge)}</text>
- </svg>`;
+ const build = DESIGN_TEMPLATES[((template % DESIGN_TEMPLATES.length) + DESIGN_TEMPLATES.length) % DESIGN_TEMPLATES.length];
+ const inner = build({ titleLines, subtitle, colorFrom, colorTo, badge, platform });
+ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">${inner}</svg>`;
  return 'data:image/svg+xml;base64,' + Buffer.from(svg, 'utf8').toString('base64');
 }
 
