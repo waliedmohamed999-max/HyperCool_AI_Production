@@ -94,7 +94,12 @@ export function buildControlCenterSummary(db,env,tenantId,role) {
   workspace:{id:tenant.id,name:tenant.name,slug:tenant.slug,role,locale:tenant.defaultLocale,timezone:tenant.timezone,status:tenant.status,defaultAiConnectionId:tenant.defaultAiConnectionId,defaultAiModel:tenant.defaultAiModel,maxAgentLevel:tenant.maxAgentLevel,
    // Multi-Tenant Phase 4C-6 — real, derived trial state (Part 60); null for any tenant with
    // no trial timestamps at all (the legacy HyperCool tenant, or any non-self-service tenant).
-   trial:tenant.trialExpiresAt?{active:isTrialActive(tenant),daysRemaining:getTrialDaysRemaining(tenant),expiresAt:tenant.trialExpiresAt}:null},
+   trial:tenant.trialExpiresAt?{active:isTrialActive(tenant),daysRemaining:getTrialDaysRemaining(tenant),expiresAt:tenant.trialExpiresAt}:null,
+   // Investor Demo Data Pack — a tenant seeded by scripts/demo-seed.mjs carries
+   // `branding_settings.demo:true` (see scripts/demo/shared.mjs's DEMO_MARKER); surfaced here so
+   // the UI can show an explicit "Demo Data" banner and never let seeded data be mistaken for a
+   // real customer's workspace.
+   isDemo:tenant.brandingSettings?.demo===true},
   agents:buildAgentsSummary(db,env,tenantId),
   tools:buildToolsSummary(db,env,tenantId),
   integrations:buildIntegrationsSummary(db,env,tenantId),

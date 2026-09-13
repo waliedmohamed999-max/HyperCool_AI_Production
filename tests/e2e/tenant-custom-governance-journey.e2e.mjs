@@ -94,10 +94,12 @@ const pendingText = await adminPage.locator('#pf-pending-custom').innerText().ca
 check('Pending Custom Connectors section shows the tenant\'s draft', pendingText.includes('موصل المستأجر'));
 
 await adminPage.click(`#pf-pending-custom [data-pending]:has-text("موصل المستأجر") button:has-text("اعتماد")`);
-await adminPage.waitForSelector('dialog.confirmation [open]', { state: 'attached' }).catch(() => {});
-const confirmButtons = await adminPage.$$('dialog.confirmation button');
-for (const b of confirmButtons) { const t = (await b.textContent()) || ''; if (/^اعتماد$/.test(t.trim())) { await b.click(); break; } }
-await adminPage.waitForTimeout(800);
+await adminPage.waitForSelector('dialog.confirmation[open]', { state: 'visible' });
+const [reviewResponse] = await Promise.all([
+ adminPage.waitForResponse(response => response.request().method() === 'POST' && /\/api\/platform\/custom-connectors\/[^/]+\/review$/.test(new URL(response.url()).pathname)),
+ adminPage.locator('dialog.confirmation[open]').getByRole('button', { name: 'اعتماد', exact: true }).click()
+]);
+check('approval request succeeded', reviewResponse.ok());
 
 const approvedDefinition = await adminPage.evaluate(async s => (await (await fetch('/api/platform/connectors')).json()).find(c => c.slug === s), slug);
 check('approved — status PUBLISHED, reviewStatus APPROVED', approvedDefinition?.status === 'PUBLISHED' && approvedDefinition?.reviewStatus === 'APPROVED');

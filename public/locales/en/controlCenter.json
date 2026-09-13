@@ -10,6 +10,7 @@
  },
  "runSystemCheck": "Run System Check",
  "trialBanner": "{days} days left in your trial",
+ "demoBanner": "DEMO DATA — this is a demonstration workspace and does not reflect a real customer's data.",
  "needsAttention": "Needs Attention",
  "configure": "Configure",
  "kpi": {

@@ -27,7 +27,8 @@ function statusBadge(status,map=AGENT_STATUS_VARIANT){return badge(t('controlCen
 
 export function installControlCenter(){
  const root=document.querySelector('[data-page="control-center"] #control-center');
- root.innerHTML=`<div id="cc-trial-banner" hidden></div>
+ root.innerHTML=`<div id="cc-demo-banner" hidden></div>
+  <div id="cc-trial-banner" hidden></div>
   <div id="cc-summary" class="kpi-grid"></div>
   <section id="cc-attention" class="report-section" hidden><div class="report-section-head"><h3>${escape(t('controlCenter.needsAttention'))}</h3></div><div id="cc-attention-list"></div></section>
   <div id="cc-tabs"></div>`;
@@ -76,6 +77,7 @@ export async function renderControlCenter({api:client,auth}){
  // catalog the Integration Builder publishes to (GET /api/integrations/catalog); a brand-new
  // Builder-published connector needs zero change here to start appearing and being connectable.
  catalogBySlug=new Map((catalog||[]).map(c=>[c.slug,c]));
+ renderDemoBanner();
  renderTrialBanner();
  renderKpis();
  renderAttention();
@@ -87,6 +89,18 @@ export async function renderControlCenter({api:client,auth}){
  renderSettingsTab();
 }
 
+/** Investor Demo Data Pack — a subtle, unmissable label for any workspace seeded by
+ * `scripts/demo-seed.mjs` (`workspace.isDemo`, backend-derived from a real `branding_settings`
+ * marker — never guessed client-side from the tenant name/slug). Purely informational: it
+ * never blocks or changes any behavior, matching Part 42's "do not make banner visually ugly"
+ * instruction — same subtle `.notice` treatment the trial banner already uses. */
+function renderDemoBanner(){
+ const banner=$('#cc-demo-banner');
+ if(!summary.workspace.isDemo){banner.hidden=true;return;}
+ banner.hidden=false;
+ banner.className='notice demo-banner';
+ banner.textContent=t('controlCenter.demoBanner');
+}
 /** Multi-Tenant Phase 4C-7 (Part 12/13) — real, backend-derived trial state; the day count
  * and threshold both come straight from `workspace.trial` (Part 12: "No hardcoded 14 if
  * config differs" — the actual number is never assumed client-side). A stronger visual
