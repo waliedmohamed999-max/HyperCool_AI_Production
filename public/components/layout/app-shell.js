@@ -27,7 +27,12 @@ export function installShell(){
  const aside=document.querySelector('body>aside');aside.className='app-sidebar';
  const nav=aside.querySelector('nav');
  const groupSpans=new Map();
- for(const [key] of [['overview'],['content'],['integrations']]){const el=document.createElement('span');el.className='nav-group';nav.querySelector(`[href="#${key}"]`).before(el);groupSpans.set(key,el);}
+ // Sidebar groups (spec: HyperCool Frost UI, Part 7) — five semantic clusters over the real
+ // route set (no invented pages): AI & Operations / Business / Growth / Platform / Account.
+ // Each anchor key is the FIRST route of its cluster in the actual DOM order (index.html) —
+ // purely a label insertion point, never touched by ROUTE_ICONS/RAIL_GROUPS/railGroupIndex,
+ // which key off the unchanged ROUTE_KEYS array order and are deliberately left alone here.
+ for(const [key] of [['overview'],['command-center'],['crm'],['content'],['integrations'],['audit']]){const el=document.createElement('span');el.className='nav-group';nav.querySelector(`[href="#${key}"]`).before(el);groupSpans.set(key,el);}
  const rail=document.createElement('div');rail.className='sidebar-rail';
  rail.innerHTML='<div class="rail-brand">H</div>'+RAIL_GROUPS.map(([key])=>`<button type="button" class="rail-icon" data-rail="${key}"></button>`).join('');
  rail.querySelectorAll('[data-rail]').forEach(b=>b.onclick=()=>navigate(b.dataset.rail));
@@ -70,7 +75,7 @@ export function installShell(){
  function refreshShellText(){
   aside.setAttribute('aria-label',t('navigation.mainMenu'));
   nav.setAttribute('aria-label',t('navigation.appPages'));
-  const groupKeyByLabel={overview:'navigation.operationsGroup',content:'navigation.aiOperationsGroup',integrations:'navigation.systemGroup'};
+  const groupKeyByLabel={overview:'navigation.homeGroup','command-center':'navigation.aiOperationsGroup',crm:'navigation.businessGroup',content:'navigation.growthGroup',integrations:'navigation.platformGroup',audit:'navigation.accountGroup'};
   for(const [key,el] of groupSpans)el.textContent=t(groupKeyByLabel[key]);
   // Integration Builder discoverability — `data-route-key` lets a SECOND nav link point at the same real page
   // (`href`, used for actual navigation/icon lookup) while showing its own distinct label

@@ -174,10 +174,16 @@ body.signed-out .fab-shortcut{display:none}
 .report-trend-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
 .report-trend-card{border:1px solid var(--border);border-radius:var(--radius-sm);padding:16px;min-width:0}
 .report-trend-card h4{margin:0 0 12px;font-size:13px;color:var(--ink-muted);font-weight:600}
-.cmdc-layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:24px;margin-bottom:24px}
-.cmdc-chat{display:flex;flex-direction:column;min-height:520px;padding:20px}
+.cmdc-layout{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,1fr);gap:24px;align-items:start;margin-bottom:24px}
+.cmdc-main{display:flex;flex-direction:column;gap:24px;min-width:0}
+.cmdc-chat{display:flex;flex-direction:column;min-height:560px;padding:20px}
 .cmdc-chat-head{display:flex;gap:8px;align-items:center;margin-bottom:12px}
 .cmdc-chat-head select{margin:0;flex:1}
+/* Frost visual signature (spec item 15) — a quiet, premium "intelligence is present" cue next
+   to the chat controls: a soft pulsing accent dot, not a mascot or sci-fi animation. Respects
+   prefers-reduced-motion via base.css's global override. */
+.cmdc-frost-signature{width:10px;height:10px;border-radius:50%;background:var(--accent);flex-shrink:0;box-shadow:0 0 0 4px var(--accent-soft);animation:frost-pulse 2.4s ease-in-out infinite}
+@keyframes frost-pulse{0%,100%{box-shadow:0 0 0 4px var(--accent-soft)}50%{box-shadow:0 0 0 7px var(--accent-soft)}}
 .cmdc-messages{flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:4px;min-height:320px;max-height:520px}
 .cmdc-message{border-radius:var(--radius-sm);padding:12px 14px;max-width:85%}
 .cmdc-message p{margin:0}

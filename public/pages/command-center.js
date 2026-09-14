@@ -27,34 +27,33 @@ export function installCommandCenter() {
  root.innerHTML=`
   <div id="cmdc-health" class="kpi-grid"></div>
   <div class="cmdc-layout">
-   <section class="cmdc-chat panel">
-    <div class="cmdc-chat-head">
-     <select id="cmdc-conversation-select" aria-label="${escape(t('commandCenter.conversationSelectLabel'))}"></select>
-     <button type="button" id="cmdc-new-conversation" class="secondary">${escape(t('commandCenter.newConversation'))}</button>
-     <button type="button" id="cmdc-run-executive-review" class="secondary">${escape(t('commandCenter.runExecutiveReview'))}</button>
-    </div>
-    <div class="cmdc-search"><input id="cmdc-search-input" type="search" placeholder="${escape(t('commandCenter.searchPlaceholder'))}"><div id="cmdc-search-results"></div></div>
-    <div id="cmdc-quick-commands" class="cmdc-templates"></div>
-    <div id="cmdc-messages" class="cmdc-messages"></div>
-    <div id="cmdc-ai-notice" class="notice" hidden></div>
-    <form id="cmdc-chat-form">
-     <textarea name="text" required maxlength="4000" placeholder="${escape(t('commandCenter.chatPlaceholder'))}"></textarea>
-     <div class="cmdc-attach-row">
-      <input type="file" id="cmdc-attach-input" accept=".pdf,.csv,.xlsx,.docx,.txt,.png,.jpg,.jpeg">
-      <span id="cmdc-attach-status"></span>
+   <div class="cmdc-main">
+    <section class="cmdc-chat panel">
+     <div class="cmdc-chat-head">
+      <span class="cmdc-frost-signature" aria-hidden="true"></span>
+      <select id="cmdc-conversation-select" aria-label="${escape(t('commandCenter.conversationSelectLabel'))}"></select>
+      <button type="button" id="cmdc-new-conversation" class="secondary">${escape(t('commandCenter.newConversation'))}</button>
+      <button type="button" id="cmdc-run-executive-review" class="secondary">${escape(t('commandCenter.runExecutiveReview'))}</button>
      </div>
-     <button type="submit">${escape(t('commandCenter.send'))}</button>
-    </form>
-    <div id="cmdc-templates" class="cmdc-templates"></div>
-   </section>
+     <div class="cmdc-search"><input id="cmdc-search-input" type="search" placeholder="${escape(t('commandCenter.searchPlaceholder'))}"><div id="cmdc-search-results"></div></div>
+     <div id="cmdc-quick-commands" class="cmdc-templates"></div>
+     <div id="cmdc-messages" class="cmdc-messages"></div>
+     <div id="cmdc-ai-notice" class="notice" hidden></div>
+     <form id="cmdc-chat-form">
+      <textarea name="text" required maxlength="4000" placeholder="${escape(t('commandCenter.chatPlaceholder'))}"></textarea>
+      <div class="cmdc-attach-row">
+       <input type="file" id="cmdc-attach-input" accept=".pdf,.csv,.xlsx,.docx,.txt,.png,.jpg,.jpeg">
+       <span id="cmdc-attach-status"></span>
+      </div>
+      <button type="submit">${escape(t('commandCenter.send'))}</button>
+     </form>
+     <div id="cmdc-templates" class="cmdc-templates"></div>
+    </section>
+    <section class="report-section" id="cmdc-data-context"><div class="report-section-head"><h3>${escape(t('commandCenter.dataContext'))}</h3></div></section>
+   </div>
    <aside class="cmdc-side">
     <section class="report-section"><div class="report-section-head"><h3>${escape(t('commandCenter.suggestions'))}</h3></div><div id="cmdc-suggestions"></div></section>
     <section class="report-section"><div class="report-section-head"><h3>${escape(t('commandCenter.liveOperations'))}</h3></div><div id="cmdc-operations"></div></section>
-   </aside>
-  </div>
-  <div class="cmdc-layout">
-   <section class="report-section" id="cmdc-data-context"><div class="report-section-head"><h3>${escape(t('commandCenter.dataContext'))}</h3></div></section>
-   <aside class="cmdc-side">
     <section class="report-section"><div class="report-section-head"><h3>${escape(t('commandCenter.systemMap'))}</h3><span>${escape(t('commandCenter.systemMapSubtitle'))}</span></div><div id="cmdc-system-map"></div></section>
     <section class="report-section"><div class="report-section-head"><h3>${escape(t('commandCenter.workflowsWidget'))}</h3></div><div id="cmdc-workflows-widget"></div></section>
     <section class="report-section"><div class="report-section-head"><h3>${escape(t('commandCenter.aiUsage'))}</h3></div><div id="cmdc-ai-usage"></div></section>
