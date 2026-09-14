@@ -20,5 +20,11 @@ export const payloadSchemas={
  // generator. `answer` is the only text shown as the chat reply; `data_sources` names which
  // real reads backed it (freshness/traceability, spec item 48); `follow_up_suggestions` are
  // optional quick-reply chips, never a promise of an action not actually taken.
- frost_commander:object({answer:string,data_sources:strings,follow_up_suggestions:strings})
+ frost_commander:object({answer:string,data_sources:strings,follow_up_suggestions:strings}),
+ // Frost Command Center Phase 7C — Platform Command Center Chat (spec Part 37-42). Deliberately
+ // NOT added to `agents` in domain.js: this id is never a tenant-facing agent (no tenant_agent_
+ // config row, no Control Center listing, no per-tenant tool assignment) — it only exists here
+ // so platform-frost.js can reuse the SAME validateAgentDecision/envelope schema every real
+ // agent already uses, without a second validation engine.
+ platform_frost:object({answer:string,data_sources:strings})
 };

@@ -26,6 +26,7 @@ import {sweepFollowupGaps} from './scheduler.js';
 import {computeCompanyHealth} from './command-health.js';
 import {recordConfigurationChange} from './configuration-history.js';
 import {listJobs,cancelJobs} from '../planning.js';
+import {createWorkflowDraft,listWorkflows,activateWorkflow,pauseWorkflow,startWorkflowRun,listWorkflowRuns,getRunWithSteps} from './workflow-engine.js';
 
 export function integrationStatus(env,db=null) {
  // A Meta/WhatsApp OAuth connection (see runtime/meta-oauth.js) counts as configured too —
@@ -192,8 +193,13 @@ const TOOL_METADATA={
  // goes through the exact same `agentRuntime.run()` as every other run — the target agent's OWN
  // permission level/approval gates are never bypassed (Frost cannot elevate another agent,
  // spec item 52), only invoked.
+ // Phase 7C (spec item 81 — MAX_AGENT_DELEGATION_DEPTH): `allowedAgents` restricts this tool to
+ // frost_commander ONLY — none of the four delegate targets ever receive this tool themselves
+ // (they have no `delegate_to_agent` in their own tool list), so a delegation chain is
+ // STRUCTURALLY capped at depth 1. This is stronger than a numeric counter: recursive
+ // delegation is not just discouraged, it is architecturally impossible.
  delegate_to_agent:{description:'Delegate one objective to an existing specialist agent (performance, intelligence, leads, or strategy) and get back its real, structured result. Call this multiple times in the SAME reply when the analyses are independent (they will run in parallel); call it again in a LATER reply only when one result must inform the next request (sequential dependency).',
-  inputSchema:obj({agent:{type:'string',enum:['performance','intelligence','leads','strategy']},objective:string},['agent','objective']),minLevel:'L0',
+  inputSchema:obj({agent:{type:'string',enum:['performance','intelligence','leads','strategy']},objective:string},['agent','objective']),minLevel:'L0',allowedAgents:['frost_commander'],
   category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.delegate.agent'},
 
  // --- Frost Command Center Phase 7B — honest integration with the automation that actually
@@ -216,7 +222,27 @@ const TOOL_METADATA={
  // Follow-up agent) — this just shows the real target count/channel/connection BEFORE anyone
  // decides whether to run that.
  prepare_bulk_followup_plan:{description:'Preview (never sends) a bulk follow-up plan: real target count, channel, and connection for the tenant\'s overdue follow-ups.',inputSchema:obj({}),minLevel:'L0',
-  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.bulk.preview'}
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.bulk.preview'},
+
+ // --- Frost Command Center Phase 7C — Native Workflow Engine chat integration (spec Part
+ // 26-35). Frost never activates or runs a workflow silently: create_workflow_draft is L0/
+ // no-approval because it only ever produces an unpublished DRAFT (spec item 27); activating
+ // or manually running an already-created workflow are real automations and go through the
+ // exact same approval gate every other automation-trigger tool already uses.
+ create_workflow_draft:{description:'Create a new Workflow as a DRAFT from a structured plan (trigger + steps) — never activates it. The human must review and explicitly activate it afterward.',
+  inputSchema:obj({nameAr:string,description:string,trigger:{type:'object'},steps:{type:'array',items:{type:'object'}}},['nameAr','trigger','steps']),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.workflow.draft'},
+ list_workflows:{description:'List real workflows for this tenant with their status (DRAFT/ACTIVE/PAUSED/ARCHIVED).',inputSchema:obj({status:string},[]),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.workflow.read'},
+ explain_workflow_failure:{description:'Inspect a workflow\'s most recent run (or a specific run id) and explain exactly which step failed, the real error, and which agent/tool/connection was involved.',
+  inputSchema:obj({workflowId:string,runId:string},[]),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.workflow.read'},
+ activate_workflow:{description:'Activate a DRAFT workflow (after real readiness checks pass). Always requires human approval.',inputSchema:obj({workflowId:string},['workflowId']),minLevel:'L1',requiresApprovalBelowLevel:'L2',
+  category:'Command',riskLevel:'MEDIUM',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.workflow.activate'},
+ run_workflow_now:{description:'Manually trigger an ACTIVE workflow right now. Always requires human approval.',inputSchema:obj({workflowId:string},['workflowId']),minLevel:'L1',requiresApprovalBelowLevel:'L2',
+  category:'Command',riskLevel:'MEDIUM',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.workflow.run'},
+ pause_workflow_now:{description:'Pause an ACTIVE workflow (stops future manual/schedule/event runs; never affects a run already in progress).',inputSchema:obj({workflowId:string},['workflowId']),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.workflow.pause'}
 };
 /** Static metadata only — no store/env/handler required. Used to seed `tool_definitions` at boot (src/runtime/tool-definitions.js) and by anything else that needs the catalog without a live registry instance. */
 export function listToolMetadata() {
@@ -512,6 +538,38 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch,runtimeRef=n
     approvalRequired:true,
     note:connection?null:'لا يوجد اتصال واتساب مهيأ لهذه المنشأة — لا يمكن التنفيذ حتى يتم ربط الاتصال أولًا.'
    };
+  },
+
+  // --- Frost Command Center Phase 7C — Native Workflow Engine chat tools ------------------
+  create_workflow_draft:({nameAr,nameEn,description,trigger,steps},ctx)=>{
+   try{return createWorkflowDraft(db,env,ctx.tenantId,{nameAr,nameEn,description,trigger,steps},ctx.actor);}
+   catch(error){return {status:'ERROR',error:error.message};}
+  },
+  list_workflows:({status}={},ctx)=>listWorkflows(db,ctx.tenantId,{status}).map(w=>({id:w.id,nameAr:w.nameAr,status:w.status})),
+  explain_workflow_failure:({workflowId,runId}={},ctx)=>{
+   let targetRunId=runId;
+   if(!targetRunId && workflowId)targetRunId=listWorkflowRuns(db,ctx.tenantId,{workflowId,limit:1})[0]?.id;
+   if(!targetRunId)return {status:'NO_DATA'};
+   try{
+    const run=getRunWithSteps(db,targetRunId,ctx.tenantId);
+    const failedStep=run.steps.find(s=>s.status==='FAILED');
+    return {runId:run.id,workflowId:run.workflowId,status:run.status,
+     failedStep:failedStep?{stepId:failedStep.stepId,stepType:failedStep.stepType,error:failedStep.error,output:failedStep.output}:null};
+   }catch(error){return {status:'ERROR',error:error.message};}
+  },
+  activate_workflow:({workflowId},ctx)=>{
+   try{return activateWorkflow(db,env,workflowId,ctx.actor,ctx.tenantId);}
+   catch(error){return {status:'ERROR',error:error.message};}
+  },
+  run_workflow_now:async({workflowId},ctx)=>{
+   if(!runtimeRef?.current)return {status:'ERROR',error:'RUNTIME_NOT_READY'};
+   const deps={store,env,fetcher,agentRuntime:runtimeRef.current,toolRegistry:runtimeRef.current.toolRegistry};
+   try{return await startWorkflowRun(deps,workflowId,{triggerType:'MANUAL',tenantId:ctx.tenantId});}
+   catch(error){return {status:'ERROR',error:error.message};}
+  },
+  pause_workflow_now:({workflowId},ctx)=>{
+   try{return pauseWorkflow(db,workflowId,ctx.actor,ctx.tenantId);}
+   catch(error){return {status:'ERROR',error:error.message};}
   }
  };
  const tools=Object.entries(TOOL_METADATA).map(([name,meta])=>({name,...meta,handler:HANDLERS[name]}));

@@ -4,7 +4,7 @@
 // Every number here comes from a real backend read (src/runtime/command-health.js,
 // src/runtime/suggestions.js, src/runtime/context-items.js, /api/command/operations/inbox) —
 // an empty/not-configured state renders as a real empty state, never a placeholder number.
-import {escape,button,badge,empty,metric,drawer,promptDrawer,confirmAction,table,tabs,enhance,icon} from '../components/ui/index.js';
+import {escape,button,badge,empty,metric,drawer,promptDrawer,confirmAction,table,tabs,enhance,icon,toast} from '../components/ui/index.js';
 import {navigate} from '../components/layout/app-shell.js';
 import {t,getLocale} from '../i18n.js';
 import {fmtDateTime} from '../format.js';
@@ -22,7 +22,6 @@ const CONTEXT_TYPES=[
 const OPERATION_ICON={agent_run:'agent',audit:'clock'};
 const INBOX_ICON={crm_lead:'users',crm_followup:'clock',content:'file',escalation:'bell',connection:'plug',webhook:'plug'};
 
-const QUICK_COMMANDS=['companyHealth','crmFollowups','integrationsHealth'];
 export function installCommandCenter() {
  const root=document.querySelector('[data-page="command-center"] #command-center');
  root.innerHTML=`
@@ -55,7 +54,11 @@ export function installCommandCenter() {
   </div>
   <div class="cmdc-layout">
    <section class="report-section" id="cmdc-data-context"><div class="report-section-head"><h3>${escape(t('commandCenter.dataContext'))}</h3></div></section>
-   <section class="report-section"><div class="report-section-head"><h3>${escape(t('commandCenter.systemMap'))}</h3><span>${escape(t('commandCenter.systemMapSubtitle'))}</span></div><div id="cmdc-system-map"></div></section>
+   <aside class="cmdc-side">
+    <section class="report-section"><div class="report-section-head"><h3>${escape(t('commandCenter.systemMap'))}</h3><span>${escape(t('commandCenter.systemMapSubtitle'))}</span></div><div id="cmdc-system-map"></div></section>
+    <section class="report-section"><div class="report-section-head"><h3>${escape(t('commandCenter.workflowsWidget'))}</h3></div><div id="cmdc-workflows-widget"></div></section>
+    <section class="report-section"><div class="report-section-head"><h3>${escape(t('commandCenter.aiUsage'))}</h3></div><div id="cmdc-ai-usage"></div></section>
+   </aside>
   </div>`;
  const panels=['inbox','addContext','companyBrain','runbooks','configHistory','attachments'].map(key=>{const el=document.createElement('div');el.id='cmdc-dc-'+key;return el;});
  $('#cmdc-data-context').append(...panels);
@@ -78,11 +81,14 @@ export function installCommandCenter() {
  $('#cmdc-data-context').addEventListener('submit',onAddContext);
  $('#cmdc-data-context').addEventListener('submit',onCreateRunbook);
  $('#cmdc-search-input').addEventListener('input',debounce(onSearchInput,300));
- renderQuickCommands();
 }
 function debounce(fn,ms){let timer=null;return(...args)=>{clearTimeout(timer);timer=setTimeout(()=>fn(...args),ms);};}
-function renderQuickCommands() {
- $('#cmdc-quick-commands').innerHTML=QUICK_COMMANDS.map(key=>`<button type="button" class="cmdc-chip" data-quick="${key}">${escape(t('commandCenter.quickCommand.'+key))}</button>`).join('');
+// Tenant-aware Quick Commands (spec Part 48-52) — the KEYS come from the server, derived from
+// real tenant signals (connected e-commerce integration, mostly-B2B leads book, or generic);
+// only the localized phrase mapping lives here.
+async function renderQuickCommands() {
+ const {keys}=await api('/api/command/quick-commands');
+ $('#cmdc-quick-commands').innerHTML=keys.map(key=>`<button type="button" class="cmdc-chip" data-quick="${key}">${escape(t('commandCenter.quickCommand.'+key))}</button>`).join('');
  $('#cmdc-quick-commands').querySelectorAll('[data-quick]').forEach(chip=>{
   chip.onclick=()=>{prefillChat(t('commandCenter.quickCommand.'+chip.dataset.quick));$('#cmdc-chat-form').requestSubmit();};
  });
@@ -143,7 +149,10 @@ function messageBubbleHtml(message) {
  // clickApprovalCenter with its own, different dataset shape); reusing it here would make
  // app.js's unrelated global handler also fire for this button with the wrong argument shape.
  const approvalHtml=message.meta?.pendingApprovalId?`<div class="cmdc-approval-pending" data-approval-id="${escape(message.meta.pendingApprovalId)}"><p>${escape(t('commandCenter.approvalRequired'))}</p><button type="button" data-cmdc-decide="APPROVED" class="small">${escape(t('commandCenter.approve'))}</button><button type="button" data-cmdc-decide="REJECTED" class="small secondary">${escape(t('commandCenter.reject'))}</button></div>`:'';
- return `<div class="cmdc-message cmdc-message-${escape(message.role)}"><p>${escape(message.content)}</p>${stepsHtml}${sourcesHtml}${approvalHtml}</div>`;
+ const usage=message.meta?.usage;
+ const usageHtml=usage?`<p class="cmdc-sources"><small>${escape(t('commandCenter.usageLine',{tokens:usage.totalTokens,ms:usage.durationMs||0}))}</small></p>`:'';
+ const exportHtml=message.role==='assistant'&&message.id?`<button type="button" class="small ghost" data-export-message="${escape(message.id)}">${escape(t('commandCenter.exportMarkdown'))}</button>`:'';
+ return `<div class="cmdc-message cmdc-message-${escape(message.role)}"><p>${escape(message.content)}</p>${stepsHtml}${sourcesHtml}${usageHtml}${approvalHtml}${exportHtml}</div>`;
 }
 async function loadConversations() {
  const conversations=await api('/api/command/conversations');
@@ -157,14 +166,50 @@ async function loadConversations() {
  select.value=currentConversationId;
  await renderMessages();
 }
+let messagesCache=[];
 async function renderMessages() {
  if(!currentConversationId)return;
  const messages=await api(`/api/command/conversations/${currentConversationId}/messages`);
+ messagesCache=messages;
  const host=$('#cmdc-messages');
  host.innerHTML=messages.length?messages.map(messageBubbleHtml).join(''):empty(t('commandCenter.noMessagesTitle'),t('commandCenter.noMessagesHint'));
  host.scrollTop=host.scrollHeight;
  enhance(host);
 }
+// Command Result Export (spec Part 46-47) — plain Markdown, built entirely from data already
+// visible in this same conversation (never a second fetch of anything secret) — Command,
+// Summary, Results (steps), Evidence references, Timestamp. A real file download (this is the
+// live app, not a published Artifact, so a blob anchor works normally) — matches the exact
+// same pattern platform.js's Integration Builder already uses for exporting a connector.
+function buildExportMarkdown(message,precedingUserText) {
+ const lines=[
+  `# ${t('commandCenter.exportTitle')}`,'',
+  `**${t('commandCenter.exportCommand')}:** ${precedingUserText||''}`,'',
+  `**${t('commandCenter.exportSummary')}:**`,'',message.content,''
+ ];
+ if(message.meta?.steps?.length) {
+  lines.push(`**${t('commandCenter.exportResults')}:**`,'');
+  for(const step of message.meta.steps)lines.push(`- ${step.label} — ${step.delegatedStatus||step.status}`);
+  lines.push('');
+ }
+ if(message.meta?.dataSources?.length)lines.push(`**${t('commandCenter.exportEvidence')}:** ${message.meta.dataSources.join('، ')}`,'');
+ lines.push(`**${t('commandCenter.exportTimestamp')}:** ${message.createdAt||new Date().toISOString()}`);
+ return lines.join('\n');
+}
+document.addEventListener('click',event=>{
+ const exportButton=event.target.closest('#command-center [data-export-message]');
+ if(!exportButton)return;
+ const messageId=exportButton.dataset.exportMessage;
+ const index=messagesCache.findIndex(m=>m.id===messageId);
+ if(index<0)return;
+ const message=messagesCache[index];
+ const precedingUser=[...messagesCache.slice(0,index)].reverse().find(m=>m.role==='user');
+ const markdown=buildExportMarkdown(message,precedingUser?.content);
+ const blob=new Blob([markdown],{type:'text/markdown'});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');a.href=url;a.download=`frost-command-${messageId.slice(0,8)}.md`;a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
 async function openConversation(id) {
  currentConversationId=id;
  await renderMessages();
@@ -218,13 +263,15 @@ async function onSendMessage(event) {
   const host=$('#cmdc-messages');
   if(host.querySelector('.empty'))host.innerHTML='';
   host.insertAdjacentHTML('beforeend',messageBubbleHtml({role:'user',content:text}));
+  messagesCache.push({role:'user',content:text});
   textarea.value='';
   const result=await api(`/api/command/conversations/${currentConversationId}/messages`,{text,...(attachmentId?{attachmentId}:{})});
+  messagesCache.push(result.assistantMessage);
   host.insertAdjacentHTML('beforeend',messageBubbleHtml(result.assistantMessage));
   host.scrollTop=host.scrollHeight;
   enhance(host);
   pulsePolling();
-  await Promise.all([renderSuggestions(),renderOperations()]);
+  await Promise.all([renderSuggestions(),renderOperations(),renderAiUsage()]);
  } finally {button.disabled=false;textarea.focus();}
 }
 document.addEventListener('click',async event=>{
@@ -257,6 +304,7 @@ async function renderSuggestions() {
     <button type="button" class="small ghost" data-suggestion-action="evidence">${escape(t('commandCenter.why'))}</button>
     <button type="button" class="small ghost" data-suggestion-action="ask">${escape(t('commandCenter.askFrost'))}</button>
     <button type="button" class="small" data-suggestion-action="task">${escape(t('commandCenter.createTask'))}</button>
+    ${s.automatable?`<button type="button" class="small" data-suggestion-action="automate">${escape(t('commandCenter.automate'))}</button>`:''}
     <button type="button" class="small secondary" data-suggestion-action="dismiss">${escape(t('commandCenter.dismiss'))}</button>
    </div>
   </article>`).join(''):empty(t('commandCenter.noSuggestionsTitle'),t('commandCenter.noSuggestionsHint'));
@@ -276,6 +324,14 @@ document.addEventListener('click',async event=>{
  }
  if(action==='ask') {navigate('command-center');prefillChat(card.querySelector('strong').textContent);return;}
  if(action==='task') {await api(`/api/command/suggestions/${id}/create-task`,{});await renderSuggestions();return;}
+ if(action==='automate') {
+  const confirmed=await confirmAction(t('commandCenter.automate'),t('commandCenter.automateConfirm'));
+  if(!confirmed)return;
+  await api(`/api/command/suggestions/${id}/automate`,{});
+  toast(t('commandCenter.automateCreated'),'success');
+  navigate('workflows');
+  return;
+ }
  if(action==='dismiss') {await api(`/api/command/suggestions/${id}/dismiss`,{});await renderSuggestions();}
 });
 
@@ -283,19 +339,45 @@ document.addEventListener('click',async event=>{
 // Live Operations (safe polling — no SSE/WebSocket exists anywhere in this app; paused when
 // the tab/page is hidden, matching spec item 73's "safe polling is acceptable initially")
 // ------------------------------------------------------------------------------------------
+function operationLabel(op) {
+ if(op.kind==='workflow_run')return `${t('commandCenter.opWorkflowPrefix')} ${op.workflowName}`;
+ return op.action||op.triggerType||op.agentId||'';
+}
 async function renderOperations() {
  const {items}=await api('/api/command/operations');
  const host=$('#cmdc-operations');
- host.innerHTML=items.length?`<div class="cmdc-ops-list">${items.map(op=>`<button type="button" class="cmdc-op-row" data-op-kind="${escape(op.kind)}" data-op-id="${escape(op.id)}">${icon(OPERATION_ICON[op.kind]||'clock')}<span class="cmdc-op-label">${escape(op.action||op.triggerType||op.agentId||'')}</span><time>${escape(fmtDateTime(op.at))}</time></button>`).join('')}</div>`:empty(t('commandCenter.noOperationsTitle'));
+ host.innerHTML=items.length?`<div class="cmdc-ops-list">${items.map(op=>`<button type="button" class="cmdc-op-row" data-op-kind="${escape(op.kind)}" data-op-id="${escape(op.id)}">${icon(OPERATION_ICON[op.kind]||'clock')}<span class="cmdc-op-label">${escape(operationLabel(op))}</span>${badge(op.status,op.status==='COMPLETED'?'CONNECTED':op.status==='FAILED'?'ERROR':'PENDING')}<time>${escape(fmtDateTime(op.at))}</time></button>`).join('')}</div>`:empty(t('commandCenter.noOperationsTitle'));
 }
 document.addEventListener('click',async event=>{
  const row=event.target.closest('#command-center .cmdc-op-row');
- if(!row||row.dataset.opKind!=='agent_run')return;
- const run=await api(`/api/agents/runs/${row.dataset.opId}`);
- const node=document.createElement('div');
- node.innerHTML=`<p>${escape(t('commandCenter.opStatusLabel'))} ${escape(run.status)}</p>
-  <div class="cmdc-ops-list">${(run.toolCalls||[]).map(tc=>`<div class="cmdc-op-row"><span>${escape(tc.tool)}</span>${badge(tc.status,tc.status==='OK'?'CONNECTED':tc.status==='WAITING_APPROVAL'?'PENDING':'ERROR')}</div>`).join('')||empty(t('commandCenter.noStepsTitle'))}</div>`;
- drawer(t('commandCenter.operationDetailTitle'),node,{restore:true});
+ if(!row)return;
+ if(row.dataset.opKind==='agent_run') {
+  const run=await api(`/api/agents/runs/${row.dataset.opId}`);
+  const node=document.createElement('div');
+  node.innerHTML=`<p>${escape(t('commandCenter.opStatusLabel'))} ${escape(run.status)}</p>
+   <div class="cmdc-ops-list">${(run.toolCalls||[]).map(tc=>`<div class="cmdc-op-row"><span>${escape(tc.tool)}</span>${badge(tc.status,tc.status==='OK'?'CONNECTED':tc.status==='WAITING_APPROVAL'?'PENDING':'ERROR')}</div>`).join('')||empty(t('commandCenter.noStepsTitle'))}</div>`;
+  drawer(t('commandCenter.operationDetailTitle'),node,{restore:true});
+  return;
+ }
+ if(row.dataset.opKind==='workflow_run') {
+  const run=await api(`/api/workflow-runs/${row.dataset.opId}`);
+  const node=document.createElement('div');
+  node.innerHTML=`<p>${escape(t('commandCenter.opStatusLabel'))} ${escape(run.status)}</p>
+   <div class="cmdc-ops-list">${(run.steps||[]).map(s=>`<div class="cmdc-op-row"><span>${escape(s.stepType)} (${escape(s.stepId)})</span>${badge(s.status,s.status==='COMPLETED'?'CONNECTED':s.status==='FAILED'?'ERROR':'PENDING')}</div>`).join('')||empty(t('commandCenter.noStepsTitle'))}</div>
+   <div class="report-actions" id="cmdc-wf-run-actions"></div>`;
+  const dialog=drawer(t('commandCenter.operationDetailTitle'),node,{restore:true});
+  if(['PENDING','RUNNING','WAITING','WAITING_APPROVAL','CANCEL_REQUESTED'].includes(run.status)) {
+   const cancelButton=document.createElement('button');cancelButton.type='button';cancelButton.className='button danger';cancelButton.textContent=t('commandCenter.cancelRun');
+   cancelButton.onclick=async()=>{
+    const confirmed=await confirmAction(t('commandCenter.cancelRun'),t('commandCenter.cancelRunExplain'));
+    if(!confirmed)return;
+    await api(`/api/workflow-runs/${run.id}/cancel`,{});
+    dialog.close();
+    await renderOperations();
+   };
+   node.querySelector('#cmdc-wf-run-actions').append(cancelButton);
+  }
+ }
 });
 // Smart polling (spec Part 30): fast (3s) for a short burst right after the user sends a
 // command — this is exactly the window a delegated multi-agent run's child steps are actually
@@ -451,6 +533,44 @@ async function renderSystemMap() {
 }
 
 // ------------------------------------------------------------------------------------------
+// Workflows widget (spec Part 36) — real counts only, links to the full Workflows/Automation
+// page rather than rebuilding it here (same "link, don't duplicate" rule as System Map).
+// ------------------------------------------------------------------------------------------
+async function renderWorkflowsWidget() {
+ const summary=await api('/api/command/workflows-summary');
+ const host=$('#cmdc-workflows-widget');
+ host.innerHTML=`<div class="kpi-grid">
+   ${metric(t('commandCenter.wfActive'),summary.active,'','clock')}
+   ${metric(t('commandCenter.wfRunning'),summary.running,'','clock')}
+   ${metric(t('commandCenter.wfWaitingApproval'),summary.waitingApproval,'','bell')}
+   ${metric(t('commandCenter.wfFailedRecent'),summary.failedRecent,'','bell')}
+   ${metric(t('commandCenter.wfScheduledToday'),summary.scheduledToday,'','clock')}
+  </div>
+  <button type="button" class="secondary" id="cmdc-open-workflows">${escape(t('commandCenter.openWorkflows'))}</button>`;
+ host.querySelector('#cmdc-open-workflows').onclick=()=>navigate('workflows');
+}
+
+// ------------------------------------------------------------------------------------------
+// AI Usage (spec Part 43-45) — real token counts already recorded on every agent_runs row;
+// no monetary figure shown unless a real pricing table has been filled in (llmProvider.js).
+// ------------------------------------------------------------------------------------------
+let aiUsagePeriod='today';
+async function renderAiUsage() {
+ const summary=await api('/api/command/ai-usage?period='+aiUsagePeriod);
+ const host=$('#cmdc-ai-usage');
+ const periodButtons=['today','7d','30d'].map(p=>`<button type="button" class="small ${p===aiUsagePeriod?'':'ghost'}" data-usage-period="${p}">${escape(t('commandCenter.usagePeriod.'+p))}</button>`).join('');
+ const byAgentRows=Object.entries(summary.byAgent).map(([agentId,a])=>`<div class="cmdc-op-row"><span>${escape(agentId)}</span><span class="cmdc-muted">${a.calls} · ${a.tokensInput+a.tokensOutput} tokens</span></div>`).join('');
+ host.innerHTML=`<div class="row">${periodButtons}</div>
+  <div class="kpi-grid">
+   ${metric(t('commandCenter.usageCalls'),summary.totals.calls,'','agent')}
+   ${metric(t('commandCenter.usageTokens'),summary.totals.tokensInput+summary.totals.tokensOutput,'','file')}
+  </div>
+  ${summary.totals.hasCostData?`<p class="kpi-context">${escape(t('commandCenter.usageCost'))} ${summary.totals.estimatedCost.toFixed(4)}</p>`:''}
+  ${byAgentRows||empty(t('commandCenter.noUsage'))}`;
+ host.querySelectorAll('[data-usage-period]').forEach(btn=>{btn.onclick=()=>{aiUsagePeriod=btn.dataset.usagePeriod;renderAiUsage();};});
+}
+
+// ------------------------------------------------------------------------------------------
 export async function renderCommandCenter({api:client}) {
  apiClient=client;
  const generation=++renderGeneration;
@@ -460,7 +580,7 @@ export async function renderCommandCenter({api:client}) {
   const health=await api('/api/command/health');
   if(staleGuard(generation))return;
   renderHealthFrom(health);
-  await Promise.all([loadConversations(),renderSuggestions(),renderOperations(),renderInbox(),renderCompanyBrain(),renderSystemMap(),renderRunbooksList(),renderConfigHistoryList(),renderAttachmentsList()]);
+  await Promise.all([loadConversations(),renderSuggestions(),renderOperations(),renderInbox(),renderCompanyBrain(),renderSystemMap(),renderWorkflowsWidget(),renderAiUsage(),renderRunbooksList(),renderConfigHistoryList(),renderAttachmentsList(),renderQuickCommands()]);
   if(staleGuard(generation))return;
   startPolling();
  } catch(error) {

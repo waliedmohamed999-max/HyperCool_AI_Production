@@ -108,7 +108,13 @@ const STEP_LABELS={
  list_scheduled_content_jobs:'قراءة الأعمال المجدولة للمحتوى',
  cancel_scheduled_content_job:'إيقاف عمل مجدول للمحتوى',
  explain_followup_status:'قراءة سبب حالة متابعة عميل',
- prepare_bulk_followup_plan:'تجهيز معاينة متابعة جماعية (بدون إرسال)'
+ prepare_bulk_followup_plan:'تجهيز معاينة متابعة جماعية (بدون إرسال)',
+ create_workflow_draft:'إنشاء مسودة Workflow (بدون تفعيل)',
+ list_workflows:'قراءة قائمة الـWorkflows',
+ explain_workflow_failure:'تحليل سبب فشل تشغيلة Workflow',
+ activate_workflow:'تفعيل Workflow',
+ run_workflow_now:'تشغيل Workflow الآن',
+ pause_workflow_now:'إيقاف Workflow مؤقتًا'
 };
 const DELEGATE_AGENT_LABEL_AR={performance:'وكيل الأداء',intelligence:'وكيل رصد السوق',leads:'وكيل العملاء المحتملين',strategy:'وكيل استراتيجية المحتوى'};
 // Phase 7B — Multi-Agent UI (spec Part 9): a `delegate_to_agent` step is labeled with the REAL
@@ -159,7 +165,11 @@ export async function sendCommandMessage({store,agentRuntime,env,tenantId,user,c
  });
  const steps=stepsFromToolCalls(run.toolCalls||[]);
  const pendingApproval=(run.toolCalls||[]).find(tc=>tc.status==='WAITING_APPROVAL');
- let content,meta={steps,runId:run.id};
+ // AI Usage (spec Part 43) — `run` is getRun()'s own raw row spread, so tokens_input/output/
+ // provider/model/latency_ms are already real columns finishRun() wrote; no second query.
+ const usage=run.tokens_input!=null?{provider:run.provider,model:run.model,tokensInput:run.tokens_input,tokensOutput:run.tokens_output,
+  totalTokens:(run.tokens_input||0)+(run.tokens_output||0),estimatedCost:run.estimated_cost,durationMs:run.latency_ms}:null;
+ let content,meta={steps,runId:run.id,...(usage?{usage}:{})};
  if(run.status==='FAILED'||run.status==='CANCELLED') {
   content=honestFailureMessage(run);
  } else {

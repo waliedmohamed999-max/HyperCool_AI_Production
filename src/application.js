@@ -57,17 +57,21 @@ import {installReporting,buildExecutiveReport,saveWeeklyReport,listWeeklyReports
 import {buildReportWorkbook,buildReportPdfBuffer} from './reportExport.js';
 import {installRegistry,seedRegistry,listAgents as listRegistryAgents,getAgent,setEnabled,setModelConfig} from './runtime/registry.js';
 import {installRuntimeTables,createAgentRuntime,listRuns,getRun,listToolCalls,listChildRuns} from './runtime/runtime.js';
-import {installEvents,createEventBus} from './runtime/events.js';
+import {installEvents,createEventBus,EVENT_TYPES} from './runtime/events.js';
 import {installApprovals,listApprovals,decideApproval,createApproval} from './runtime/approvals.js';
 import {installEscalations,listEscalations,resolveEscalation} from './runtime/escalations.js';
 import {installContextItems,createContextItem,listContextItems,updateContextItem,archiveContextItem,detectContextConflicts,withFreshness} from './runtime/context-items.js';
-import {installSuggestions,syncSuggestions,listSuggestions,acceptSuggestion,dismissSuggestion,createTaskFromSuggestion} from './runtime/suggestions.js';
+import {installSuggestions,syncSuggestions,listSuggestions,acceptSuggestion,dismissSuggestion,createTaskFromSuggestion,suggestionWorkflowTemplate} from './runtime/suggestions.js';
 import {installCommandChat,createConversation,listConversations,renameConversation,archiveConversation,listMessages,sendCommandMessage} from './runtime/command-chat.js';
-import {computeCompanyHealth} from './runtime/command-health.js';
+import {computeCompanyHealth,deriveQuickCommandKeys} from './runtime/command-health.js';
 import {installAttachments,createAttachment,getAttachment,listAttachments,pinAttachmentToBrain,readAttachmentTextForChat,ALLOWED_TYPES,MAX_ATTACHMENT_BYTES} from './runtime/attachments.js';
 import {installConfigurationHistory,listConfigurationHistory,undoConfigurationChange} from './runtime/configuration-history.js';
 import {installRunbooks,listRunbooks,createRunbook,archiveRunbook,getRunbook} from './runtime/runbooks.js';
 import {searchCommands} from './runtime/command-search.js';
+import {installWorkflowEngine,installWorkflowEventTriggers,listWorkflows,getWorkflow,getWorkflowWithVersion,createWorkflowDraft,updateWorkflowDraft,activateWorkflow,pauseWorkflow,resumeWorkflow,archiveWorkflow,computeWorkflowReadiness,startWorkflowRun,requestCancelWorkflowRun,resumeWorkflowApproval,listWorkflowRuns,getRunWithSteps,advanceWorkflowRun,WORKFLOW_STEP_TYPES,WORKFLOW_TRIGGER_TYPES,summarizeWorkflowsForCommandCenter} from './runtime/workflow-engine.js';
+import {CONDITION_OPERATORS} from './runtime/workflow-conditions.js';
+import {installPlatformFrostChat,listPlatformFrostMessages,sendPlatformFrostMessage} from './runtime/platform-frost.js';
+import {getAiUsageSummary} from './runtime/ai-usage.js';
 import {installOrchestrator,buildDailyBrief} from './runtime/orchestrator.js';
 import {integrationStatus,AGENT_INTEGRATIONS} from './runtime/tools.js';
 import {providerStatus} from './runtime/llmProvider.js';
@@ -215,6 +219,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installAttachments(store.db);
   installConfigurationHistory(store.db);
   installRunbooks(store.db);
+  installWorkflowEngine(store.db);
+  installPlatformFrostChat(store.db);
   installGate(store.db);
   installIntegrationDefinitions(store.db); // Multi-Tenant Phase 4A — global integration catalog, see docs/INTEGRATION_CONNECTION_ARCHITECTURE.md
   installIntegrationConnections(store.db);
@@ -240,10 +246,16 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   const eventBus=createEventBus(store.db);
   const agentRuntime=createAgentRuntime({store,env,fetcher,eventBus});
   const {routes:orchestratorRoutes}=installOrchestrator(eventBus,agentRuntime,store.db);
+  // Phase 7C — Native Workflow Engine. `workflowDeps` is passed to every workflow-engine.js
+  // entry point instead of each one re-deriving store/env/fetcher/agentRuntime/toolRegistry —
+  // the SAME real agentRuntime (and its SAME real toolRegistry) every agent run already uses,
+  // never a second one built for workflows.
+  const workflowDeps={store,env,fetcher,agentRuntime,toolRegistry:agentRuntime.toolRegistry};
+  installWorkflowEventTriggers(eventBus,workflowDeps);
   function reportExtras(tenantId=null) {
     return {agents:listRegistryAgents(store.db),agentRuns:listRuns(store.db,{limit:2000},tenantId),escalations:listEscalations(store.db,{},tenantId),approvals:listApprovals(store.db,{},tenantId),env};
   }
-  const scheduler=createScheduler({store,agentRuntime,env,getExtras:reportExtras,fetcher,eventBus});
+  const scheduler=createScheduler({store,agentRuntime,env,getExtras:reportExtras,fetcher,eventBus,workflowDeps});
   const generate=createGenerator(store,env,fetcher);
   const checkCompliance=createComplianceChecker(store,env,fetcher);
   let syncing=false;
@@ -712,6 +724,19 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(url.pathname==='/api/platform/tenants/unhealthy-integrations' && req.method==='GET') {
         requirePlatformAdmin(env,session);
         return send(200,listTenantsWithUnhealthyIntegrations(store.db,env));
+      }
+      // Phase 7C — Platform Command Center Chat (spec Part 37-42). Tenant-independent by
+      // construction (same rationale as every Platform Admin route in this file): gated
+      // exclusively by requirePlatformAdmin, never a tenant role however senior.
+      if(url.pathname==='/api/platform/frost/messages') {
+        requirePlatformAdmin(env,session);
+        if(req.method==='GET')return send(200,listPlatformFrostMessages(store.db,{}));
+        if(req.method==='POST') {
+          checkLlmRateLimit(session.user.id);
+          const input=await body(req);
+          const result=await sendPlatformFrostMessage({db:store.db,env,fetcher,schedulerRunning:scheduler.running(),actor:session.user,text:input.text});
+          return send(201,result);
+        }
       }
       if(url.pathname==='/api/platform/tenants' && req.method==='GET') {
         requirePlatformAdmin(env,session);
@@ -1334,6 +1359,18 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         // available (never silently re-targets a different one — see
         // runtime.js's resumeToolApproval) and re-invokes the SAME tool handler that would
         // have run immediately at a higher permission level — no second execution path.
+        // Phase 7C — a `agent_tool_send` approval raised by a Workflow TOOL step (spec Part 15)
+        // shares the exact same action_type as a normal agent tool call (no new approval type
+        // needed for it) — distinguished only by whether its `run_id` is a real
+        // workflow_step_runs id, then routed through resumeWorkflowApproval so the workflow
+        // actually advances afterward (a bare agentRuntime.resumeToolApproval call would
+        // execute the write but leave the run stuck WAITING_APPROVAL forever).
+        const isWorkflowToolApproval=decided.action_type==='agent_tool_send' && !!store.db.prepare('SELECT 1 FROM workflow_step_runs WHERE id=?').get(decided.run_id);
+        if(decided.action_type==='workflow_step_approval'||isWorkflowToolApproval) {
+          const resumed=await resumeWorkflowApproval(workflowDeps,decided);
+          recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKFLOW_APPROVAL_DECIDED',itemId:decided.id,detail:{decision:decided.status,workflowRunId:resumed.id},actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+          return send(200,{...decided,workflowRun:resumed});
+        }
         if(decided.status==='APPROVED' && decided.action_type==='agent_tool_send') {
           const toolResult=await agentRuntime.resumeToolApproval(decided);
           recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_TOOL_APPROVAL_EXECUTED',itemId:decided.id,toolSlug:decided.tool_slug,resultStatus:toolResult?.status||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
@@ -1381,6 +1418,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       if(req.method==='GET' && url.pathname==='/api/command/health')return send(200,computeCompanyHealth(store,session.tenantId));
+      if(req.method==='GET' && url.pathname==='/api/command/quick-commands')return send(200,{keys:deriveQuickCommandKeys(store,session.tenantId)});
       // Data Inbox (spec item 14) — a real, merged, tenant-scoped feed across every existing
       // data source already found in this codebase (CRM, Content, Tasks/Escalations,
       // Integrations, Webhooks) — no new table, no fabricated rows, never the raw webhook
@@ -1401,8 +1439,16 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(req.method==='GET' && url.pathname==='/api/command/operations') {
         const runs=listRuns(store.db,{limit:40},session.tenantId).map(r=>({kind:'agent_run',id:r.id,agentId:r.agent_id,triggerType:r.trigger_type,status:r.status,at:r.started_at,finishedAt:r.finished_at,latencyMs:r.latency_ms,actorName:r.actor_name}));
+        // Phase 7C (spec Part 68) — Workflow runs surfaced in the SAME Live Operations feed,
+        // never a separate timeline: Workflow/Run/Status/Duration, with the real workflow name
+        // resolved from workflow_definitions (no second name-lookup table).
+        const workflowRuns=listWorkflowRuns(store.db,session.tenantId,{limit:20}).map(r=>{
+          const workflow=store.db.prepare('SELECT name_ar FROM workflow_definitions WHERE id=?').get(r.workflowId);
+          return {kind:'workflow_run',id:r.id,workflowId:r.workflowId,workflowName:workflow?.name_ar||r.workflowId,triggerType:r.triggerType,status:r.status,at:r.startedAt,finishedAt:r.finishedAt,
+           cancellable:['PENDING','RUNNING','WAITING','WAITING_APPROVAL','CANCEL_REQUESTED'].includes(r.status)};
+        });
         const auditEntries=listAuditLog(store.db,{tenantId:session.tenantId,limit:40}).map(a=>({kind:'audit',id:a.id,action:a.action,at:a.at,actorName:a.actorName||null}));
-        const items=[...runs,...auditEntries].sort((a,b)=>(b.at||'').localeCompare(a.at||'')).slice(0,60);
+        const items=[...runs,...workflowRuns,...auditEntries].sort((a,b)=>(b.at||'').localeCompare(a.at||'')).slice(0,60);
         return send(200,{items});
       }
       if(url.pathname==='/api/command/context') {
@@ -1431,6 +1477,14 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && suggestionDismiss) {authorize(session,['owner','operator']);return send(200,dismissSuggestion(store.db,suggestionDismiss[1],session.user,session.tenantId));}
       const suggestionTask=url.pathname.match(/^\/api\/command\/suggestions\/([\w-]+)\/create-task$/);
       if(req.method==='POST' && suggestionTask) {authorize(session,['owner','operator']);return send(201,createTaskFromSuggestion(store.db,suggestionTask[1],session.user,session.tenantId));}
+      const suggestionAutomate=url.pathname.match(/^\/api\/command\/suggestions\/([\w-]+)\/automate$/);
+      if(req.method==='POST' && suggestionAutomate) {
+        authorize(session,['owner','operator']);
+        const suggestion=listSuggestions(store.db,session.tenantId).find(s=>s.id===suggestionAutomate[1]);
+        if(!suggestion)fail(404,'الاقتراح غير موجود');
+        const template=suggestionWorkflowTemplate(suggestion);
+        return send(201,createWorkflowDraft(store.db,env,session.tenantId,template,session.user));
+      }
       if(req.method==='GET' && url.pathname==='/api/command/system-map')return send(200,buildAgentConnectionMap(store.db,env,session.tenantId,{}));
 
       // -----------------------------------------------------------------------------------
@@ -1487,6 +1541,61 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           return send(201,createAttachment(store.db,env,input,session.user,session.tenantId));
         }
       }
+      // -----------------------------------------------------------------------------------
+      // Frost Command Center Phase 7C — Native Workflow Engine HTTP surface. Every write
+      // route below delegates straight to workflow-engine.js's own real validation/tenant
+      // scoping; this file adds only session/role gating, matching every other route here.
+      // -----------------------------------------------------------------------------------
+      if(url.pathname==='/api/workflows/meta' && req.method==='GET')
+        return send(200,{stepTypes:WORKFLOW_STEP_TYPES,triggerTypes:WORKFLOW_TRIGGER_TYPES,conditionOperators:CONDITION_OPERATORS,eventTypes:EVENT_TYPES});
+      if(url.pathname==='/api/command/workflows-summary' && req.method==='GET')
+        return send(200,summarizeWorkflowsForCommandCenter(store.db,session.tenantId));
+      if(url.pathname==='/api/command/ai-usage' && req.method==='GET')
+        return send(200,getAiUsageSummary(store.db,session.tenantId,{period:url.searchParams.get('period')||'today'}));
+      if(url.pathname==='/api/workflows') {
+        if(req.method==='GET')return send(200,listWorkflows(store.db,session.tenantId,{status:url.searchParams.get('status')||undefined}));
+        if(req.method==='POST') {
+          authorize(session,['owner','operator']);
+          return send(201,createWorkflowDraft(store.db,env,session.tenantId,await body(req),session.user));
+        }
+      }
+      const workflowItem=url.pathname.match(/^\/api\/workflows\/([\w-]+)$/);
+      if(workflowItem) {
+        if(req.method==='GET')return send(200,getWorkflowWithVersion(store.db,workflowItem[1],session.tenantId));
+        if(req.method==='PATCH') {
+          authorize(session,['owner','operator']);
+          return send(200,updateWorkflowDraft(store.db,env,workflowItem[1],await body(req),session.user,session.tenantId));
+        }
+      }
+      const workflowReadiness=url.pathname.match(/^\/api\/workflows\/([\w-]+)\/readiness$/);
+      if(req.method==='GET' && workflowReadiness) {
+        const workflow=getWorkflowWithVersion(store.db,workflowReadiness[1],session.tenantId);
+        if(!workflow.version)return send(200,{ready:false,blockers:[{reason:'لا يوجد إصدار'}]});
+        return send(200,computeWorkflowReadiness(store.db,env,session.tenantId,workflow.version));
+      }
+      const workflowActivate=url.pathname.match(/^\/api\/workflows\/([\w-]+)\/activate$/);
+      if(req.method==='POST' && workflowActivate) {authorize(session,['owner']);return send(200,activateWorkflow(store.db,env,workflowActivate[1],session.user,session.tenantId));}
+      const workflowPause=url.pathname.match(/^\/api\/workflows\/([\w-]+)\/pause$/);
+      if(req.method==='POST' && workflowPause) {authorize(session,['owner']);return send(200,pauseWorkflow(store.db,workflowPause[1],session.user,session.tenantId));}
+      const workflowResume=url.pathname.match(/^\/api\/workflows\/([\w-]+)\/resume$/);
+      if(req.method==='POST' && workflowResume) {authorize(session,['owner']);return send(200,resumeWorkflow(store.db,workflowResume[1],session.user,session.tenantId));}
+      const workflowArchive=url.pathname.match(/^\/api\/workflows\/([\w-]+)\/archive$/);
+      if(req.method==='POST' && workflowArchive) {authorize(session,['owner']);return send(200,archiveWorkflow(store.db,workflowArchive[1],session.user,session.tenantId));}
+      const workflowRun=url.pathname.match(/^\/api\/workflows\/([\w-]+)\/run$/);
+      if(req.method==='POST' && workflowRun) {
+        authorize(session,['owner','operator']);
+        return send(201,await startWorkflowRun(workflowDeps,workflowRun[1],{triggerType:'MANUAL',tenantId:session.tenantId}));
+      }
+      const workflowRunsList=url.pathname.match(/^\/api\/workflows\/([\w-]+)\/runs$/);
+      if(req.method==='GET' && workflowRunsList)return send(200,listWorkflowRuns(store.db,session.tenantId,{workflowId:workflowRunsList[1]}));
+      const workflowRunDetail=url.pathname.match(/^\/api\/workflow-runs\/([\w-]+)$/);
+      if(req.method==='GET' && workflowRunDetail)return send(200,getRunWithSteps(store.db,workflowRunDetail[1],session.tenantId));
+      const workflowRunCancel=url.pathname.match(/^\/api\/workflow-runs\/([\w-]+)\/cancel$/);
+      if(req.method==='POST' && workflowRunCancel) {
+        authorize(session,['owner','operator']);
+        return send(200,requestCancelWorkflowRun(store.db,workflowRunCancel[1],session.user,session.tenantId));
+      }
+
       const attachmentPin=url.pathname.match(/^\/api\/command\/attachments\/([\w-]+)\/pin-to-brain$/);
       if(req.method==='POST' && attachmentPin) {
         authorize(session,['owner','operator']);
@@ -2372,8 +2481,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js','pages/command-center.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js','pages/command-center.js','pages/workflows.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter','workflows'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
       if(req.method==='GET' && files[url.pathname]) {
         const file=files[url.pathname];

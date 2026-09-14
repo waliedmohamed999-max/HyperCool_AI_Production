@@ -15,7 +15,11 @@
   "showUnhealthyTenants": "Which tenants have unhealthy integrations?",
   "noDeadLetter": "No failed webhooks right now.",
   "noUnhealthyTenants": "Every integration is healthy across all tenants right now.",
-  "unhealthyCount": "Unhealthy connections"
+  "unhealthyCount": "Unhealthy connections",
+  "chatTitle": "Ask Frost about platform health",
+  "chatPlaceholder": "e.g. Are there any platform issues?",
+  "chatSend": "Send",
+  "noMessages": "No messages yet"
  },
  "kpi": {
   "totalTenants": "Total Tenants",

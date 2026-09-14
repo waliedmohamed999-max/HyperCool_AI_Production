@@ -31,12 +31,15 @@ export function installSuggestions(db) {
  );
  CREATE INDEX IF NOT EXISTS idx_suggestions_tenant_status ON suggestions(tenant_id,status);`);
 }
+// Derived purely from `type` (spec Part 57-59) — never a stored flag that could drift from
+// suggestionWorkflowTemplate's own real support list.
+const AUTOMATABLE_TYPES=new Set(['high_value_lead_waiting']);
 function hydrate(row) {
  if(!row)return null;
  return {id:row.id,tenantId:row.tenant_id,type:row.type,title:row.title,reason:row.reason,
   evidence:row.evidence_json?JSON.parse(row.evidence_json):null,impact:row.impact,
   recommendedAction:row.recommended_action,priority:row.priority,status:row.status,
-  createdAt:row.created_at,resolvedAt:row.resolved_at};
+  createdAt:row.created_at,resolvedAt:row.resolved_at,automatable:AUTOMATABLE_TYPES.has(row.type)};
 }
 function stableId(tenantId,type,entityId) {
  return createHash('sha256').update(`${tenantId}:${type}:${entityId}`).digest('hex').slice(0,32);
@@ -84,9 +87,31 @@ function computeCurrent(db,tenantId) {
    reason:`فرصة باهتمام مرتفع بقيمة تقديرية ${lead.valueSAR} ر.س في مرحلة ${lead.stage}.`,
    evidence:{leadId:lead.id,name:lead.company||lead.name,valueSAR:lead.valueSAR,stage:lead.stage,city:lead.city||null},
    impact:'تأخر التواصل مع فرصة عالية القيمة قد يعني خسارتها لمنافس.',
+   // Spec Part 57-59 — a real, sensible EVENT-triggered Workflow draft this exact pattern
+   // maps to cleanly (LEAD_HOT is a real, already-emitted event — src/crm.js's
+   // maybeEscalateHotLead): "any high-value hot lead needs manager approval, then a task".
+   // `automatable` itself is derived in hydrate() from `type`, not stored/set here.
    recommendedAction:'تواصل مع العميل أو جهّز عرض سعر بأسرع وقت.',priority:'HIGH'});
  }
  return out;
+}
+/** Spec Part 57-59 — "Automate" on a suggestion produces a real DRAFT Workflow (never
+ * auto-activated) whose trigger/steps are derived from the suggestion's own real type —
+ * never a generic/fake template. Only suggestion types explicitly marked `automatable` above
+ * support this; anything else fails honestly rather than guessing a structure. */
+export function suggestionWorkflowTemplate(suggestion) {
+ if(suggestion.type==='high_value_lead_waiting') {
+  return {
+   nameAr:'موافقة تلقائية لفرص القيمة العالية',
+   description:`أُنشئت من اقتراح: ${suggestion.title}`,
+   trigger:{type:'EVENT',eventType:'LEAD_HOT'},
+   steps:[
+    {id:'approve',type:'APPROVAL',reason:`فرصة عالية القيمة (أعلى من ${HIGH_VALUE_THRESHOLD_SAR} ر.س) تحتاج موافقة المدير قبل المتابعة`,next:['task']},
+    {id:'task',type:'CREATE_TASK',reason:'تواصل مع العميل صاحب الفرصة عالية القيمة بعد الموافقة',priority:'P1',next:[]}
+   ]
+  };
+ }
+ fail(400,'هذا النوع من الاقتراحات لا يدعم التحويل التلقائي إلى Workflow بعد');
 }
 /**
  * Recomputes from real state and UPSERTs by a deterministic id (hash of tenant+type+entity),

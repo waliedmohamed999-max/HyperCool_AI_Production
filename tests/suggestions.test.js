@@ -8,13 +8,14 @@ import {installKnowledge} from '../src/knowledge.js';
 import {installEscalations,listEscalations} from '../src/runtime/escalations.js';
 import {installApprovals} from '../src/runtime/approvals.js';
 import {installAuditLog} from '../src/audit.js';
-import {installSuggestions,syncSuggestions,listSuggestions,acceptSuggestion,dismissSuggestion,createTaskFromSuggestion} from '../src/runtime/suggestions.js';
+import {installSuggestions,syncSuggestions,listSuggestions,acceptSuggestion,dismissSuggestion,createTaskFromSuggestion,suggestionWorkflowTemplate} from '../src/runtime/suggestions.js';
+import {installWorkflowEngine,createWorkflowDraft,validateWorkflowSteps} from '../src/runtime/workflow-engine.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
 function fixture(){
  const store=openStore(':memory:');
  installCRM(store.db);installIntegrationDefinitions(store.db);installIntegrationConnections(store.db);
- installKnowledge(store.db);installEscalations(store.db);installApprovals(store.db);installAuditLog(store.db);installSuggestions(store.db);
+ installKnowledge(store.db);installEscalations(store.db);installApprovals(store.db);installAuditLog(store.db);installSuggestions(store.db);installWorkflowEngine(store.db);
  return store;
 }
 
@@ -81,5 +82,32 @@ test('a high-value hot lead waiting produces a real, evidence-backed HIGH priori
   assert.ok(found,'expected a real high_value_lead_waiting suggestion');
   assert.equal(found.evidence.leadId,lead.id);
   assert.equal(found.priority,'HIGH');
+  assert.equal(found.automatable,true);
+ }finally{store.close();}
+});
+
+test('a high_value_lead_waiting suggestion converts to a real, valid Workflow DRAFT (spec Part 57-59) — never auto-activated',()=>{
+ const store=fixture();
+ try{
+  const lead=createLead(store,{name:'شركة كبيرة',company:'شركة كبيرة القابضة',customerType:'B2B',sourceType:'INBOUND',phone:'+966500000000'},user,'t1');
+  store.db.prepare(`UPDATE crm_leads SET json=json_set(json,'$.temperature','HOT','$.stage','QUOTE_SENT','$.valueSAR',80000) WHERE id=?`).run(lead.id);
+  const suggestion=syncSuggestions(store.db,'t1').find(s=>s.type==='high_value_lead_waiting');
+  const template=suggestionWorkflowTemplate(suggestion);
+  assert.equal(template.trigger.type,'EVENT');
+  assert.equal(template.trigger.eventType,'LEAD_HOT');
+  assert.deepEqual(validateWorkflowSteps(template.steps,{}),[]);
+  const draft=createWorkflowDraft(store.db,{},'t1',template,user);
+  assert.equal(draft.status,'DRAFT');
+ }finally{store.close();}
+});
+
+test('a non-automatable suggestion type refuses conversion honestly, never guessing a structure',()=>{
+ const store=fixture();
+ try{
+  const connection=createConnection(store.db,{integrationDefinitionId:'salla',name:'متجر'},'t1');
+  store.db.prepare("UPDATE integration_connections SET status='ERROR' WHERE id=?").run(connection.id);
+  const suggestion=syncSuggestions(store.db,'t1').find(s=>s.type==='unhealthy_connection');
+  assert.equal(suggestion.automatable,false);
+  assert.throws(()=>suggestionWorkflowTemplate(suggestion),/لا يدعم التحويل/);
  }finally{store.close();}
 });

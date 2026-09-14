@@ -183,6 +183,9 @@ body.signed-out .fab-shortcut{display:none}
 .cmdc-message p{margin:0}
 .cmdc-message-user{align-self:flex-end;background:var(--accent-soft);color:var(--accent-strong)}
 .cmdc-message-assistant{align-self:flex-start;background:var(--surface-2)}
+.pfcc-message-user{align-self:flex-end;background:var(--accent-soft);color:var(--accent-strong)}
+.pfcc-message-assistant{align-self:flex-start;background:var(--surface-2)}
+.pfcc-chat-messages{max-height:220px}
 .cmdc-steps{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .cmdc-step{font-size:11px;padding:3px 8px;border-radius:6px;background:var(--surface);border:1px solid var(--border);color:var(--ink-muted)}
 .cmdc-step[data-status="OK"],.cmdc-step[data-status="COMPLETED"]{border-color:var(--good);color:var(--good)}

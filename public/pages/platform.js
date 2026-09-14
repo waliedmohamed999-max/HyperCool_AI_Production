@@ -189,7 +189,12 @@ function renderPlatformCommandCenter(overview) {
   </div>
   <div class="report-actions" id="pfcc-actions"></div>
   <div id="pfcc-result"></div>
+  <h4>${escape(t('platform.commandCenter.chatTitle'))}</h4>
+  <div id="pfcc-chat-messages" class="cmdc-messages pfcc-chat-messages"></div>
+  <form id="pfcc-chat-form"><textarea name="text" required maxlength="2000" placeholder="${escape(t('platform.commandCenter.chatPlaceholder'))}"></textarea><button type="submit">${escape(t('platform.commandCenter.chatSend'))}</button></form>
  </article>`;
+ renderPlatformFrostMessages();
+ host.querySelector('#pfcc-chat-form').addEventListener('submit',onPlatformFrostSend);
  const deadLetterButton=button(t('platform.commandCenter.showDeadLetter'),{variant:'secondary'});
  deadLetterButton.onclick=async()=>{
   const resultHost=host.querySelector('#pfcc-result');
@@ -211,6 +216,42 @@ function renderPlatformCommandCenter(overview) {
   }catch(error){toastError(error.message);}
  };
  host.querySelector('#pfcc-actions').append(deadLetterButton,unhealthyButton);
+}
+// Deliberately its OWN class names, not command-center.js's `.cmdc-message-*` — those are a
+// real, page-global CSS selector (queried directly by document.querySelectorAll elsewhere),
+// and Platform Frost is a genuinely separate chat (different table, different page) that must
+// never be found by a selector meant for tenant Command Center messages.
+function platformFrostBubble(message) {
+ return `<div class="cmdc-message pfcc-message-${escape(message.role)}"><p>${escape(message.content)}</p></div>`;
+}
+async function renderPlatformFrostMessages() {
+ const host=$('#pfcc-chat-messages');
+ if(!host)return;
+ try {
+  const messages=await apiClient('/api/platform/frost/messages');
+  host.innerHTML=messages.length?messages.map(platformFrostBubble).join(''):empty(t('platform.commandCenter.noMessages'));
+  host.scrollTop=host.scrollHeight;
+ } catch { host.innerHTML=''; }
+}
+async function onPlatformFrostSend(event) {
+ // Same reason as command-center.js's onSendMessage: app.js's global submit handler must not
+ // also treat this as a generic /api/content/:id/:action form.
+ event.preventDefault();
+ event.stopPropagation();
+ const form=event.target,textarea=form.querySelector('textarea'),submitButton=form.querySelector('button');
+ const text=textarea.value.trim();
+ if(!text)return;
+ submitButton.disabled=true;
+ try {
+  const host=$('#pfcc-chat-messages');
+  if(host.querySelector('.empty'))host.innerHTML='';
+  host.insertAdjacentHTML('beforeend',platformFrostBubble({role:'user',content:text}));
+  textarea.value='';
+  const result=await apiClient('/api/platform/frost/messages',{text});
+  host.insertAdjacentHTML('beforeend',platformFrostBubble(result.assistantMessage));
+  host.scrollTop=host.scrollHeight;
+ } catch(error) { toastError(error.message); }
+ finally { submitButton.disabled=false; textarea.focus(); }
 }
 
 const PILOT_STATUS_VARIANT={READY:'CONNECTED',NEEDS_ATTENTION:'PENDING',BLOCKED:'ERROR'};

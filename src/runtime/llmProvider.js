@@ -11,6 +11,23 @@ import {ConnectorError} from '../connectors.js';
 // (runtime.js) resolves that connection's vault credential and passes its key here, taking
 // precedence over the env var. No existing caller passes this, so every current call site
 // (env-var-only) is byte-for-byte unchanged.
+// Phase 7C (spec item 82-83) — audit of the Phase 7B parallel tool-use change: running
+// same-turn tool calls concurrently is only safe when every one of them is a real READ (no
+// side effect, so no ordering/race concern between them). A batch containing ANY write —
+// INTERNAL_WRITE/EXTERNAL_SEND/EXTERNAL_PUBLISH (CONFIGURATION/EXTERNAL_ACTION in the spec's
+// own classification) — runs strictly sequentially instead, one at a time in the model's own
+// requested order, exactly like before Phase 7B ever existed. `toolsByName` is built once per
+// call from the SAME `tools` list already passed in (never a second registry).
+function classifyBatch(blockNames,toolsByName) {
+ return blockNames.every(name=>(toolsByName.get(name)?.actionType||'READ')==='READ');
+}
+async function runToolBatch(blocks,tools,executeTool) {
+ const toolsByName=new Map(tools.map(t=>[t.name,t]));
+ if(classifyBatch(blocks.map(b=>b.name),toolsByName))return Promise.all(blocks.map(block=>executeTool(block.name,block.input)));
+ const outputs=[];
+ for(const block of blocks)outputs.push(await executeTool(block.name,block.input));
+ return outputs;
+}
 function resolveConfig(env,override={}) {
  const provider=override.provider||env.AI_PROVIDER||'anthropic';
  if(provider==='openai') {
@@ -111,7 +128,7 @@ function createAnthropicProvider({apiKey,model,fetcher}) {
      // preserves request order in the output regardless of completion order, so tool_result
      // blocks still line up with their tool_use_id correctly.
      const blocks=result.content.filter(block=>block.type==='tool_use');
-     const outputs=await Promise.all(blocks.map(block=>executeTool(block.name,block.input)));
+     const outputs=await runToolBatch(blocks,tools,executeTool);
      const toolResults=blocks.map((block,i)=>{
       toolCalls.push({name:block.name,input:block.input,output:outputs[i]});
       return {type:'tool_result',tool_use_id:block.id,content:JSON.stringify(outputs[i])};
@@ -162,7 +179,8 @@ function createOpenAIProvider({apiKey,model,fetcher}) {
      // Same-turn tool calls run concurrently — see the matching comment in the Anthropic
      // provider's run() above for why this is real parallelism, not a cosmetic change.
      const parsedInputs=message.tool_calls.map(call=>{try{return JSON.parse(call.function.arguments||'{}');}catch{return {};}});
-     const outputs=await Promise.all(message.tool_calls.map((call,i)=>executeTool(call.function.name,parsedInputs[i])));
+     const blocks=message.tool_calls.map((call,i)=>({name:call.function.name,input:parsedInputs[i]}));
+     const outputs=await runToolBatch(blocks,tools,executeTool);
      message.tool_calls.forEach((call,i)=>{
       toolCalls.push({name:call.function.name,input:parsedInputs[i],output:outputs[i]});
       messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(outputs[i])});

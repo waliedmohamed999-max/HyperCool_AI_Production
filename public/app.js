@@ -21,6 +21,7 @@ import {isRecoveryRoute,installRecoveryPage,renderRecoveryPage} from './pages/re
 import {isNewWorkspaceRoute,installNewWorkspacePage,renderNewWorkspacePage} from './pages/new-workspace.js';
 import {installPlatformPage,renderPlatformPage} from './pages/platform.js';
 import {installCommandCenter,renderCommandCenter} from './pages/command-center.js';
+import {installWorkflowsPage,renderWorkflowsPage} from './pages/workflows.js';
 import {isInviteRoute,renderInvitePage} from './pages/invite.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
@@ -50,6 +51,7 @@ installRecoveryPage();
 installNewWorkspacePage();
 installPlatformPage();
 installCommandCenter();
+installWorkflowsPage();
 installCRMInteractions();
 installContentInteractions();
 installMemoryInteractions();
@@ -85,6 +87,7 @@ function refetchPageIfNeeded(page){
   // user arrives, not just after the next full login/workspace-switch render() — same targeted
   // refetch treatment as control-center/platform above, guarded by its own renderGeneration.
   else if(page==='command-center')renderCommandCenter({api,auth}).catch(error=>message(error.message,'error'));
+  else if(page==='workflows')renderWorkflowsPage({api,auth}).catch(error=>message(error.message,'error'));
 }
 navLinks.forEach(a=>a.addEventListener('click',event=>{
   const page=a.getAttribute('href').slice(1);
@@ -243,6 +246,7 @@ async function render(){
   await renderControlCenter({api,auth});
   await renderPlatformPage({api,auth});
   await renderCommandCenter({api,auth});
+  await renderWorkflowsPage({api,auth});
   await renderOnboardingPage({api,auth});
   $('#items').querySelectorAll(':scope > article').forEach((card,index)=>addContentActions(card,state.content[index],auth,escape));
   await renderPlanning({api,auth,state,escape});

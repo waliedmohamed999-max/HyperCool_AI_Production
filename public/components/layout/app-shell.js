@@ -2,7 +2,7 @@ import {icon,button,header,drawer,escape,dropdown,tooltip,initials} from '../ui/
 import {t,onLocaleChange,getLocale,setLocale} from '../../i18n.js';
 // Route metadata: only the icon is fixed — title/description are always looked up live from
 // the current locale's navigation.json so a language switch relabels every page instantly.
-const ROUTE_ICONS={overview:'grid','command-center':'agent',crm:'users',planning:'calendar',reports:'chart',content:'file',agents:'agent',knowledge:'book',integrations:'plug','control-center':'plug',onboarding:'check',audit:'clock',users:'users',account:'info',platform:'grid'};
+const ROUTE_ICONS={overview:'grid','command-center':'agent',workflows:'clock',crm:'users',planning:'calendar',reports:'chart',content:'file',agents:'agent',knowledge:'book',integrations:'plug','control-center':'plug',onboarding:'check',audit:'clock',users:'users',account:'info',platform:'grid'};
 const ROUTE_KEYS=Object.keys(ROUTE_ICONS);
 function routeTitle(key){return t(`navigation.${key}.title`);}
 function routeDescription(key){return t(`navigation.${key}.description`);}

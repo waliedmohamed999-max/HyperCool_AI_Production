@@ -9,6 +9,7 @@ import {isEnabled} from './feature-flags.js';
 import {listTenants,expireTrials} from '../tenancy.js';
 import {recordAudit} from '../audit.js';
 import {processWebhookRetries} from '../connectors/generic-webhook/retry.js';
+import {tickWorkflowsForTenant} from './workflow-engine.js';
 
 export const SCHEDULER_ACTOR={id:'scheduler',name:'الجدولة الآلية',role:'automation'};
 const FOLLOWUP_ELIGIBLE_STAGES=['QUOTE_SENT','DEMO','POST_PURCHASE'];
@@ -120,7 +121,7 @@ async function runTenantJob(store,jobName,tenantId,fn) {
  * subscription renewal is a CONNECTION_JOB (Part A11): it loops over whichever tenants
  * actually hold a microsoft365 connection, not every eligible tenant.
  */
-export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch,eventBus=null}) {
+export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch,eventBus=null,workflowDeps=null}) {
  const db=store.db;
  let timer=null;
  // In-process reentrancy guard (Part A12): this app is a single always-on instance with one
@@ -171,6 +172,14 @@ export function createScheduler({store,agentRuntime,env,getExtras,fetcher=fetch,
     {
      const outcome=await runTenantJob(store,'SCHEDULE_PREPARE',tenantId,()=>prepareDue(store,SCHEDULER_ACTOR,now,eventBus,env,tenantId));
      if(outcome.status==='OK')tenantResult.schedulePrepare=outcome.result;else tenantResult.schedulePrepareError=outcome.error;
+    }
+    // Phase 7C — Native Workflow Engine: reuses this SAME per-tenant tick, exactly like every
+    // other TENANT_JOB above, for both due DELAY resumes and due SCHEDULE triggers. No second
+    // timer loop (`workflowDeps` is null in any caller that never wired the engine in, e.g. a
+    // bare test fixture — skipped cleanly rather than throwing).
+    if(workflowDeps) {
+     const outcome=await runTenantJob(store,'WORKFLOW_TICK',tenantId,()=>tickWorkflowsForTenant(workflowDeps,tenantId,now));
+     if(outcome.status==='OK')tenantResult.workflowTick=outcome.result;else tenantResult.workflowTickError=outcome.error;
     }
     result.tenants[tenantId]=tenantResult;
    }

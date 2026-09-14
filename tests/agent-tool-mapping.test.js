@@ -64,10 +64,10 @@ const salesDecision=(over={})=>({status:'OK',action:'REPLY',rationale:'ok',verif
 
 // --- ToolDefinition ----------------------------------------------------------------------
 
-test('ToolDefinition: seeded exclusively from the real Tool Registry — 43 tools, Canva/salla_syncOrders honestly NOT_IMPLEMENTED',()=>{
+test('ToolDefinition: seeded exclusively from the real Tool Registry — 49 tools, Canva/salla_syncOrders honestly NOT_IMPLEMENTED',()=>{
  const {store}=fixture();try{
   const tools=listToolDefinitions(store.db);
-  assert.equal(tools.length,43); // Phase 6D added get_invoices; Phase 6E added get_orders/get_customers (generic, capability-only); Phase 7A added 7 Frost Command Center tools; Phase 7B added 5 more (delegate_to_agent, list/cancel scheduled content jobs, explain_followup_status, prepare_bulk_followup_plan)
+  assert.equal(tools.length,49); // ...; Phase 7B added 5 more; Phase 7C added 6 Workflow Engine chat tools (create_workflow_draft, list_workflows, explain_workflow_failure, activate_workflow, run_workflow_now, pause_workflow_now)
   const canva=getToolDefinition(store.db,'canva_generateAsset');
   assert.equal(canva.isAvailable,false);
   const salla=getToolDefinition(store.db,'salla_syncOrders');

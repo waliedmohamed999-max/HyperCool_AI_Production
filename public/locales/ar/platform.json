@@ -15,7 +15,11 @@
   "showUnhealthyTenants": "أي منشأة عندها تكاملات غير سليمة؟",
   "noDeadLetter": "لا توجد ويب هوكس فاشلة حاليًا.",
   "noUnhealthyTenants": "كل التكاملات سليمة عبر كل المنشآت حاليًا.",
-  "unhealthyCount": "عدد الاتصالات غير السليمة"
+  "unhealthyCount": "عدد الاتصالات غير السليمة",
+  "chatTitle": "اسأل Frost عن حالة المنصة",
+  "chatPlaceholder": "مثال: هل في مشاكل في المنصة؟",
+  "chatSend": "إرسال",
+  "noMessages": "لا توجد رسائل بعد"
  },
  "kpi": {
   "totalTenants": "إجمالي المنشآت",

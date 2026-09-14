@@ -218,3 +218,26 @@ test('Platform Command Center: a real allowlisted admin sees real scheduler stat
   assert.deepEqual(unhealthy.data,[]);
  }finally{await cleanup();}
 });
+
+test('Platform Frost Chat: gated to platform admin only over HTTP; a real admin gets a real, aggregate-only answer',async()=>{
+ const {app,call,cleanup}=await harness({PLATFORM_ADMIN_USERNAMES:'admin_user'});
+ try{
+  const owner=await call('/api/setup',{username:'owner',name:'Owner',password:'test-password-long'});
+  const denied=await call('/api/platform/frost/messages',{text:'هل في مشاكل؟'},owner);
+  assert.equal(denied.status,403);
+
+  const adminSession=platformAdminSession(app);
+  const deniedRead=await call('/api/platform/frost/messages',null,owner,{method:'GET'});
+  assert.equal(deniedRead.status,403);
+
+  // No AI provider configured in this test env — same honest-failure contract as tenant chat.
+  const sent=await call('/api/platform/frost/messages',{text:'هل في مشاكل في المنصة؟'},adminSession);
+  assert.equal(sent.status,201);
+  assert.equal(sent.data.status,'FAILED');
+  assert.match(sent.data.assistantMessage.content,/اتصال ذكاء اصطناعي/);
+
+  const history=await call('/api/platform/frost/messages',null,adminSession,{method:'GET'});
+  assert.equal(history.status,200);
+  assert.equal(history.data.length,2);
+ }finally{await cleanup();}
+});

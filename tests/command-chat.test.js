@@ -22,6 +22,7 @@ import {installCommandChat,createConversation,listMessages,sendCommandMessage} f
 import {installTenantAgentConfigs} from '../src/runtime/agent-config.js';
 import {installAgentToolAssignments} from '../src/runtime/tool-assignments.js';
 import {installIntegrationConnections} from '../src/integrations/connections.js';
+import {installWorkflowEngine,listWorkflows} from '../src/runtime/workflow-engine.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
 const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model'};
@@ -34,6 +35,7 @@ function fixture() {
  installCredentials(store.db);installContent(store.db);installAuditLog(store.db);
  installContextItems(store.db);installSuggestions(store.db);installCommandChat(store.db);
  installTenantAgentConfigs(store.db);installAgentToolAssignments(store.db);installIntegrationConnections(store.db);
+ installWorkflowEngine(store.db);
  seedRegistry(store.db);
  return store;
 }
@@ -104,6 +106,33 @@ test('a command requiring approval (run_followup_sweep) pauses for a real human 
   const decided=decideApproval(store.db,pending[0].id,'APPROVED',user,conversation.tenantId);
   const toolResult=await agentRuntime.resumeToolApproval(decided);
   assert.notEqual(toolResult.status,'ERROR');
+ }finally{store.close();}
+});
+
+test('Frost creates a real Workflow DRAFT from a natural-language request — never auto-activates it (spec Part 26-27)',async()=>{
+ const store=fixture();
+ try{
+  const eventBus=createEventBus(store.db);
+  const draftSteps=[
+   {id:'wait',type:'DELAY',durationMinutes:120,next:['followup']},
+   {id:'followup',type:'CREATE_TASK',reason:'تابع العميل الجديد',priority:'P2',next:[]}
+  ];
+  const agentRuntime=createAgentRuntime({store,env,eventBus,fetcher:sequencedFetcher([
+   toolUseTurn('create_workflow_draft',{nameAr:'متابعة عميل جديد',trigger:{type:'EVENT',eventType:'LEAD_CREATED'},steps:draftSteps}),
+   textTurn(commanderDecision({answer:'أنشأت مسودة Workflow باسم "متابعة عميل جديد" — راجعها ثم فعّلها بنفسك من غرفة القيادة.',data_sources:['create_workflow_draft']}))
+  ])});
+  const conversation=createConversation(store.db,user);
+  const {run,assistantMessage}=await sendCommandMessage({store,agentRuntime,env,tenantId:conversation.tenantId,user,conversationId:conversation.id,
+   text:'لما يدخل عميل جديد، استنى ساعتين وبعدين اعمل متابعة'});
+  assert.equal(run.status,'COMPLETED');
+  assert.equal(run.toolCalls[0].tool,'create_workflow_draft');
+  assert.equal(run.toolCalls[0].status,'OK');
+  const created=run.toolCalls[0].output;
+  assert.equal(created.status,'DRAFT'); // never auto-activated
+  const workflows=listWorkflows(store.db,conversation.tenantId);
+  assert.equal(workflows.length,1);
+  assert.equal(workflows[0].status,'DRAFT');
+  assert.match(assistantMessage.content,/فعّلها بنفسك/);
  }finally{store.close();}
 });
 

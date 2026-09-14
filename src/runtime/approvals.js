@@ -16,7 +16,11 @@ import {resolveActiveTenantId} from '../tenancy.js';
 // 'connector_action' (Phase 6A, Part 95) — the one generic label for any Connector Runtime
 // action gated by its manifest's requiresApprovalDefault (see src/connectors/core/runtime.js);
 // every other value above stays a specific, existing agent-tool business action, unchanged.
-export const ACTION_TYPES=['publish_content','send_marketing_message','discount','large_quote','memory_policy_change','medical_claim','agent_permission_change','agent_tool_send','connector_action'];
+// 'workflow_step_approval' (Phase 7C, Part 15) — a dedicated APPROVAL step inside a native
+// Workflow run pausing for a human decision. Not a new approval engine: same table, same
+// decide flow, resumed by workflow-engine.js's resumeWorkflowApproval exactly the way
+// agent_tool_send is already resumed by runtime.js's resumeToolApproval.
+export const ACTION_TYPES=['publish_content','send_marketing_message','discount','large_quote','memory_policy_change','medical_claim','agent_permission_change','agent_tool_send','connector_action','workflow_step_approval'];
 
 // Multi-Tenant Phase 2 (spec Part 14 — Approval isolation): a real `tenant_id`, same
 // optional-trailing-param pattern as Phase 1. `createApproval`'s callers (agent tool
