@@ -214,7 +214,13 @@ if (agentRowButtons.length >= 3) {
  check('clicking the Connector cell (Platform Admin) navigates to the Builder and opens the real definition', urlAfterConnectorClick.includes('#platform') && await adminPage.locator('dialog.drawer[open]').count() > 0);
 }
 
+// This Escape targets a drawer opened via the cross-page openConnectorWizardBySlug() shortcut
+// (control-center.js -> platform.js), which races the hash-change router's own async platform
+// page render (now slightly heavier post-Phase-7C with Platform Frost Chat's own fetch) — give
+// the close() call a moment to actually finish before any later step re-queries dialog[open],
+// or a still-closing dialog can be mistaken for gone and left to block a later click.
 await adminPage.keyboard.press('Escape').catch(() => {});
+await adminPage.waitForTimeout(500);
 
 // --- (F) Tenant Custom Connector Webhook Trigger: real creation UI, flows through review ------
 const ownerContext = await browser.newContext();
