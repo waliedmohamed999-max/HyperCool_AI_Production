@@ -16,7 +16,7 @@ function staleGuard(generation){return generation!==renderGeneration;}
 
 export function installPlatformPage(){
  const root=document.querySelector('[data-page="platform"] #platform');
- root.innerHTML=`<div id="pf-integration-card"></div><div id="pf-overview" class="kpi-grid"></div><div id="pf-directory"></div><div id="pf-pending-custom"></div><div id="pf-webhook-ops"></div><div id="pf-connectors"></div>`;
+ root.innerHTML=`<div id="pf-command-center"></div><div id="pf-integration-card"></div><div id="pf-overview" class="kpi-grid"></div><div id="pf-directory"></div><div id="pf-pending-custom"></div><div id="pf-webhook-ops"></div><div id="pf-connectors"></div>`;
 }
 
 export async function renderPlatformPage({api:client,auth}){
@@ -38,6 +38,7 @@ export async function renderPlatformPage({api:client,auth}){
   return;
  }
  if(staleGuard(generation))return;
+ renderPlatformCommandCenter(overview);
  renderIntegrationPlatformCard(connectors,overview);
  renderOverview(overview);
  renderDirectory(directory);
@@ -161,6 +162,55 @@ function renderOverview(overview){
   kpi(t('platform.kpi.connectionsNeedingAttention'),overview.connectionsNeedingAttention)+
   kpi(t('platform.kpi.agentsFailing'),overview.agentsFailing)+
   kpi(t('platform.kpi.recentCriticalErrors'),overview.recentCriticalErrors);
+}
+
+/**
+ * Frost Command Center Phase 7B — Platform Command Center (spec Part 24-28). Deliberately NOT
+ * a second, retrofitted copy of the tenant-scoped Frost chat: `frost_commander`'s whole tool
+ * registry/permission model is built around a single real tenant_id threaded through every
+ * call, and there is no cross-tenant "pseudo-tenant" concept anywhere in this codebase to
+ * safely bind a free-text LLM loop to. Rather than inventing one (exactly the kind of "second
+ * agent system for a different scope" the architecture rule forbids), platform-level questions
+ * are a small, fixed set of REAL, deterministic buttons — each one a direct call to the exact
+ * same `buildPlatformOverview`/`listPlatformDeadLetterWebhooks`/`listTenantsWithUnhealthyIntegrations`
+ * functions the rest of this page already uses. No new aggregation, no fabricated answer, and —
+ * critically — zero risk of ever leaking one tenant's business data to another (spec item 26),
+ * since nothing here is a general-purpose query interface.
+ */
+function renderPlatformCommandCenter(overview) {
+ const host=$('#pf-command-center');
+ const hasIssue=overview.connectionsNeedingAttention>0||overview.agentsFailing>0||overview.failedWebhooks>0||overview.recentCriticalErrors>0;
+ host.innerHTML=`<article class="card pfcc-card">
+  <div class="row-between"><h3>${escape(t('platform.commandCenter.title'))}</h3>${badge(overview.schedulerRunning?t('platform.commandCenter.schedulerRunning'):t('platform.commandCenter.schedulerStopped'),overview.schedulerRunning?'CONNECTED':'ERROR')}</div>
+  <div class="kpi-grid">
+   ${metric(t('platform.commandCenter.anyIssues'),hasIssue?t('platform.commandCenter.yes'):t('platform.commandCenter.no'),'',hasIssue?'bell':'check')}
+   ${metric(t('platform.commandCenter.reauthRequired'),overview.reauthRequired,'','plug')}
+   ${metric(t('platform.commandCenter.failedWebhooks'),overview.failedWebhooks,'','plug')}
+  </div>
+  <div class="report-actions" id="pfcc-actions"></div>
+  <div id="pfcc-result"></div>
+ </article>`;
+ const deadLetterButton=button(t('platform.commandCenter.showDeadLetter'),{variant:'secondary'});
+ deadLetterButton.onclick=async()=>{
+  const resultHost=host.querySelector('#pfcc-result');
+  try{
+   const rows=await apiClient('/api/platform/webhooks/dead-letter');
+   resultHost.innerHTML=rows.length?table([t('platform.operations.tenantId'),t('platform.operations.connector'),'status',t('platform.operations.receivedAt')],
+    rows.map(r=>[`<span dir="ltr" class="kpi-context">${escape(r.tenantId||'—')}</span>`,escape(r.source),escape(r.status),new Date(r.receivedAt).toLocaleString(getLocale()==='en'?'en-US':'ar-SA')])
+   ):empty(t('platform.commandCenter.noDeadLetter'));
+  }catch(error){toastError(error.message);}
+ };
+ const unhealthyButton=button(t('platform.commandCenter.showUnhealthyTenants'),{variant:'secondary'});
+ unhealthyButton.onclick=async()=>{
+  const resultHost=host.querySelector('#pfcc-result');
+  try{
+   const rows=await apiClient('/api/platform/tenants/unhealthy-integrations');
+   resultHost.innerHTML=rows.length?table([t('platform.table.name'),t('platform.commandCenter.unhealthyCount')],
+    rows.map(r=>[escape(r.tenantName),escape(r.unhealthyConnections)])
+   ):empty(t('platform.commandCenter.noUnhealthyTenants'));
+  }catch(error){toastError(error.message);}
+ };
+ host.querySelector('#pfcc-actions').append(deadLetterButton,unhealthyButton);
 }
 
 const PILOT_STATUS_VARIANT={READY:'CONNECTED',NEEDS_ATTENTION:'PENDING',BLOCKED:'ERROR'};

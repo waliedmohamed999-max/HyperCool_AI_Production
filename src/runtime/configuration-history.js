@@ -67,16 +67,16 @@ function getChange(db,id,tenantId) {
 export function undoConfigurationChange(db,id,actor,tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
  const change=getChange(db,id,resolvedTenantId);
- if(!change.reversible)fail(409,'CANNOT_UNDO_EXTERNAL_ACTION','لا يمكن التراجع عن هذا الإجراء — قد يكون له أثر خارجي غير قابل للعكس');
- if(change.revertedAt)fail(409,'ALREADY_REVERTED','تم التراجع عن هذا التغيير من قبل');
- if(change.entityType!=='agent_tool_connection')fail(400,'UNSUPPORTED_ENTITY','نوع الإعداد هذا لا يدعم التراجع التلقائي بعد');
+ if(!change.reversible)fail(409,'لا يمكن التراجع عن هذا الإجراء — قد يكون له أثر خارجي غير قابل للعكس (CANNOT_UNDO_EXTERNAL_ACTION)');
+ if(change.revertedAt)fail(409,'تم التراجع عن هذا التغيير من قبل');
+ if(change.entityType!=='agent_tool_connection')fail(400,'نوع الإعداد هذا لا يدعم التراجع التلقائي بعد');
  const [targetAgentId,toolSlug]=change.entityId.split('::');
  // Stale-state guard (item 22 "validate current state"): if the connection has moved on to a
  // THIRD value since this change (not the value this change itself set), undoing blindly would
  // silently discard that newer, intentional change — refuse instead of guessing.
  const current=getAssignment(db,resolvedTenantId,targetAgentId,toolSlug);
  if((current?.connectionId||null)!==(change.newValue?.connectionId??null))
-  fail(409,'STALE_STATE','تم تغيير هذا الإعداد مرة أخرى منذ هذا السجل — لا يمكن التراجع تلقائيًا لتفادي فقد تغيير أحدث');
+  fail(409,'تم تغيير هذا الإعداد مرة أخرى منذ هذا السجل — لا يمكن التراجع تلقائيًا لتفادي فقد تغيير أحدث');
  const restored=upsertAssignment(db,resolvedTenantId,targetAgentId,toolSlug,{connectionId:change.previousValue?.connectionId??null});
  const now=new Date().toISOString();
  const revertId=recordConfigurationChange(db,{tenantId:resolvedTenantId,entityType:'agent_tool_connection',entityId:change.entityId,field:'connectionId',

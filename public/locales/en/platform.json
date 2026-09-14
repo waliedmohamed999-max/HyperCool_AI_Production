@@ -2,6 +2,21 @@
  "navLabel": "HyperCool Platform",
  "title": "Platform Operations Dashboard",
  "subtitle": "A central view over every tenant — platform admin only.",
+ "commandCenter": {
+  "title": "Platform Command Center",
+  "schedulerRunning": "Scheduler running",
+  "schedulerStopped": "Scheduler stopped",
+  "anyIssues": "Any platform issues?",
+  "yes": "Yes",
+  "no": "No",
+  "reauthRequired": "Connections needing re-auth",
+  "failedWebhooks": "Failed webhooks",
+  "showDeadLetter": "Show dead-letter webhooks",
+  "showUnhealthyTenants": "Which tenants have unhealthy integrations?",
+  "noDeadLetter": "No failed webhooks right now.",
+  "noUnhealthyTenants": "Every integration is healthy across all tenants right now.",
+  "unhealthyCount": "Unhealthy connections"
+ },
  "kpi": {
   "totalTenants": "Total Tenants",
   "active": "Active",

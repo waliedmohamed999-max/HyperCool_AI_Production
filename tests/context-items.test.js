@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {openStore} from '../src/store.js';
-import {installContextItems,createContextItem,listContextItems,updateContextItem,archiveContextItem,searchContextItems,contextSummaryForPlanner} from '../src/runtime/context-items.js';
+import {installContextItems,createContextItem,listContextItems,updateContextItem,archiveContextItem,searchContextItems,contextSummaryForPlanner,withFreshness,detectContextConflicts} from '../src/runtime/context-items.js';
 import {installAuditLog} from '../src/audit.js';
 
 const user={id:'owner-id',name:'Owner',role:'owner'};
@@ -56,5 +56,33 @@ test('the planner summary is short, capped, and only includes high-signal ACTIVE
   const summary=contextSummaryForPlanner(store.db,'t1');
   assert.equal(summary.length,1);
   assert.match(summary[0],/brain_goals/);
+ }finally{store.close();}
+});
+
+test('freshness is derived (never a third stored status): ACTIVE stays ACTIVE, ARCHIVED stays ARCHIVED, and an ACTIVE item past its own expiry reads as STALE',()=>{
+ const store=fixture();
+ try{
+  const fresh=createContextItem(store.db,{type:'decision',title:'قرار حديث',description:''},user,'t1');
+  assert.equal(withFreshness(fresh).freshness,'ACTIVE');
+  const expired=createContextItem(store.db,{type:'decision',title:'قرار قديم',description:'',expiresAt:new Date(Date.now()-1000).toISOString()},user,'t1');
+  assert.equal(withFreshness(expired).freshness,'STALE');
+  assert.equal(expired.status,'ACTIVE'); // the stored status itself never changes — freshness is read-time only
+  archiveContextItem(store.db,expired.id,user,'t1');
+  const archived=listContextItems(store.db,'t1',{status:'ARCHIVED'})[0];
+  assert.equal(withFreshness(archived).freshness,'ARCHIVED');
+ }finally{store.close();}
+});
+
+test('two ACTIVE brain_identity records are surfaced as a real conflict, never silently resolved to one',()=>{
+ const store=fixture();
+ try{
+  assert.deepEqual(detectContextConflicts(store.db,'t1'),[]);
+  createContextItem(store.db,{type:'brain_identity',title:'الهوية v1',description:'شركة تبريد'},user,'t1');
+  assert.deepEqual(detectContextConflicts(store.db,'t1'),[]); // one record — no conflict yet
+  createContextItem(store.db,{type:'brain_identity',title:'الهوية v2',description:'شركة تبريد سريع'},user,'t1');
+  const conflicts=detectContextConflicts(store.db,'t1');
+  assert.equal(conflicts.length,1);
+  assert.equal(conflicts[0].type,'brain_identity');
+  assert.equal(conflicts[0].items.length,2);
  }finally{store.close();}
 });

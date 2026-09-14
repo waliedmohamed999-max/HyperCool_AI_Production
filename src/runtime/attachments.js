@@ -48,7 +48,7 @@ function attachmentsDir(env,tenantId) {
 // the validated MIME type (ALLOWED_TYPES), never from the client-supplied name, so a renamed
 // executable can't ride in on a trusted-looking filename either.
 function safeBasename(name) {
- const base=String(name||'file').replace(/[\\/]/g,'_').replace(/^\.+/,'').slice(0,150).trim();
+ const base=String(name||'file').replace(/[\\/]/g,'_').replace(/\.\./g,'_').replace(/^\.+/,'').slice(0,150).trim();
  return base||'file';
 }
 function hydrate(row) {

@@ -2,6 +2,21 @@
  "navLabel": "منصة HyperCool",
  "title": "لوحة تشغيل المنصة",
  "subtitle": "نظرة مركزية على كل المنشآت — متاحة فقط لمسؤول المنصة.",
+ "commandCenter": {
+  "title": "غرفة قيادة المنصة",
+  "schedulerRunning": "الجدولة الآلية تعمل",
+  "schedulerStopped": "الجدولة الآلية متوقفة",
+  "anyIssues": "هل توجد مشاكل بالمنصة؟",
+  "yes": "نعم",
+  "no": "لا",
+  "reauthRequired": "اتصالات تحتاج إعادة تفويض",
+  "failedWebhooks": "ويب هوكس فاشلة",
+  "showDeadLetter": "اعرض الـdead-letter webhooks",
+  "showUnhealthyTenants": "أي منشأة عندها تكاملات غير سليمة؟",
+  "noDeadLetter": "لا توجد ويب هوكس فاشلة حاليًا.",
+  "noUnhealthyTenants": "كل التكاملات سليمة عبر كل المنشآت حاليًا.",
+  "unhealthyCount": "عدد الاتصالات غير السليمة"
+ },
  "kpi": {
   "totalTenants": "إجمالي المنشآت",
   "active": "نشطة",
