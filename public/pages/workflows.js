@@ -3,12 +3,13 @@
 // the exact same design system/components as every other page here. One canonical backend
 // model (src/runtime/workflow-engine.js) is shared with Frost chat: a workflow Frost creates
 // appears here automatically, and a workflow edited here is understood by Frost the same way.
-import {escape,button,badge,empty,skeleton,drawer,confirmAction,table,tabs,toast as showToast} from '../components/ui/index.js';
+import {escape,button,badge,empty,skeleton,drawer,confirmAction,table,tabs,icon,toast as showToast} from '../components/ui/index.js';
 import {t,getLocale} from '../i18n.js';
 import {fmtDateTime} from '../format.js';
 
 const $=s=>document.querySelector('#workflows '+s);
 let apiClient,meta={stepTypes:[],triggerTypes:[],conditionOperators:[],eventTypes:[]},agents=[],renderGeneration=0;
+let workflowLists={},searchQuery='',activePanel=null;
 function toast(text){showToast(text,'success');}
 function toastError(text){showToast(text,'error');}
 function staleGuard(generation){return generation!==renderGeneration;}
@@ -17,11 +18,16 @@ async function api(path,body,method){return apiClient(path,body,method);}
 export function installWorkflowsPage() {
  const root=document.querySelector('[data-page="workflows"] #workflows');
  root.innerHTML=`
-  <div class="row-between"><h2>${escape(t('workflows.title'))}</h2><button type="button" id="wf-new" class="primary">${escape(t('workflows.newWorkflow'))}</button></div>
-  <p class="kpi-context">${escape(t('workflows.subtitle'))}</p>
-  <div id="wf-list-status"></div>
-  <div id="wf-tabs"></div>`;
+  <header class="wf-hero"><div class="wf-hero-copy"><p class="wf-eyebrow">HYPERCOOL / AUTOMATION</p>
+   <h1>${escape(t('workflows.design.heading'))}</h1><p>${escape(t('workflows.design.intro'))}</p>
+   <div class="wf-hero-actions"><button type="button" id="wf-new">${icon('plus')}${escape(t('workflows.newWorkflow'))}</button><a class="wf-frost-link" href="#command-center">${icon('agent')}${escape(t('workflows.design.askFrost'))}</a></div></div>
+   <div class="wf-flow-guide"><span class="wf-guide-label">${escape(t('workflows.design.howItWorks'))}</span><div class="wf-flow-nodes">${[['clock','trigger'],['agent','execute'],['check','review']].map(([glyph,key],i)=>`<div class="wf-flow-node"><span>${icon(glyph)}</span><strong>${escape(t('workflows.design.'+key))}</strong><small>0${i+1}</small></div>`).join('')}</div><p>${escape(t('workflows.design.guideNote'))}</p></div>
+  </header>
+  <div id="wf-metrics" class="wf-metrics" aria-live="polite"></div>
+  <section class="wf-library"><div class="wf-library-head"><div><h2>${escape(t('workflows.design.library'))}</h2><p>${escape(t('workflows.design.libraryHint'))}</p></div><label class="wf-search">${icon('search')}<input id="wf-search" type="search" aria-label="${escape(t('workflows.design.search'))}" placeholder="${escape(t('workflows.design.search'))}"></label></div>
+   <div id="wf-list-status" role="status"></div><div id="wf-tabs"></div></section>`;
  $('#wf-new').onclick=()=>openWorkflowEditor(null);
+ $('#wf-search').oninput=event=>{searchQuery=event.target.value;if(activePanel)paintList(activePanel);};
 }
 
 const STATUS_VARIANT={ACTIVE:'CONNECTED',DRAFT:'PENDING',PAUSED:'PENDING',ARCHIVED:'DISCONNECTED'};
@@ -29,31 +35,48 @@ let currentFilter='ACTIVE';
 export async function renderWorkflowsPage({api:client}) {
  apiClient=client;
  const generation=++renderGeneration;
+ installWorkflowsPage();
+ $('#wf-new').disabled=true;
  $('#wf-list-status').innerHTML=skeleton(t('common.loading'));
- try{[meta,agents]=await Promise.all([api('/api/workflows/meta'),api('/api/agents')]);}
+ let lists;
+ try{[meta,agents,...lists]=await Promise.all([api('/api/workflows/meta'),api('/api/agents'),...['ACTIVE','DRAFT','PAUSED','ARCHIVED'].map(status=>api('/api/workflows?status='+status))]);}
  catch(error){if(staleGuard(generation))return;$('#wf-list-status').innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
  if(staleGuard(generation))return;
+ workflowLists=Object.fromEntries(['ACTIVE','DRAFT','PAUSED','ARCHIVED'].map((status,i)=>[status,lists[i]]));
+ $('#wf-new').disabled=false;
+ $('#wf-metrics').innerHTML=['ACTIVE','DRAFT','PAUSED'].map((status,i)=>`<div class="wf-metric" data-status="${status}"><span class="wf-metric-icon">${icon(['check','file','clock'][i])}</span><div><span>${escape(t('workflows.status.'+status))}</span><strong>${new Intl.NumberFormat(getLocale()).format(workflowLists[status].length)}</strong></div><small>${escape(t('workflows.design.metric'+status))}</small></div>`).join('');
  $('#wf-list-status').innerHTML='';
  const panels=['ACTIVE','DRAFT','PAUSED','ARCHIVED','FAILED_RUNS'].map(()=>{const el=document.createElement('div');return el;});
  $('#wf-tabs').innerHTML='';
  $('#wf-tabs').append(...panels);
  const {select}=tabs($('#wf-tabs'),[
-  [t('workflows.tabActive'),panels[0]],[t('workflows.tabDraft'),panels[1]],[t('workflows.tabPaused'),panels[2]],
-  [t('workflows.tabArchived'),panels[3]],[t('workflows.tabFailedRuns'),panels[4]]
+  [t('workflows.tabActive')+' · '+lists[0].length,panels[0]],[t('workflows.tabDraft')+' · '+lists[1].length,panels[1]],[t('workflows.tabPaused')+' · '+lists[2].length,panels[2]],
+  [t('workflows.tabArchived')+' · '+lists[3].length,panels[3]],[t('workflows.tabFailedRuns'),panels[4]]
  ]);
  const order=['ACTIVE','DRAFT','PAUSED','ARCHIVED','FAILED_RUNS'];
- $('#wf-tabs').querySelectorAll('[role=tab]').forEach((tabButton,index)=>{tabButton.addEventListener('click',()=>{currentFilter=order[index];paintList(panels[index]);});});
+ $('#wf-tabs').querySelectorAll('[role=tab]').forEach((tabButton,index)=>{tabButton.addEventListener('click',()=>{currentFilter=order[index];activePanel=panels[index];paintList(activePanel);});});
  select(order.indexOf(currentFilter));
- await paintList(panels[order.indexOf(currentFilter)]);
+ activePanel=panels[order.indexOf(currentFilter)];
+ $('#wf-search').value=searchQuery;
+ await paintList(activePanel);
+}
+function paintWorkflowEmpty(panel,key,canCreate=false){
+ panel.innerHTML=`<div class="wf-empty"><div class="wf-empty-symbol">${icon(key==='healthy'?'check':'clock')}</div><h3>${escape(t('workflows.design.'+key+'Title'))}</h3><p>${escape(t('workflows.design.'+key+'Hint'))}</p><div class="wf-empty-actions"></div></div>`;
+ if(canCreate){const create=button(t('workflows.newWorkflow'),{variant:'primary'});create.onclick=()=>openWorkflowEditor(null);panel.querySelector('.wf-empty-actions').append(create);}
 }
 async function paintList(panel) {
- if(currentFilter==='FAILED_RUNS')return paintFailedRuns(panel);
- const workflows=await api('/api/workflows?status='+currentFilter);
- if(!workflows.length){panel.innerHTML=empty(t('workflows.noneTitle'),t('workflows.noneHint'));return;}
- panel.innerHTML=`<div class="grid">${workflows.map(w=>`<article class="card" data-workflow="${escape(w.id)}">
-   <div class="row-between"><strong>${escape(w.nameAr)}</strong>${badge(t('workflows.status.'+w.status),STATUS_VARIANT[w.status])}</div>
-   <p class="kpi-context">${escape(w.description||'')}</p>
-   <div class="report-actions" data-wf-actions></div>
+ if(currentFilter==='FAILED_RUNS'){try{await paintFailedRuns(panel);}catch(error){panel.innerHTML=empty(t('controlCenter.loadFailed'),error.message);}return;}
+ const filter=currentFilter,generation=renderGeneration;
+ let list;
+ try{list=await api('/api/workflows?status='+filter);}catch(error){if(!staleGuard(generation))panel.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
+ if(staleGuard(generation)||currentFilter!==filter)return;
+ workflowLists[filter]=list;
+ const workflows=list.filter(w=>(w.nameAr+' '+(w.description||'')).toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase()));
+ if(!workflows.length){paintWorkflowEmpty(panel,searchQuery.trim()?'search':currentFilter==='ACTIVE'?'active':currentFilter==='DRAFT'?'draft':currentFilter==='PAUSED'?'paused':'archived',!searchQuery.trim()&&['ACTIVE','DRAFT'].includes(currentFilter));return;}
+ panel.innerHTML=`<div class="wf-card-grid">${workflows.map(w=>`<article class="wf-card" data-workflow="${escape(w.id)}">
+   <div class="row-between"><span class="wf-card-icon">${icon('clock')}</span>${badge(t('workflows.status.'+w.status),STATUS_VARIANT[w.status])}</div>
+   <h3>${escape(w.nameAr)}</h3><p>${escape(w.description||t('workflows.design.noDescription'))}</p>
+   <div class="wf-card-bottom"><span>${escape(t('workflows.design.updated'))}<br>${fmtDateTime(w.updatedAt)}</span><div data-wf-actions></div></div>
   </article>`).join('')}</div>`;
  for(const w of workflows) {
   const cell=panel.querySelector(`[data-workflow="${CSS.escape(w.id)}"] [data-wf-actions]`);
@@ -63,10 +86,11 @@ async function paintList(panel) {
  }
 }
 async function paintFailedRuns(panel) {
- const workflows=await api('/api/workflows?status=ACTIVE');
+ panel.innerHTML=skeleton(t('common.loading'));
+ const workflows=['ACTIVE','DRAFT','PAUSED'].flatMap(status=>workflowLists[status]||[]);
  const allRuns=(await Promise.all(workflows.map(w=>api(`/api/workflows/${w.id}/runs`)))).flat();
- const failed=allRuns.filter(r=>r.status==='FAILED').sort((a,b)=>(b.startedAt||'').localeCompare(a.startedAt||'')).slice(0,30);
- if(!failed.length){panel.innerHTML=empty(t('workflows.noFailedRuns'));return;}
+ const failed=allRuns.filter(r=>r.status==='FAILED').filter(r=>{const w=workflows.find(w=>w.id===r.workflowId);return ((w?.nameAr||'')+' '+(r.error||'')).toLocaleLowerCase().includes(searchQuery.trim().toLocaleLowerCase());}).sort((a,b)=>(b.startedAt||'').localeCompare(a.startedAt||'')).slice(0,30);
+ if(!failed.length){paintWorkflowEmpty(panel,searchQuery.trim()?'search':'healthy');return;}
  panel.innerHTML=table([t('workflows.table.workflow'),t('workflows.table.startedAt'),t('workflows.table.error'),''],
   failed.map(r=>{
    const workflow=workflows.find(w=>w.id===r.workflowId);

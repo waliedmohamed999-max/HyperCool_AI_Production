@@ -138,13 +138,62 @@ Unified once in `components.css`: sticky header row, hover row highlight, a `.ta
 visible focus ring, and one dialog/drawer treatment (`dialog.drawer` slides in from the trailing
 edge; `.confirmation` is the small centered variant for a yes/no or short form).
 
-## What this pass did NOT redesign
+## Phase UI-2 — deep route polish patterns
 
-Being explicit rather than silently claiming blanket coverage — see the Final Report's honest
-per-page scoring. Untouched at the content/structure level (they already used the shared
-component system correctly and had no concrete defect found in the audit): CRM's own board/table
-view, Reports' chart components, the Integration Builder's step-by-step wizard content, Agent
-detail tabs, and Platform Admin's specific widgets. All of these already inherit every token,
-color, spacing, radius, and status-badge change made in this pass automatically (that's the
-point of a token-driven system) — they were not rebuilt because the audit found no concrete,
-fixable defect in them worth the risk of a broader rewrite in a UI-only phase.
+### Bounded scrollable lists (the "no 21,000px page" pattern)
+
+The single most severe defect this pass found: CRM's quote list, B2B opportunity list, and hot
+leads grid each rendered *every* matching record directly into page flow with no cap — on
+realistic demo data this produced a genuine ~21,600px-tall page with badly uneven two-column
+heights (`align-items:stretch` stretching an empty sibling column to match). The fix, applied
+consistently: a `max-height` + `overflow:auto` + a small `padding-inline-end` (so the scrollbar
+never overlaps content) on the list container itself — never touching how many records the
+backend returns. This is the same pattern `.cmdc-ops-list` (Command Center) already used;
+`.sales-quote-list`, `.sales-business-cards`, `#crm-lead-list`, and `#crm-hot-leads .grid` now
+follow it too. **Rule**: any list rendered by mapping an array with no known small upper bound
+must be capped this way — never left to grow the page unboundedly.
+
+### Builder wizard — numbered steps and section breaks
+
+The Integration Builder's steps 1-3 (Basic/Auth/Capabilities) intentionally share one scrollable
+panel (the create call is atomic). Two fixes: the tab label now carries its number range
+(`1-3. ...`) consistently with every other numbered tab, and `.builder-basic-panel h4` gets a
+real top border + spacing before each sub-section (never before the first) — scoped to that one
+panel only (`basicPanel.className='builder-basic-panel'`), so no other drawer's `<h4>` anywhere
+in the app is affected.
+
+### Platform Admin's quiet system-level accent
+
+Platform Admin uses the exact same cards/tables/tokens as any tenant page — per spec, no
+redesign, just a quiet signal that this is the operator surface. `#platform .pfcc-card` (the
+Platform Command Center hero card) gets a 3px `--info` top border instead of the tenant
+`--accent` purple, and `#platform .kpi-card .kpi-value` renders in `--info` too. Both rules are
+scoped to `#platform` — zero effect on any tenant page, and the very same `.kpi-card`/`.pfcc-card`
+markup a tenant page uses is untouched there.
+
+### Custom file input control
+
+The one native `<input type=file>` visible to a user (Command Center's chat attachment) used to
+show the browser's own unlocalized "Choose File" button. Fixed with the standard accessible
+pattern: the real `<input>` stays in the DOM, fully functional (`.files`, keyboard Tab stop,
+screen-reader label) but visually hidden via `.file-input-native` (clip-based hiding, never
+`display:none`, which would break keyboard/AT access); a `<label for="cmdc-attach-input">`
+styled as a normal secondary button acts as the visible trigger (native label-click delegation,
+no JS proxy click needed); a `change` listener writes the real selected filename into
+`#cmdc-attach-status` (localized `commandCenter.chooseFile` / `commandCenter.noFileChosen`,
+ar+en). Apply this exact pattern to any future visible file input — never leave one showing raw
+browser chrome.
+
+## What remains unredesigned (honest, not silently dropped)
+
+CRM's Sales Funnel/quote/business-card sub-components still use a separate, hand-tuned warm
+palette (hardcoded hex values, e.g. `#ede8dc`, `#f8edd4`) rather than the shared `--accent`/
+`--border` tokens — found during the audit, not fixed in this pass (remapping ~15+ hardcoded
+values across `.sales-*` classes is a real, contained follow-up, not a blocker: nothing is
+visually broken, it simply predates the token system). Reports' own long "Frost success metrics"
+list is unbounded like CRM's lists were, but at a much smaller scale (proportionally a minor
+contributor to a 7,269px page, not the 21,600px CRM had) — deferred rather than treated as
+equally urgent. Agent Detail's tabbed drawer (Control Center → Agent Map → an agent's own name)
+already uses the exact shared `tabs()` component correctly; it looks sparse mainly because a
+freshly-seeded agent with no AI configured genuinely has little to show, not because of a layout
+defect — left alone rather than manufacturing content to fill it.

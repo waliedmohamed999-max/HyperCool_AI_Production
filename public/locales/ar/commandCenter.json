@@ -3,6 +3,8 @@
   "newConversation": "+ محادثة جديدة",
   "chatPlaceholder": "اكتب سؤالك أو طلبك...",
   "send": "إرسال",
+  "chooseFile": "اختيار ملف",
+  "noFileChosen": "لم يتم اختيار ملف",
   "suggestions": "الاقتراحات",
   "liveOperations": "العمليات الحية",
   "dataContext": "البيانات والسياق",

@@ -528,7 +528,8 @@ async function openConnectorWizard(summary){
  // Platform Admin editing a draft never forgets the LIVE version keeps serving new connections
  // completely unaffected the whole time.
  const draftBanner=document.createElement('div');draftBanner.hidden=true;
- const basicPanel=document.createElement('div'),actionsPanel=document.createElement('div'),
+ const basicPanel=document.createElement('div');basicPanel.className='builder-basic-panel';
+ const actionsPanel=document.createElement('div'),
        webhooksPanel=document.createElement('div'),healthPanel=document.createElement('div'),
        versionsPanel=document.createElement('div'),reviewPanel=document.createElement('div'),
        analyticsPanel=document.createElement('div');
@@ -537,7 +538,7 @@ async function openConnectorWizard(summary){
  // panel (the Builder's create call is atomic — see the Basics panel's own doc comment) — a
  // Platform Admin always sees where they are in the full 8-step flow.
  const tabBar=tabs(node,[
-  [`${t('platform.builder.tabBasic')} / ${t('platform.builder.tabAuth')} / ${t('platform.builder.tabCapabilities')}`,basicPanel],
+  [`1-3. ${t('platform.builder.tabBasic')} / ${t('platform.builder.tabAuth')} / ${t('platform.builder.tabCapabilities')}`,basicPanel],
   [`4. ${t('platform.builder.tabActions')}`,actionsPanel],
   [`5. ${t('platform.builder.tabWebhooks')}`,webhooksPanel],
   [`6. ${t('platform.builder.tabHealth')}`,healthPanel],

@@ -42,8 +42,9 @@ export function installCommandCenter() {
      <form id="cmdc-chat-form">
       <textarea name="text" required maxlength="4000" placeholder="${escape(t('commandCenter.chatPlaceholder'))}"></textarea>
       <div class="cmdc-attach-row">
-       <input type="file" id="cmdc-attach-input" accept=".pdf,.csv,.xlsx,.docx,.txt,.png,.jpg,.jpeg">
-       <span id="cmdc-attach-status"></span>
+       <input type="file" id="cmdc-attach-input" class="file-input-native" accept=".pdf,.csv,.xlsx,.docx,.txt,.png,.jpg,.jpeg">
+       <label for="cmdc-attach-input" class="button secondary file-input-trigger">${escape(t('commandCenter.chooseFile'))}</label>
+       <span id="cmdc-attach-status">${escape(t('commandCenter.noFileChosen'))}</span>
       </div>
       <button type="submit">${escape(t('commandCenter.send'))}</button>
      </form>
@@ -77,6 +78,14 @@ export function installCommandCenter() {
  $('#cmdc-run-executive-review').onclick=onRunExecutiveReview;
  $('#cmdc-conversation-select').onchange=e=>openConversation(e.target.value);
  $('#cmdc-chat-form').addEventListener('submit',onSendMessage);
+ // File input polish (HyperCool Frost UI Part UI-2, item 30/31) — the native <input type=file>
+ // stays in the DOM and fully functional (real keyboard access, real screen-reader label via
+ // the <label for>, real .files value) so nothing about the actual upload logic above changes;
+ // only its own browser-chrome text ("Choose File" / unlocalized) is visually replaced by a
+ // real button label plus this status span, which IS ours to localize.
+ $('#cmdc-attach-input').addEventListener('change',e=>{
+  $('#cmdc-attach-status').textContent=e.target.files?.[0]?.name||t('commandCenter.noFileChosen');
+ });
  $('#cmdc-data-context').addEventListener('submit',onAddContext);
  $('#cmdc-data-context').addEventListener('submit',onCreateRunbook);
  $('#cmdc-search-input').addEventListener('input',debounce(onSearchInput,300));
@@ -256,7 +265,7 @@ async function onSendMessage(event) {
    const uploaded=await api('/api/command/attachments',{filename:file.name,mimeType,contentBase64,conversationId:currentConversationId});
    attachmentId=uploaded.id;
    fileInput.value='';
-   $('#cmdc-attach-status').textContent='';
+   $('#cmdc-attach-status').textContent=t('commandCenter.noFileChosen');
    renderAttachmentsList();
   }
   const host=$('#cmdc-messages');

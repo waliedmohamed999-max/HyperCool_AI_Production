@@ -3,6 +3,8 @@
   "newConversation": "+ New conversation",
   "chatPlaceholder": "Type a question or request...",
   "send": "Send",
+  "chooseFile": "Choose file",
+  "noFileChosen": "No file chosen",
   "suggestions": "Suggestions",
   "liveOperations": "Live Operations",
   "dataContext": "Data & Context",
