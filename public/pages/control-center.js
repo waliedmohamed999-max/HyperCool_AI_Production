@@ -16,6 +16,19 @@ let filters={status:'all',query:''};
 const AGENT_STATUS_VARIANT={READY:'CONNECTED',PARTIAL:'DEGRADED',BLOCKED:'ERROR',DISABLED:'DISCONNECTED'};
 const CONNECTION_MODE_LABEL=mode=>t('controlCenter.connectionMode.'+(mode||'SINGLE'));
 const TOOL_STATUS_LABEL=status=>t('controlCenter.toolStatus.'+status)||status;
+// HyperCool Frost UI — Part UI-3, item 9/26: readiness blockers/warnings are real internal
+// reason codes (AI_NOT_CONFIGURED, AGENT_DISABLED, REQUIRED_TOOL_<status>:<slug>) meant for
+// logs/debugging — showing them raw to a user is exactly the "raw enum" the design audit
+// flags. This never invents a reason that isn't real; it only translates the known, fixed
+// codes into a real sentence and — for the one dynamic pattern — reuses the SAME
+// TOOL_STATUS_LABEL every tool badge already uses, so "which tool, what's wrong with it" reads
+// naturally. A genuinely unrecognized code still falls back to itself (honest, never hidden).
+const BLOCKER_LABEL=code=>{
+ const toolMatch=/^REQUIRED_TOOL_([A-Z_]+):(.+)$/.exec(code);
+ if(toolMatch)return t('controlCenter.blockerRequiredTool',{tool:toolMatch[2],status:TOOL_STATUS_LABEL(toolMatch[1])});
+ const key='controlCenter.blockerReason.'+code,translated=t(key);
+ return translated===key?code:translated;
+};
 // Phase 6G — driven by the connector's REAL authType (control-center.js's own
 // buildIntegrationsSummary now reports it), never a hardcoded slug allowlist: ANY OAuth2
 // connector — a hand-built one (Salla/Zid) or a brand-new one defined entirely through the
@@ -134,7 +147,7 @@ function renderAttention(){
  const items=[];
  if(onboardingStatus && onboardingStatus.status!=='COMPLETED')items.push({text:t('controlCenter.attentionOnboardingIncomplete'),jump:()=>{location.hash='#onboarding';}});
  for(const agent of summary.agents.items){
-  if(agent.status==='BLOCKED')items.push({text:t('controlCenter.attentionAgentBlocked',{agent:agent.name,reason:agent.blockers[0]||''}),jump:()=>openAgentDrawer(agent.id)});
+  if(agent.status==='BLOCKED')items.push({text:t('controlCenter.attentionAgentBlocked',{agent:agent.name,reason:agent.blockers[0]?BLOCKER_LABEL(agent.blockers[0]):''}),jump:()=>openAgentDrawer(agent.id)});
   else if(agent.status==='PARTIAL')for(const slug of agent.optionalMissing)items.push({text:t('controlCenter.attentionAgentPartial',{agent:agent.name,tool:slug}),jump:()=>openAgentDrawer(agent.id)});
  }
  for(const provider of summary.integrations.providers)for(const c of provider.connections)if(!['CONNECTED','DEGRADED'].includes(c.status))items.push({text:t('controlCenter.attentionConnection',{name:c.name,provider:provider.nameAr,status:t('controlCenter.status.'+c.status)}),jump:()=>selectTab(1)});
@@ -469,7 +482,7 @@ function paintAgentCards(){
  const grid=document.getElementById('cc-agent-cards');if(!grid)return;
  const items=summary.agents.items.filter(a=>(filters.status==='all'||a.status===filters.status)&&(!filters.query||a.name.includes(filters.query)));
  if(!items.length){grid.innerHTML=empty(t('common.noResults'));return;}
- grid.innerHTML=items.map(a=>`<article class="card" data-agent="${escape(a.id)}"><div class="row-between"><h3>${escape(a.name)}</h3>${statusBadge(a.status)}</div><p>${a.enabled?t('controlCenter.enabled'):t('controlCenter.disabledLabel')}</p>${a.status==='BLOCKED'?`<p class="kpi-context">${escape(a.blockers[0]||'')}</p>`:''}</article>`).join('');
+ grid.innerHTML=items.map(a=>`<article class="card" data-agent="${escape(a.id)}"><div class="row-between"><h3>${escape(a.name)}</h3>${statusBadge(a.status)}</div><p>${a.enabled?t('controlCenter.enabled'):t('controlCenter.disabledLabel')}</p>${a.status==='BLOCKED'&&a.blockers[0]?`<p class="kpi-context">${escape(BLOCKER_LABEL(a.blockers[0]))}</p>`:''}</article>`).join('');
  grid.querySelectorAll('article').forEach(card=>{card.onclick=()=>openAgentDrawer(card.dataset.agent);const b=button(t('controlCenter.manage'),{variant:'secondary',iconName:'arrow'});b.onclick=e=>{e.stopPropagation();openAgentDrawer(card.dataset.agent);};card.append(b);});
 }
 
@@ -503,7 +516,7 @@ async function openAgentDrawer(agentId,{initialTab=null}={}){
 function paintAgentOverview(panel,agentId,config,readiness){
  panel.innerHTML=`<p><strong>${escape(t('controlCenter.enabledLabel'))}:</strong> ${config.enabled?t('controlCenter.enabled'):t('controlCenter.disabledLabel')}</p>
   <p><strong>${escape(t('controlCenter.readinessLabel'))}:</strong> ${statusBadge(readiness.status)}</p>
-  ${readiness.blockers.length?`<p><strong>${escape(t('controlCenter.blockers'))}:</strong></p><ul>${readiness.blockers.map(b=>`<li>${escape(b)}</li>`).join('')}</ul>`:''}
+  ${readiness.blockers.length?`<p><strong>${escape(t('controlCenter.blockers'))}:</strong></p><ul>${readiness.blockers.map(b=>`<li>${escape(BLOCKER_LABEL(b))}</li>`).join('')}</ul>`:''}
   ${readiness.warnings.length?`<p><strong>${escape(t('controlCenter.warnings'))}:</strong></p><ul>${readiness.warnings.map(w=>`<li>${escape(w)}</li>`).join('')}</ul>`:''}`;
  const toggle=button(config.enabled?t('controlCenter.disableAgent'):t('controlCenter.enableAgent'),{variant:'secondary'});
  toggle.onclick=async()=>{try{await api(`/api/agents/${agentId}/config`,{enabled:!config.enabled},'PATCH');config.enabled=!config.enabled;paintAgentOverview(panel,agentId,config,readiness);toast(t('common.savedSuccessfully'));}catch(error){toastError(error.message);}};

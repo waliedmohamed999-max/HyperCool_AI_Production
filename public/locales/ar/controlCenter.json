@@ -94,6 +94,12 @@
  "readinessLabel": "الجاهزية",
  "blockers": "أسباب التوقف",
  "warnings": "تنبيهات",
+ "blockerRequiredTool": "الأداة {tool} — {status}",
+ "blockerReason": {
+  "AI_NOT_CONFIGURED": "يلزم إعداد اتصال ذكاء اصطناعي لهذا الوكيل",
+  "AI_CONNECTION_UNHEALTHY": "اتصال الذكاء الاصطناعي الحالي غير سليم — يحتاج إعادة ربط",
+  "AGENT_DISABLED": "هذا الوكيل معطَّل حاليًا"
+ },
  "disableAgent": "تعطيل الوكيل",
  "enableAgent": "تفعيل الوكيل",
  "drawerOverview": "نظرة عامة",

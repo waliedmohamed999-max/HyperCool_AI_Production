@@ -184,16 +184,67 @@ no JS proxy click needed); a `change` listener writes the real selected filename
 ar+en). Apply this exact pattern to any future visible file input — never leave one showing raw
 browser chrome.
 
+## Phase UI-3 — final consistency closure
+
+### CRM semantic color cleanup — what was replaced, what was kept
+
+Audited every hardcoded hex value inside `.sales-*` rules (~40 of them). Replaced ~25 that were
+plain neutrals (backgrounds/borders/muted text with no semantic meaning of their own) with the
+matching token (`--surface`, `--border`, `--ink-muted`, `--surface-2`, `--ink`, plus the named
+type-scale tokens for font-sizes that were hardcoded px). **Deliberately kept** three
+hue-carrying families that are real, useful information design, not leftover cruft: the blue
+`#819fd0`/`#5b7caa`/`#e9f0f9` family (B2B opportunity cards), the gold `#ccb178`/`#b19459`/
+`#f8edd4`/`#706141` family (quote cards), and the warm `#fffaf1` tint (hot-lead cards) — CRM uses
+color to distinguish its own three card types at a glance, and flattening that to one accent
+color would remove real information, not just tidy up CSS. Also fixed `.sales-empty-state`'s own
+teal accent (`#6d95a8`/`#e9f1f6`), which was an unexplained deviation from the app-wide
+`.empty` convention (`--accent` icon) — now matches it.
+
+### Reports' real long list — corrected identification
+
+Phase UI-2's audit assumed the long "success metrics" list was `.recommendation-list`; a deeper
+DOM inspection this pass found the actual repeating container was `.risk-list` (27 `.pill`
+badges across the page, spread over two `.risk-list` sections) — `.recommendation-list` was
+already short (4 items). Both are now capped with the standard `.scroll-region` pattern (see
+below); Reports' total page height dropped from 7,269px to 5,747px.
+
+### The standard scroll-region pattern, named at last
+
+Five separate call sites (`.cmdc-ops-list`, `.sales-quote-list`, `.sales-business-cards`,
+`#crm-lead-list`, `#crm-hot-leads .grid`, `.risk-list`, `.recommendation-list`) now share the
+exact same values (`max-height:640px` — or `900px` for the two densest CRM grids —
+`overflow:auto`, `padding-inline-end:4px`), formally named and documented as `.scroll-region` in
+`base.css`. New long lists should reuse these exact values even where composing the literal
+class isn't practical (each existing call site is a single-purpose selector; retrofitting them
+to literally share one class name would touch JS in three separate files for no visual gain).
+
+### Raw enum leak fixed (Agent readiness blockers)
+
+A real, concrete instance of "raw technical UI visible to an investor": an agent's readiness
+blockers/warnings are internal reason codes (`AI_NOT_CONFIGURED`, `AGENT_DISABLED`,
+`REQUIRED_TOOL_<status>:<slug>`) meant for logs — Control Center's "needs attention" panel, the
+agent card grid, and the agent drawer's Overview tab all rendered them completely raw. Added
+`BLOCKER_LABEL()` (`control-center.js`), which translates the three fixed codes into a real
+sentence and reuses the existing `TOOL_STATUS_LABEL()` for the one dynamic pattern — a genuinely
+unrecognized code still falls back to itself (honest, never hidden, never invented).
+
+### Mobile overflow fixed (Command Center at ~390px)
+
+Phase UI-1's own `.cmdc-layout` mobile breakpoint collapsed the two-column grid to a bare `1fr`
+column — CSS Grid items default to `min-width:auto`, so a wide child (the Data & Context tab
+bar, 6 tabs) forced the column, and the whole page, wider than the viewport. Fixed to
+`minmax(0,1fr)`, matching the desktop rule's own `minmax(0,1.7fr)` — the tab bar now correctly
+scrolls within its own bounds (it already had `overflow:auto`) instead of stretching the page.
+**Rule**: any CSS Grid column that must shrink below its content's natural width needs an
+explicit `minmax(0, ...)`, never a bare fraction — this is the single most common cause of
+"page is 8px wider than the viewport" bugs in a grid-based layout.
+
 ## What remains unredesigned (honest, not silently dropped)
 
-CRM's Sales Funnel/quote/business-card sub-components still use a separate, hand-tuned warm
-palette (hardcoded hex values, e.g. `#ede8dc`, `#f8edd4`) rather than the shared `--accent`/
-`--border` tokens — found during the audit, not fixed in this pass (remapping ~15+ hardcoded
-values across `.sales-*` classes is a real, contained follow-up, not a blocker: nothing is
-visually broken, it simply predates the token system). Reports' own long "Frost success metrics"
-list is unbounded like CRM's lists were, but at a much smaller scale (proportionally a minor
-contributor to a 7,269px page, not the 21,600px CRM had) — deferred rather than treated as
-equally urgent. Agent Detail's tabbed drawer (Control Center → Agent Map → an agent's own name)
-already uses the exact shared `tabs()` component correctly; it looks sparse mainly because a
-freshly-seeded agent with no AI configured genuinely has little to show, not because of a layout
-defect — left alone rather than manufacturing content to fill it.
+Agent Detail's tabbed drawer (Control Center → Agent Map → an agent's own name) already uses the
+exact shared `tabs()` component correctly; it looks sparse mainly because a freshly-seeded agent
+with no AI configured genuinely has little to show, not because of a layout defect — left alone
+rather than manufacturing content to fill it (its one real gap, the raw blocker codes, is now
+fixed — see above). The Integration Builder's Actions/Webhooks/Health/Versions/Review/Analytics
+tabs (steps 4-9) were audited for gross defects in UI-2 but not given the same deep pass as step
+1-3's panel; no concrete issue was found there, so none was manufactured.

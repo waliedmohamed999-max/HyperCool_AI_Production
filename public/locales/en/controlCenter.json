@@ -94,6 +94,12 @@
  "readinessLabel": "Readiness",
  "blockers": "Blockers",
  "warnings": "Warnings",
+ "blockerRequiredTool": "Tool {tool} — {status}",
+ "blockerReason": {
+  "AI_NOT_CONFIGURED": "This agent needs an AI connection configured",
+  "AI_CONNECTION_UNHEALTHY": "The current AI connection is unhealthy — needs reconnecting",
+  "AGENT_DISABLED": "This agent is currently disabled"
+ },
  "disableAgent": "Disable agent",
  "enableAgent": "Enable agent",
  "drawerOverview": "Overview",

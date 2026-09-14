@@ -6,4 +6,14 @@
    heading element (e.g. a KPI's numeric value, or a status chip's label). */
 .text-metric{font-size:var(--text-metric);line-height:1.3;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
 .text-status-label{font-size:var(--text-status-label);font-weight:500;letter-spacing:.2px}
-.text-body{font-size:var(--text-base);line-height:1.7;color:var(--ink)}a{color:var(--accent-strong);text-underline-offset:4px}button,input,select,textarea{font:inherit}button,a,input,select,textarea,summary{touch-action:manipulation}:focus-visible{outline:3px solid var(--accent);outline-offset:3px}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.58}[hidden]{display:none!important}section{margin-block-end:24px;min-width:0}svg{flex-shrink:0}time,[dir=ltr]{unicode-bidi:isolate}pre{direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface-2);padding:16px;border-radius:8px;font-size:12px}details{margin-top:16px}summary{cursor:pointer;color:var(--accent-strong);font-weight:500;padding:8px 0}details[open]>summary{margin-bottom:12px}button{transition:background .15s,border-color .15s}::selection{background:#e0defe}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+.text-body{font-size:var(--text-base);line-height:1.7;color:var(--ink)}
+/* HyperCool Frost UI — Part UI-3, item 12: the standard pattern for any list rendered by
+   mapping an array with no small, known upper bound (a page of leads, quotes, opportunities,
+   recommendations, operations...). Caps the container's own height and scrolls internally
+   instead of letting the page grow unboundedly — never truncates or paginates the underlying
+   data. Apply directly on the list's own container class (`.recommendation-list`,
+   `.sales-quote-list`, `#crm-lead-list`, `.cmdc-ops-list`, etc. all follow these exact values)
+   rather than composing this class in, since each of those is itself already a single-purpose,
+   single-call-site selector — the point is the CONSISTENT VALUES, documented once here. */
+.scroll-region{max-height:640px;overflow:auto;padding-inline-end:4px}
+a{color:var(--accent-strong);text-underline-offset:4px}button,input,select,textarea{font:inherit}button,a,input,select,textarea,summary{touch-action:manipulation}:focus-visible{outline:3px solid var(--accent);outline-offset:3px}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.58}[hidden]{display:none!important}section{margin-block-end:24px;min-width:0}svg{flex-shrink:0}time,[dir=ltr]{unicode-bidi:isolate}pre{direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface-2);padding:16px;border-radius:8px;font-size:12px}details{margin-top:16px}summary{cursor:pointer;color:var(--accent-strong);font-weight:500;padding:8px 0}details[open]>summary{margin-bottom:12px}button{transition:background .15s,border-color .15s}::selection{background:#e0defe}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
