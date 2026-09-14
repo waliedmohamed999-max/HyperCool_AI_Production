@@ -98,6 +98,33 @@ function resolveAiConnectionForRun(db,env,tenantId,tenantConfig,tenant) {
  try{const credential=getCredentialForRuntime(db,env,connection.id,tenantId);apiKey=credential?.payload?.apiKey||null;}catch{apiKey=null;}
  return {provider:connection.integrationDefinitionId,model:tenantConfig?.model||tenant?.defaultAiModel||null,apiKey};
 }
+/**
+ * Release Hardening (pre-demo) — a zero-cost, read-only check for whether a given agent
+ * currently has ANY usable AI provider (tenant-specific connection override, or the
+ * env-var/registry default) — the exact same resolution `run()` itself performs, exposed so a
+ * high-frequency, no-human-in-the-loop caller (the scheduler's follow-up sweep) can decide
+ * NOT to attempt an agent run at all rather than creating a real, honest FAILED `agent_runs`
+ * row for every eligible lead, every 5-minute tick, forever. This performs no network call —
+ * it only checks that a provider+model+key are present, never whether that key is actually
+ * valid, so a REAL failure (expired token, revoked key, provider outage) still reaches a real
+ * `agentRuntime.run()` attempt and a real, un-suppressed error — this only short-circuits the
+ * "nothing at all is configured" case. A manual, human-initiated run of the SAME agent is
+ * never routed through this check — a human clicking "run" always gets a real, honest attempt
+ * and a real failure if one occurs, exactly as before this change.
+ */
+export function isAiConfiguredForAgent(db,env,tenantId,agentId) {
+ // Fails OPEN (reports "configured", i.e. don't short-circuit) on any lookup error — a bare
+ // test fixture that never called installTenancy()/seeded a tenant row must see exactly the
+ // same behavior as before this guard existed, never a crash from a table that fixture never
+ // needed. The real scheduler always runs against a real createApp() store, where these
+ // tables always exist.
+ try {
+  const tenantConfig=getTenantAgentConfig(db,tenantId,agentId);
+  const tenant=getTenant(db,tenantId);
+  const resolved=resolveAiConnectionForRun(db,env,tenantId,tenantConfig,tenant);
+  return providerStatus(env,resolved).configured;
+ } catch { return true; }
+}
 
 /**
  * AgentExecutionService. One generic runner for every agent: build tool set for its

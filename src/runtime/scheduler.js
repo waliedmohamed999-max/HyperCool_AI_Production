@@ -10,6 +10,7 @@ import {listTenants,expireTrials} from '../tenancy.js';
 import {recordAudit} from '../audit.js';
 import {processWebhookRetries} from '../connectors/generic-webhook/retry.js';
 import {tickWorkflowsForTenant} from './workflow-engine.js';
+import {isAiConfiguredForAgent} from './runtime.js';
 
 export const SCHEDULER_ACTOR={id:'scheduler',name:'الجدولة الآلية',role:'automation'};
 const FOLLOWUP_ELIGIBLE_STAGES=['QUOTE_SENT','DEMO','POST_PURCHASE'];
@@ -29,6 +30,17 @@ function riyadhParts(now) {
 export async function sweepFollowupGaps({store,agentRuntime,env={},tenantId=null}) {
  if(!isEnabled(env,'ENABLE_AUTOMATED_FOLLOWUPS'))return {checked:0,triggered:0,errors:0,skipped:'FEATURE_DISABLED'};
  const db=store.db;
+ // Release Hardening (pre-demo) — this is a high-frequency, no-human-in-the-loop caller (one
+ // tick every SCHEDULER_INTERVAL_MS, forever): with genuinely zero AI provider configured,
+ // looping every eligible lead and calling agentRuntime.run() per lead created a real, honest
+ // FAILED agent_runs row per lead per tick — correct individually, but an unbounded noise
+ // storm over time (thousands of rows/day). This check is zero-cost (no network call) and only
+ // catches "nothing at all is configured" (DEPENDENCY_NOT_CONFIGURED) — a tenant WITH a real
+ // key that is expired/revoked/rate-limited still reaches the real per-lead run() attempt
+ // below and a real, un-suppressed failure (DEPENDENCY_CONFIGURED_BUT_FAILED). A manual run of
+ // the followup agent from the UI never goes through this function at all, so a human always
+ // gets a real, honest attempt regardless.
+ if(!isAiConfiguredForAgent(db,env,tenantId,'followup'))return {checked:0,triggered:0,errors:0,skipped:'AI_NOT_CONFIGURED'};
  const leads=listLeads(db,tenantId).filter(lead=>FOLLOWUP_ELIGIBLE_STAGES.includes(lead.stage) && !lead.optOut && !lead.humanHold && !lead.replyHold);
  let triggered=0,checked=0,errors=0;
  for(const lead of leads) {

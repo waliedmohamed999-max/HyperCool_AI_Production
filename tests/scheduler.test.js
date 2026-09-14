@@ -88,20 +88,81 @@ test('sweepFollowupGaps triggers the followup agent exactly once per eligible le
   const runtime=createAgentRuntime({store,env,fetcher:fetcherFor(followupDecision)});
   const lead=createLead(store,{name:'Gym Riyadh',customerType:'B2B',sourceType:'INBOUND',company:'Gym Co',phone:'+966501112222'},user,tenantId);
   updateLead(store,lead.id,{stage:'QUOTE_SENT',city:'Riyadh',productNeed:'cryo',reason:'quote sent to customer',expectedVersion:1,temperature:'WARM'},user,tenantId);
-  const first=await sweepFollowupGaps({store,agentRuntime:runtime,tenantId});
+  const first=await sweepFollowupGaps({store,agentRuntime:runtime,env,tenantId});
   assert.equal(first.checked,1);
   assert.equal(first.triggered,1);
   assert.equal(listRuns(store.db,{agentId:'followup'},tenantId).length,1);
   // second sweep with still no active sequence created by the agent's own tool call: triggers again (no dedupe hides real gaps)
-  const second=await sweepFollowupGaps({store,agentRuntime:runtime,tenantId});
+  const second=await sweepFollowupGaps({store,agentRuntime:runtime,env,tenantId});
   assert.equal(second.triggered,1);
 
   // a lead that opted out must never be swept
   const optedOut=createLead(store,{name:'Opted Out',customerType:'B2C',sourceType:'INBOUND',phone:'+966501113333'},user,tenantId);
   const staged=updateLead(store,optedOut.id,{stage:'QUOTE_SENT',reason:'quote sent',expectedVersion:1,temperature:'COLD'},user,tenantId);
   contactControl(store,optedOut.id,{action:'OPT_OUT',expectedVersion:staged.version,evidence:'customer asked to stop'},user,tenantId);
-  const third=await sweepFollowupGaps({store,agentRuntime:runtime,tenantId});
+  const third=await sweepFollowupGaps({store,agentRuntime:runtime,env,tenantId});
   assert.equal(third.checked,1); // only the still-eligible first lead, not the opted-out one
+ }finally{store.close();}
+});
+
+// --- Release Hardening (pre-demo) — scheduler hygiene: bounded noise when AI is unconfigured,
+// never suppressing a REAL failure once AI is genuinely configured ---------------------------
+
+test('sweepFollowupGaps: with no AI provider configured at all, skips cleanly — zero agent_runs created, zero errors thrown',async()=>{
+ const {store,tenantId}=fixture();
+ try{
+  const noAiEnv={}; // deliberately no ANTHROPIC_API_KEY/OPENAI_API_KEY anywhere
+  const runtime=createAgentRuntime({store,env:noAiEnv,fetcher:fetcherFor(followupDecision)});
+  const lead=createLead(store,{name:'Gym Jeddah',customerType:'B2B',sourceType:'INBOUND',company:'Gym Co 2',phone:'+966501114444'},user,tenantId);
+  updateLead(store,lead.id,{stage:'QUOTE_SENT',city:'Jeddah',reason:'quote sent',expectedVersion:1,temperature:'WARM'},user,tenantId);
+  const result=await sweepFollowupGaps({store,agentRuntime:runtime,env:noAiEnv,tenantId});
+  assert.equal(result.skipped,'AI_NOT_CONFIGURED');
+  assert.equal(result.triggered,0);
+  assert.equal(listRuns(store.db,{agentId:'followup'},tenantId).length,0,'no FAILED agent_runs row should be created when AI is not configured at all');
+ }finally{store.close();}
+});
+
+test('sweepFollowupGaps: repeated ticks with no AI configured never accumulate duplicate failure rows',async()=>{
+ const {store,tenantId}=fixture();
+ try{
+  const noAiEnv={};
+  const runtime=createAgentRuntime({store,env:noAiEnv,fetcher:fetcherFor(followupDecision)});
+  const lead=createLead(store,{name:'Gym Dammam',customerType:'B2B',sourceType:'INBOUND',company:'Gym Co 3',phone:'+966501115555'},user,tenantId);
+  updateLead(store,lead.id,{stage:'QUOTE_SENT',city:'Dammam',reason:'quote sent',expectedVersion:1,temperature:'WARM'},user,tenantId);
+  for(let i=0;i<5;i++)await sweepFollowupGaps({store,agentRuntime:runtime,env:noAiEnv,tenantId});
+  assert.equal(listRuns(store.db,{agentId:'followup'},tenantId).length,0,'5 ticks with no AI configured must still produce zero agent_runs rows, not 5');
+ }finally{store.close();}
+});
+
+test('sweepFollowupGaps: once AI becomes configured, normal execution resumes immediately (no restart/state needed)',async()=>{
+ const {store,tenantId}=fixture();
+ try{
+  const noAiEnv={};
+  const runtime=createAgentRuntime({store,env,fetcher:fetcherFor(followupDecision)}); // runtime itself always has a real key available
+  const lead=createLead(store,{name:'Gym Khobar',customerType:'B2B',sourceType:'INBOUND',company:'Gym Co 4',phone:'+966501116666'},user,tenantId);
+  updateLead(store,lead.id,{stage:'QUOTE_SENT',city:'Khobar',reason:'quote sent',expectedVersion:1,temperature:'WARM'},user,tenantId);
+  const before=await sweepFollowupGaps({store,agentRuntime:runtime,env:noAiEnv,tenantId});
+  assert.equal(before.skipped,'AI_NOT_CONFIGURED');
+  const after=await sweepFollowupGaps({store,agentRuntime:runtime,env,tenantId}); // env now has the key
+  assert.equal(after.triggered,1);
+  assert.equal(listRuns(store.db,{agentId:'followup'},tenantId).length,1);
+ }finally{store.close();}
+});
+
+test('sweepFollowupGaps: a REAL configured-but-failing provider is never suppressed by the not-configured guard',async()=>{
+ const {store,tenantId}=fixture();
+ try{
+  const failingFetcher=async()=>new Response('rate limited',{status:429});
+  const runtime=createAgentRuntime({store,env,fetcher:failingFetcher}); // env has a real key+model — DEPENDENCY_CONFIGURED_BUT_FAILED, not DEPENDENCY_NOT_CONFIGURED
+  const lead=createLead(store,{name:'Gym Taif',customerType:'B2B',sourceType:'INBOUND',company:'Gym Co 5',phone:'+966501117777'},user,tenantId);
+  updateLead(store,lead.id,{stage:'QUOTE_SENT',city:'Taif',reason:'quote sent',expectedVersion:1,temperature:'WARM'},user,tenantId);
+  const result=await sweepFollowupGaps({store,agentRuntime:runtime,env,tenantId});
+  assert.notEqual(result.skipped,'AI_NOT_CONFIGURED','a real (if failing) provider must never be reported as not-configured');
+  assert.equal(result.triggered,1,'a real attempt must still be made');
+  assert.equal(result.errors,1,'the real provider failure must surface honestly, never silently swallowed');
+  const runs=listRuns(store.db,{agentId:'followup'},tenantId);
+  assert.equal(runs.length,1);
+  assert.equal(runs[0].status,'FAILED');
  }finally{store.close();}
 });
 
