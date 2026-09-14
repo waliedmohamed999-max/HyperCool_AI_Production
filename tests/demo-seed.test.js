@@ -112,6 +112,11 @@ test('demo:seed produces two real, isolated, clearly-marked demo tenants with ri
   assert.ok(db.prepare('SELECT COUNT(*) n FROM weekly_reports WHERE tenant_id=?').get(nova.id).n >= 1);
   assert.ok(db.prepare('SELECT COUNT(*) n FROM daily_briefs WHERE tenant_id=?').get(nova.id).n >= 1);
 
+  // Release Hardening: Company Brain must not ship empty for an investor demo (Frost Command
+  // Center Phase 7A) — one context_items row per brain_* section, for both tenants.
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM context_items WHERE tenant_id=? AND type LIKE 'brain_%'").get(nova.id).n, 6);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM context_items WHERE tenant_id=? AND type LIKE 'brain_%'").get(vertex.id).n, 6);
+
   // Connections show a real MIX of health states, never all "green" (Part 14 — realistic readiness).
   const novaConnStatuses = db.prepare('SELECT status FROM integration_connections WHERE tenant_id=?').all(nova.id).map(r => r.status);
   assert.ok(novaConnStatuses.includes('CONNECTED'));

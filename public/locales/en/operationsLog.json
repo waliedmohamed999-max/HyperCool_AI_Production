@@ -48,6 +48,26 @@
     "USER_REACTIVATED": "Member Reactivated",
     "USER_REMOVED": "Member Removed",
     "USER_ACCESS_RESET": "Access Reset",
-    "USER_SESSIONS_REVOKED": "Member Sessions Revoked"
+    "USER_SESSIONS_REVOKED": "Member Sessions Revoked",
+    "CONTEXT_ITEM_CREATED": "Company Context Item Added",
+    "CONTEXT_ITEM_UPDATED": "Context Item Updated",
+    "CONTEXT_ITEM_ARCHIVED": "Context Item Archived",
+    "COMMAND_ATTACHMENT_UPLOADED": "Command Center Attachment Uploaded",
+    "COMMAND_CONFIGURATION_UNDONE": "Configuration Change Undone",
+    "COMMAND_RUNBOOK_CREATED": "Runbook Created",
+    "COMMAND_RUNBOOK_ARCHIVED": "Runbook Archived",
+    "SUGGESTION_ACCEPTED": "Suggestion Accepted",
+    "SUGGESTION_DISMISSED": "Suggestion Dismissed",
+    "WORKFLOW_CREATED": "Workflow Draft Created",
+    "WORKFLOW_EDITED": "Workflow Edited",
+    "WORKFLOW_ACTIVATED": "Workflow Activated",
+    "WORKFLOW_PAUSED": "Workflow Paused",
+    "WORKFLOW_RESUMED": "Workflow Resumed",
+    "WORKFLOW_ARCHIVED": "Workflow Archived",
+    "WORKFLOW_RUN_STARTED": "Workflow Run Started",
+    "WORKFLOW_RUN_CANCELLED": "Workflow Run Cancelled",
+    "WORKFLOW_CANCEL_REQUESTED": "Workflow Run Cancel Requested",
+    "WORKFLOW_EVENT_TRIGGER_FAILED": "Workflow Event Trigger Failed",
+    "WORKFLOW_LOOP_PROTECTION_TRIGGERED": "Automation Loop Protection Triggered"
   }
 }

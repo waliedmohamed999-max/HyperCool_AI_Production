@@ -48,6 +48,26 @@
     "USER_REACTIVATED": "إعادة تفعيل عضو",
     "USER_REMOVED": "حذف عضو",
     "USER_ACCESS_RESET": "إعادة تعيين الوصول",
-    "USER_SESSIONS_REVOKED": "إنهاء جلسات عضو"
+    "USER_SESSIONS_REVOKED": "إنهاء جلسات عضو",
+    "CONTEXT_ITEM_CREATED": "إضافة عنصر إلى سياق الشركة",
+    "CONTEXT_ITEM_UPDATED": "تحديث عنصر سياق",
+    "CONTEXT_ITEM_ARCHIVED": "أرشفة عنصر سياق",
+    "COMMAND_ATTACHMENT_UPLOADED": "رفع مرفق في غرفة القيادة",
+    "COMMAND_CONFIGURATION_UNDONE": "تراجع عن تغيير إعداد",
+    "COMMAND_RUNBOOK_CREATED": "إنشاء دليل تشغيل (Runbook)",
+    "COMMAND_RUNBOOK_ARCHIVED": "أرشفة دليل تشغيل (Runbook)",
+    "SUGGESTION_ACCEPTED": "قبول اقتراح",
+    "SUGGESTION_DISMISSED": "تجاهل اقتراح",
+    "WORKFLOW_CREATED": "إنشاء مسودة Workflow",
+    "WORKFLOW_EDITED": "تعديل Workflow",
+    "WORKFLOW_ACTIVATED": "تفعيل Workflow",
+    "WORKFLOW_PAUSED": "إيقاف Workflow مؤقتًا",
+    "WORKFLOW_RESUMED": "استئناف Workflow",
+    "WORKFLOW_ARCHIVED": "أرشفة Workflow",
+    "WORKFLOW_RUN_STARTED": "بدء تشغيلة Workflow",
+    "WORKFLOW_RUN_CANCELLED": "إلغاء تشغيلة Workflow",
+    "WORKFLOW_CANCEL_REQUESTED": "طلب إيقاف تشغيلة Workflow",
+    "WORKFLOW_EVENT_TRIGGER_FAILED": "فشل مُحفّز حدث لـWorkflow",
+    "WORKFLOW_LOOP_PROTECTION_TRIGGERED": "تفعيل حماية الحلقات التلقائية"
   }
 }

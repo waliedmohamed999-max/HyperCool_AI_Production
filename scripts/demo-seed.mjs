@@ -23,6 +23,7 @@ import { createContent, reviewContent, approveContent } from '../src/domain.js';
 import { insertContent, writeContent } from '../src/content.js';
 import { createApproval, decideApproval } from '../src/runtime/approvals.js';
 import { createEscalation } from '../src/runtime/escalations.js';
+import { createContextItem } from '../src/runtime/context-items.js';
 import { updateTenantAgentConfig } from '../src/runtime/agent-config.js';
 import { setAutonomy } from '../src/autonomy.js';
 import { recordAudit } from '../src/audit.js';
@@ -303,6 +304,22 @@ function seedNova() {
  }
  log('Nova Store: latest daily brief + 4 weekly reports generated from real seeded data.');
 
+ // --- Company Brain (Frost Command Center Phase 7A/7C — Release Hardening) ------------------
+ // Release-hardening fix: the Command Center's Company Brain page was shipping empty for both
+ // demo tenants (no context_items ever seeded), which is a real investor-demo gap even though
+ // nothing is functionally broken — an "AI knows your company" narrative falls flat with a
+ // "لا يوجد شيء هنا بعد" empty state. Six real, governed context items, one per Company Brain
+ // section, using the same createContextItem() every real user's "+ Add Context" form uses.
+ for (const item of [
+  { type: 'brain_identity', title: 'هوية المتجر', description: 'متجر نوفا — متجر إلكتروني سعودي متخصص في العناية الشخصية والعطور، يخدم عملاء التجزئة (B2C) عبر سلة وزد.', pinned: true },
+  { type: 'brain_goals', title: 'هدف الربع الحالي', description: 'زيادة المبيعات 20% هذا الربع عبر تحسين معدل تحويل الحملات الإعلانية وتقليل فجوات متابعة العملاء المتأخرين.' },
+  { type: 'brain_customers', title: 'شريحة العملاء الأساسية', description: 'عملاء أفراد (B2C) في المدن الرئيسية (الرياض، جدة، الدمام)، يصلون غالبًا عبر إنستقرام وتيك توك، وحساسون تجاه العروض المحدودة.' },
+  { type: 'brain_products', title: 'التشكيلة الأساسية', description: '18 منتجًا نشطًا ضمن العناية الشخصية والعطور، مع تركيز تسويقي على التشكيلات الموسمية والعروض الحصرية لفترة محدودة.' },
+  { type: 'brain_brand', title: 'نبرة العلامة', description: 'ودّي وقريب من العميل، بلهجة سعودية بيضاء، مع تجنب المبالغة في الوعود التسويقية.', pinned: true },
+  { type: 'brain_rules', title: 'قاعدة التعامل مع العملاء المتأخرين', description: 'أي عميل بلا متابعة لأكثر من 3 أيام يُعتبر متأخرًا ويجب تصعيده كمهمة (Task) لفريق المبيعات.' }
+ ]) createContextItem(db, { ...item, source: 'manual' }, owner, tenantId);
+ log('Nova Store: 6 Company Brain context items (Identity/Goals/Customers/Products/Brand/Rules).');
+
  return tenantId;
 }
 
@@ -448,6 +465,17 @@ function seedVertex() {
   saveWeeklyReport(store, weekStart, owner, extras(tenantId), tenantId);
  }
  log('Vertex Solutions: latest daily brief + 4 weekly reports generated from real seeded data.');
+
+ // --- Company Brain (Frost Command Center Phase 7A/7C — Release Hardening) ------------------
+ for (const item of [
+  { type: 'brain_identity', title: 'هوية الشركة', description: 'فيرتكس سوليوشنز — شركة استشارات وحلول تقنية B2B تخدم عملاء مؤسسيين عبر مشاريع ودورة مبيعات طويلة نسبيًا.', pinned: true },
+  { type: 'brain_goals', title: 'هدف الربع الحالي', description: 'رفع معدل تحويل العملاء المحتملين المؤهلين (Qualified) إلى عقود موقعة، وتقليل زمن الاستجابة الأولى للعملاء الجدد.' },
+  { type: 'brain_customers', title: 'شريحة العملاء الأساسية', description: 'عملاء شركات (B2B) في قطاعات متعددة، بدورة قرار أطول تتطلب متابعة منظمة ومتعددة نقاط الاتصال.' },
+  { type: 'brain_products', title: 'نطاق الخدمات', description: 'استشارات تقنية وتنفيذ مشاريع حسب الطلب — لا يوجد كتالوج منتجات جاهزة (نموذج خدمات وليس تجارة إلكترونية).' },
+  { type: 'brain_brand', title: 'نبرة العلامة', description: 'مهني ومباشر، يعتمد على الأرقام والنتائج القابلة للقياس في كل تواصل مع العميل.', pinned: true },
+  { type: 'brain_rules', title: 'قاعدة تصعيد العميل المحتمل الساخن', description: 'أي عميل محتمل مصنّف HOT بلا تعيين مسؤول خلال 24 ساعة يجب تصعيده كمهمة (Task) لمدير الحسابات.' }
+ ]) createContextItem(db, { ...item, source: 'manual' }, owner, tenantId);
+ log('Vertex Solutions: 6 Company Brain context items (Identity/Goals/Customers/Products/Brand/Rules).');
 
  return tenantId;
 }

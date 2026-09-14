@@ -115,14 +115,37 @@ Frost/Create Task/Automate actions.
 They share no backend table — conflating them would either make Runbooks silently automatic
 (surprising) or make Workflows require a human to remember to run them (defeats the point).
 
-## Attachment approach — audited, not changed
+## Attachment approach — audited and corrected (Release Hardening pass)
 
-Chat attachments are stored as Base64-encoded JSON inline with the message record (from Phase
-7B). Phase 7C re-audited this approach rather than replacing it for cosmetics: it is honest (no
-claim of a dedicated object-storage layer that doesn't exist), size-bounded by the existing
-message-size validation, and adequate for the chat-attachment use case (small reference files,
-not a general file manager). Replacing it with real object storage is a legitimate future
-improvement, not a defect requiring urgent fixing.
+**Correction to an earlier version of this document**: attachments are **not** stored as a
+Base64-JSON blob in the database. That description only ever applied to the upload *transport*
+(`src/runtime/attachments.js`): the client POSTs `{filename, mimeType, contentBase64}` as JSON
+because no multipart-parsing dependency exists in this codebase, and adding one for this alone
+would be new, security-sensitive surface for a v1 feature. Once received, the server:
+
+1. Validates `mimeType` against a fixed allowlist — PDF, CSV, XLSX, DOCX, TXT, PNG, JPG only
+   (`ALLOWED_TYPES`) — and rejects anything else with `415`.
+2. Decodes the Base64 payload and rejects it above `MAX_ATTACHMENT_BYTES` (8MB) with `413`; the
+   HTTP route itself also bounds the raw request body at `MAX_ATTACHMENT_BYTES*1.4 + 8KB` before
+   that check ever runs, so an oversized upload never even fully buffers.
+3. Writes the **decoded bytes to a real file** under a **tenant-scoped directory**
+   (`data/attachments/<tenantId>/`), named `<random UUID>.<ext>` — never the user-supplied
+   filename. The extension is taken from the *validated* MIME type, never from the client's
+   filename, so a disguised executable can't ride in on a trusted-looking extension.
+4. Keeps the human-readable filename only as DB metadata (`command_attachments.filename`, itself
+   passed through `safeBasename()` — no path separators, no `..`, bounded length) — it is never
+   used to construct a filesystem path.
+5. Only ever reads file *content* back for the two plain-text MIME types (`text/plain`,
+   `text/csv`), capped at 20,000 characters, for Frost to reason about. PDF/DOCX/XLSX/PNG/JPG are
+   tracked with real metadata only — their binary content is never blindly dumped into an LLM
+   prompt (kept honest rather than sending garbled bytes as "text").
+
+This means path traversal, executable upload, and MIME/extension spoofing are all structurally
+prevented (allowlist + random on-disk name + MIME-derived extension), independent of whatever a
+client claims about the file. See `docs/FROST_COMMAND_CENTER.md`'s Release Hardening findings for
+the one real gap this audit found: there is currently no download/serve route for the original
+binary — an uploaded file can be referenced and pinned to Company Brain, but not fetched back out
+through the app. This is a legitimate feature gap for a future pass, not a security issue.
 
 ## Tenant isolation & RBAC
 
