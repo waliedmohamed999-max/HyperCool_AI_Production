@@ -98,16 +98,24 @@ function createAnthropicProvider({apiKey,model,fetcher}) {
     addUsage(result.usage);
     if(result.stop_reason==='tool_use') {
      messages.push({role:'assistant',content:result.content});
-     const toolResults=[];
-     for(const block of result.content) {
-      if(block.type!=='tool_use')continue;
-      // executeTool (not this `tools` list) is the actual authority: it re-checks the
-      // full registry and the permission level even if the model somehow requests a
-      // tool it was not offered — the offered list only shapes what the model sees.
-      const output=await executeTool(block.name,block.input);
-      toolCalls.push({name:block.name,input:block.input,output});
-      toolResults.push({type:'tool_result',tool_use_id:block.id,content:JSON.stringify(output)});
-     }
+     // Phase 7B (Command Center — Multi-Agent Delegation, spec Part 8): tool_use blocks the
+     // model requested IN THE SAME TURN have no ordering dependency on each other (the model
+     // only sees all their results together, next turn) — running them concurrently via
+     // Promise.all is what makes "PARALLEL" a real, observable property (concurrent DB rows,
+     // overlapping wall-clock LLM calls for delegated agent runs) rather than a UI label, while
+     // a model that wants SEQUENTIAL dependency between two calls already gets that for free by
+     // only requesting the second one in a LATER turn, after seeing the first turn's result.
+     // executeTool (not this `tools` list) is the actual authority: it re-checks the full
+     // registry and the permission level even if the model somehow requests a tool it was not
+     // offered — the offered list only shapes what the model sees. Array.map/Promise.all
+     // preserves request order in the output regardless of completion order, so tool_result
+     // blocks still line up with their tool_use_id correctly.
+     const blocks=result.content.filter(block=>block.type==='tool_use');
+     const outputs=await Promise.all(blocks.map(block=>executeTool(block.name,block.input)));
+     const toolResults=blocks.map((block,i)=>{
+      toolCalls.push({name:block.name,input:block.input,output:outputs[i]});
+      return {type:'tool_result',tool_use_id:block.id,content:JSON.stringify(outputs[i])};
+     });
      messages.push({role:'user',content:toolResults});
      continue;
     }
@@ -151,12 +159,14 @@ function createOpenAIProvider({apiKey,model,fetcher}) {
     const message=choice.message;
     if(choice.finish_reason==='tool_calls' && message.tool_calls?.length) {
      messages.push({role:'assistant',content:message.content||null,tool_calls:message.tool_calls});
-     for(const call of message.tool_calls) {
-      let input;try{input=JSON.parse(call.function.arguments||'{}');}catch{input={};}
-      const output=await executeTool(call.function.name,input);
-      toolCalls.push({name:call.function.name,input,output});
-      messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(output)});
-     }
+     // Same-turn tool calls run concurrently — see the matching comment in the Anthropic
+     // provider's run() above for why this is real parallelism, not a cosmetic change.
+     const parsedInputs=message.tool_calls.map(call=>{try{return JSON.parse(call.function.arguments||'{}');}catch{return {};}});
+     const outputs=await Promise.all(message.tool_calls.map((call,i)=>executeTool(call.function.name,parsedInputs[i])));
+     message.tool_calls.forEach((call,i)=>{
+      toolCalls.push({name:call.function.name,input:parsedInputs[i],output:outputs[i]});
+      messages.push({role:'tool',tool_call_id:call.id,content:JSON.stringify(outputs[i])});
+     });
      continue;
     }
     if(choice.finish_reason!=='stop')throw new ConnectorError('INCOMPLETE_MODEL_OUTPUT');

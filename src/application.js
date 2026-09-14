@@ -56,14 +56,18 @@ import {installAutonomy,currentAutonomy,setAutonomy,listAutonomyLog} from './aut
 import {installReporting,buildExecutiveReport,saveWeeklyReport,listWeeklyReports,currentWeekStart} from './reporting.js';
 import {buildReportWorkbook,buildReportPdfBuffer} from './reportExport.js';
 import {installRegistry,seedRegistry,listAgents as listRegistryAgents,getAgent,setEnabled,setModelConfig} from './runtime/registry.js';
-import {installRuntimeTables,createAgentRuntime,listRuns,getRun,listToolCalls} from './runtime/runtime.js';
+import {installRuntimeTables,createAgentRuntime,listRuns,getRun,listToolCalls,listChildRuns} from './runtime/runtime.js';
 import {installEvents,createEventBus} from './runtime/events.js';
 import {installApprovals,listApprovals,decideApproval,createApproval} from './runtime/approvals.js';
 import {installEscalations,listEscalations,resolveEscalation} from './runtime/escalations.js';
-import {installContextItems,createContextItem,listContextItems,updateContextItem,archiveContextItem} from './runtime/context-items.js';
+import {installContextItems,createContextItem,listContextItems,updateContextItem,archiveContextItem,detectContextConflicts,withFreshness} from './runtime/context-items.js';
 import {installSuggestions,syncSuggestions,listSuggestions,acceptSuggestion,dismissSuggestion,createTaskFromSuggestion} from './runtime/suggestions.js';
 import {installCommandChat,createConversation,listConversations,renameConversation,archiveConversation,listMessages,sendCommandMessage} from './runtime/command-chat.js';
 import {computeCompanyHealth} from './runtime/command-health.js';
+import {installAttachments,createAttachment,getAttachment,listAttachments,pinAttachmentToBrain,readAttachmentTextForChat,ALLOWED_TYPES,MAX_ATTACHMENT_BYTES} from './runtime/attachments.js';
+import {installConfigurationHistory,listConfigurationHistory,undoConfigurationChange} from './runtime/configuration-history.js';
+import {installRunbooks,listRunbooks,createRunbook,archiveRunbook,getRunbook} from './runtime/runbooks.js';
+import {searchCommands} from './runtime/command-search.js';
 import {installOrchestrator,buildDailyBrief} from './runtime/orchestrator.js';
 import {integrationStatus,AGENT_INTEGRATIONS} from './runtime/tools.js';
 import {providerStatus} from './runtime/llmProvider.js';
@@ -76,7 +80,7 @@ import {installInvitations,createInvitation,listInvitations,resendInvitation,rev
 import {installPlatformIdentity,getUserIdentity,requestEmailChange,resendEmailVerification,verifyEmailToken,requestPasswordReset,consumePasswordResetToken,checkForgotPasswordRateLimit,checkEmailVerificationRateLimit,recordPlatformAudit,registerPublicUser,checkSignupRateLimit} from './platform-identity.js';
 import {installPlatformMail,platformMailStatus,sendVerificationEmail,sendPasswordResetEmail,sendInvitationEmail,sendSecurityNotice} from './runtime/platform-mail.js';
 import {bootstrapWorkspaceForOwner,assertCanSelfCreateWorkspace,selfServicePolicy} from './workspace-provisioning.js';
-import {isPlatformAdmin,requirePlatformAdmin,buildPlatformOverview,listTenantDirectory,getTenantDetail,suspendTenantByPlatform,reactivateTenantByPlatform,extendTrialByPlatform,setCustomConnectorLimitByPlatform} from './platform-admin.js';
+import {isPlatformAdmin,requirePlatformAdmin,buildPlatformOverview,listTenantDirectory,getTenantDetail,suspendTenantByPlatform,reactivateTenantByPlatform,extendTrialByPlatform,setCustomConnectorLimitByPlatform,listPlatformDeadLetterWebhooks,listTenantsWithUnhealthyIntegrations} from './platform-admin.js';
 import {checkGlobalSignupLimit,checkWorkspaceCreationIpLimit,checkTotalTrialWorkspacesLimit} from './runtime/pilot-limits.js';
 import {botProtectionStatus,captchaRequiredFor,verifyBotProtection} from './runtime/bot-protection.js';
 import {isTrialActive,getTrialDaysRemaining,countSelfCreatedWorkspaces} from './tenancy.js';
@@ -208,6 +212,9 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installContextItems(store.db);
   installSuggestions(store.db);
   installCommandChat(store.db);
+  installAttachments(store.db);
+  installConfigurationHistory(store.db);
+  installRunbooks(store.db);
   installGate(store.db);
   installIntegrationDefinitions(store.db); // Multi-Tenant Phase 4A — global integration catalog, see docs/INTEGRATION_CONNECTION_ARCHITECTURE.md
   installIntegrationConnections(store.db);
@@ -693,7 +700,18 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // tenant owner's own role, however senior (Part 20/58).
       if(url.pathname==='/api/platform/overview' && req.method==='GET') {
         requirePlatformAdmin(env,session);
-        return send(200,buildPlatformOverview(store.db,env));
+        // Phase 7B — Platform Command Center (spec Part 24-28): scheduler.running() is the
+        // SAME real flag /api/frost/status already exposes per-tenant — surfaced here too so
+        // "هل الـscheduler شغال؟" has a real, non-fabricated answer at the platform level.
+        return send(200,{...buildPlatformOverview(store.db,env),schedulerRunning:scheduler.running()});
+      }
+      if(url.pathname==='/api/platform/webhooks/dead-letter' && req.method==='GET') {
+        requirePlatformAdmin(env,session);
+        return send(200,listPlatformDeadLetterWebhooks(store.db,{limit:50}));
+      }
+      if(url.pathname==='/api/platform/tenants/unhealthy-integrations' && req.method==='GET') {
+        requirePlatformAdmin(env,session);
+        return send(200,listTenantsWithUnhealthyIntegrations(store.db,env));
       }
       if(url.pathname==='/api/platform/tenants' && req.method==='GET') {
         requirePlatformAdmin(env,session);
@@ -1117,7 +1135,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='GET' && runDetail) {
         const run=getRun(store.db,runDetail[1],session.tenantId);
         if(!run)fail(404,'التشغيلة غير موجودة');
-        return send(200,{...run,toolCalls:listToolCalls(store.db,runDetail[1])});
+        // Phase 7B — Multi-Agent trace (spec Part 47-48): real child runs this run delegated to
+        // (Frost Commander's delegate_to_agent tool sets parent_run_id — see runtime.js), each
+        // with its OWN real status/tool calls, never a fabricated tree.
+        const childRuns=listChildRuns(store.db,runDetail[1],session.tenantId).map(child=>({...child,toolCalls:listToolCalls(store.db,child.id)}));
+        return send(200,{...run,toolCalls:listToolCalls(store.db,runDetail[1]),childRuns});
       }
       // ---------------------------------------------------------------------------------
       // Multi-Tenant Phase 4B — Agent Tool Assignment + Tool-to-Connection Mapping + Agent
@@ -1353,7 +1375,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           authorize(session,['owner','operator']);
           checkLlmRateLimit(session.user.id);
           const input=await body(req);
-          const {assistantMessage,run}=await sendCommandMessage({store,agentRuntime,env,tenantId:session.tenantId,user:session.user,conversationId:conversationMessages[1],text:input.text});
+          const attachmentContext=input.attachmentId?readAttachmentTextForChat(store.db,env,input.attachmentId,session.tenantId):null;
+          const {assistantMessage,run}=await sendCommandMessage({store,agentRuntime,env,tenantId:session.tenantId,user:session.user,conversationId:conversationMessages[1],text:input.text,attachmentContext});
           return send(201,{assistantMessage,runStatus:run.status});
         }
       }
@@ -1383,7 +1406,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         return send(200,{items});
       }
       if(url.pathname==='/api/command/context') {
-        if(req.method==='GET')return send(200,listContextItems(store.db,session.tenantId,{type:url.searchParams.get('type')||undefined,status:url.searchParams.get('status')||'ACTIVE'}));
+        if(req.method==='GET')return send(200,listContextItems(store.db,session.tenantId,{type:url.searchParams.get('type')||undefined,status:url.searchParams.get('status')||'ACTIVE'}).map(withFreshness));
         if(req.method==='POST') {
           authorize(session,['owner','operator']);
           const input=await body(req);
@@ -1409,6 +1432,70 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const suggestionTask=url.pathname.match(/^\/api\/command\/suggestions\/([\w-]+)\/create-task$/);
       if(req.method==='POST' && suggestionTask) {authorize(session,['owner','operator']);return send(201,createTaskFromSuggestion(store.db,suggestionTask[1],session.user,session.tenantId));}
       if(req.method==='GET' && url.pathname==='/api/command/system-map')return send(200,buildAgentConnectionMap(store.db,env,session.tenantId,{}));
+
+      // -----------------------------------------------------------------------------------
+      // Frost Command Center Phase 7B — Context conflict/freshness (spec Part 41-43), Command
+      // Search (44), Runbooks/Favorites (12-14/45), Configuration History + Undo (20-23), and
+      // safe Attachments (15-19). Same reuse discipline as Phase 7A: every read below is a real
+      // aggregation over existing tables, every write goes through the same canonical service
+      // functions, tenant-scoped throughout.
+      // -----------------------------------------------------------------------------------
+      if(req.method==='GET' && url.pathname==='/api/command/context/conflicts')return send(200,detectContextConflicts(store.db,session.tenantId));
+      if(req.method==='GET' && url.pathname==='/api/command/search') {
+        return send(200,searchCommands(store.db,session.tenantId,url.searchParams.get('q')||''));
+      }
+      if(url.pathname==='/api/command/runbooks') {
+        if(req.method==='GET')return send(200,listRunbooks(store.db,session.tenantId));
+        if(req.method==='POST') {
+          authorize(session,['owner','operator']);
+          const input=await body(req);
+          return send(201,createRunbook(store.db,input,session.user,session.tenantId));
+        }
+      }
+      const runbookArchive=url.pathname.match(/^\/api\/command\/runbooks\/([\w-]+)\/archive$/);
+      if(req.method==='POST' && runbookArchive) {
+        authorize(session,['owner','operator']);
+        return send(200,archiveRunbook(store.db,runbookArchive[1],session.user,session.tenantId));
+      }
+      const runbookRun=url.pathname.match(/^\/api\/command\/runbooks\/([\w-]+)\/run$/);
+      if(req.method==='POST' && runbookRun) {
+        authorize(session,['owner','operator']);
+        checkLlmRateLimit(session.user.id);
+        const runbook=getRunbook(store.db,runbookRun[1],session.tenantId);
+        const input=await body(req);
+        const conversation=input.conversationId?{id:input.conversationId}:createConversation(store.db,session.user,session.tenantId,runbook.name);
+        const {assistantMessage,run}=await sendCommandMessage({store,agentRuntime,env,tenantId:session.tenantId,user:session.user,conversationId:conversation.id,text:runbook.commandText});
+        return send(201,{conversationId:conversation.id,assistantMessage,runStatus:run.status});
+      }
+      if(req.method==='GET' && url.pathname==='/api/command/configuration-history')return send(200,listConfigurationHistory(store.db,session.tenantId,{limit:50}));
+      const configHistoryUndo=url.pathname.match(/^\/api\/command\/configuration-history\/([\w-]+)\/undo$/);
+      if(req.method==='POST' && configHistoryUndo) {
+        authorize(session,['owner']);
+        return send(200,undoConfigurationChange(store.db,configHistoryUndo[1],session.user,session.tenantId));
+      }
+      if(url.pathname==='/api/command/attachments') {
+        if(req.method==='GET')return send(200,listAttachments(store.db,session.tenantId,{conversationId:url.searchParams.get('conversationId')||undefined}));
+        if(req.method==='POST') {
+          authorize(session,['owner','operator']);
+          // Base64-in-JSON inflates ~33% over the raw file — the shared body() reader's 64KB
+          // cap (used by every other route) would refuse any real attachment, so this route
+          // gets its own bounded raw reader instead, exactly like webhook signature
+          // verification already does with rawBody() above.
+          if(!req.headers['content-type']?.startsWith('application/json'))fail(415,'JSON مطلوب');
+          const raw=await rawBody(req,Math.ceil(MAX_ATTACHMENT_BYTES*1.4)+8192);
+          let input;try{input=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
+          return send(201,createAttachment(store.db,env,input,session.user,session.tenantId));
+        }
+      }
+      const attachmentPin=url.pathname.match(/^\/api\/command\/attachments\/([\w-]+)\/pin-to-brain$/);
+      if(req.method==='POST' && attachmentPin) {
+        authorize(session,['owner','operator']);
+        const input=await body(req);
+        const attachment=getAttachment(store.db,attachmentPin[1],session.tenantId);
+        const contextItem=createContextItem(store.db,{type:input.type||'client_note',title:input.title||attachment.filename,
+         description:input.description||`مرفق محفوظ من المحادثة: ${attachment.filename}`,source:'attachment',category:'attachment'},session.user,session.tenantId);
+        return send(200,pinAttachmentToBrain(store.db,attachmentPin[1],contextItem.id,session.tenantId));
+      }
 
       if(req.method==='GET' && url.pathname==='/api/frost/daily-brief')return send(200,buildDailyBrief({store,db:store.db,listEscalations,listRuns,buildBriefFn:buildBrief}));
       if(req.method==='GET' && url.pathname==='/api/frost/status')return send(200,{gate:getGateStatus(store.db),schedulerRunning:scheduler.running(),routes:orchestratorRoutes});

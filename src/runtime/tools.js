@@ -24,6 +24,8 @@ import {getAssignment,upsertAssignment} from './tool-assignments.js';
 import {searchContextItems} from './context-items.js';
 import {sweepFollowupGaps} from './scheduler.js';
 import {computeCompanyHealth} from './command-health.js';
+import {recordConfigurationChange} from './configuration-history.js';
+import {listJobs,cancelJobs} from '../planning.js';
 
 export function integrationStatus(env,db=null) {
  // A Meta/WhatsApp OAuth connection (see runtime/meta-oauth.js) counts as configured too —
@@ -182,7 +184,39 @@ const TOOL_METADATA={
  update_agent_tool_connection:{description:'Change which real connection a specific tool is pinned to for a specific agent. Always requires human approval.',inputSchema:obj({targetAgentId:string,toolSlug:string,connectionId:string},['targetAgentId','toolSlug','connectionId']),minLevel:'L1',requiresApprovalBelowLevel:'L2',
   category:'Command',riskLevel:'MEDIUM',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.config.write'},
  run_followup_sweep:{description:'Run the existing automated follow-up gap sweep now (finds leads needing a follow-up and lets the real Follow-up agent decide what to do — never sends anything itself). Always requires human approval.',inputSchema:obj({}),minLevel:'L1',requiresApprovalBelowLevel:'L2',
-  category:'Command',riskLevel:'MEDIUM',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.automation.followup_sweep'}
+  category:'Command',riskLevel:'MEDIUM',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.automation.followup_sweep'},
+
+ // --- Frost Command Center Phase 7B — Multi-Agent Delegation (spec Part 6-11). One generic
+ // delegation tool rather than one bespoke tool per target agent: the allowlist below is the
+ // real gate (an unknown/unlisted agent id is refused in the handler), and the delegated run
+ // goes through the exact same `agentRuntime.run()` as every other run — the target agent's OWN
+ // permission level/approval gates are never bypassed (Frost cannot elevate another agent,
+ // spec item 52), only invoked.
+ delegate_to_agent:{description:'Delegate one objective to an existing specialist agent (performance, intelligence, leads, or strategy) and get back its real, structured result. Call this multiple times in the SAME reply when the analyses are independent (they will run in parallel); call it again in a LATER reply only when one result must inform the next request (sequential dependency).',
+  inputSchema:obj({agent:{type:'string',enum:['performance','intelligence','leads','strategy']},objective:string},['agent','objective']),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.delegate.agent'},
+
+ // --- Frost Command Center Phase 7B — honest integration with the automation that actually
+ // exists (spec Part 2-5): after auditing the codebase, no generic multi-step Workflow engine
+ // exists anywhere (no workflow_definitions/workflow_runs/builder UI — see Phase 7B report Part
+ // A/B). The two REAL, existing, safely-controllable automation surfaces are the Content
+ // Calendar's scheduled publish jobs (planning.js) and the follow-up sweep (already wired
+ // above) — Frost gets real read/stop access to the former here, never a fabricated generic
+ // "create a workflow" capability.
+ list_scheduled_content_jobs:{description:'List real Content Calendar scheduled/failed publish jobs for this tenant (the closest real thing to a "workflow run list" that exists in this system).',inputSchema:obj({}),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.jobs.read'},
+ cancel_scheduled_content_job:{description:'Cancel the real pending scheduled publish job(s) for one content item. Always requires human approval.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L1',requiresApprovalBelowLevel:'L2',
+  category:'Command',riskLevel:'MEDIUM',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.jobs.cancel'},
+ explain_followup_status:{description:'Explain why a specific lead\'s follow-up sequence is in its current state (e.g. on hold, and why) from the real crm_followups record — never a guess.',inputSchema:obj({leadId:string},['leadId']),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.followups.explain'},
+
+ // --- Frost Command Center Phase 7B — Safe Bulk Preview (spec Part 33-35). A PREVIEW only —
+ // no message is ever sent from this tool. The actual send still only ever happens through
+ // run_followup_sweep above (already approval-gated, already per-lead-safe via the real
+ // Follow-up agent) — this just shows the real target count/channel/connection BEFORE anyone
+ // decides whether to run that.
+ prepare_bulk_followup_plan:{description:'Preview (never sends) a bulk follow-up plan: real target count, channel, and connection for the tenant\'s overdue follow-ups.',inputSchema:obj({}),minLevel:'L0',
+  category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.bulk.preview'}
 };
 /** Static metadata only — no store/env/handler required. Used to seed `tool_definitions` at boot (src/runtime/tool-definitions.js) and by anything else that needs the catalog without a live registry instance. */
 export function listToolMetadata() {
@@ -425,11 +459,59 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch,runtimeRef=n
    const before=getAssignment(db,ctx.tenantId,targetAgentId,toolSlug);
    const updated=upsertAssignment(db,ctx.tenantId,targetAgentId,toolSlug,{connectionId});
    recordAudit(db,{id:crypto.randomUUID(),action:'COMMAND_AGENT_TOOL_CONNECTION_CHANGED',itemId:updated.id,actorId:ctx.actor.id,actorName:ctx.actor.name,actorRole:ctx.actor.role,at:new Date().toISOString(),detail:{targetAgentId,toolSlug,previousConnectionId:before?.connectionId||null,newConnectionId:connectionId}},ctx.tenantId);
+   // Phase 7B — Configuration History (spec Part 20-23): this IS the one real, reversible
+   // configuration write Command Center chat can make, recorded here (not re-derived from
+   // audit_logs later) so Undo has an exact, structured before/after value to restore.
+   recordConfigurationChange(db,{tenantId:ctx.tenantId,entityType:'agent_tool_connection',entityId:`${targetAgentId}::${toolSlug}`,field:'connectionId',
+    previousValue:{connectionId:before?.connectionId||null},newValue:{connectionId:updated.connectionId},actor:ctx.actor,commandRunId:ctx.runId,reversible:true});
    return {targetAgentId,toolSlug,previousConnectionId:before?.connectionId||null,newConnectionId:updated.connectionId};
   },
   run_followup_sweep:async(input,ctx)=>{
    if(!runtimeRef?.current)return {status:'ERROR',error:'RUNTIME_NOT_READY'};
    return sweepFollowupGaps({store,agentRuntime:runtimeRef.current,env,tenantId:ctx.tenantId});
+  },
+
+  // --- Frost Command Center Phase 7B ---------------------------------------------------
+  delegate_to_agent:async({agent,objective},ctx)=>{
+   if(!runtimeRef?.current)return {status:'ERROR',error:'RUNTIME_NOT_READY'};
+   const allowed=['performance','intelligence','leads','strategy'];
+   if(!allowed.includes(agent))return {status:'ERROR',error:'UNSUPPORTED_DELEGATE_AGENT'};
+   // Same free-text `scenario` shape the existing manual "test run" endpoint already uses for
+   // every agent (application.js's POST /api/agents/:id/run) — no new, agent-specific input
+   // contract invented for delegation.
+   const run=await runtimeRef.current.run(agent,{triggerType:'DELEGATED',parentRunId:ctx.runId,
+    input:{scenario:`مهمة ضمن خطة Frost: ${objective}`,current_datetime:new Date().toISOString(),timezone:'Asia/Riyadh'},
+    user:ctx.actor,tenantId:ctx.tenantId});
+   // Agent Result Contract (spec item 10) — every agent's decision envelope already shares the
+   // same top-level shape (RUNTIME CONTRACT ADAPTER in agents.js), so this is a real, uniform
+   // extraction, not a per-agent-type guess. No hidden reasoning is included — only the
+   // envelope's own declared rationale/verification/payload fields.
+   return {
+    agent,status:run.status,
+    summary:run.output?.rationale||null,
+    evidence:run.output?.verification||[],
+    artifacts:{runId:run.id,payload:run.output?.payload||null},
+    errors:run.error?[run.error]:run.status==='FAILED'?['UNKNOWN_ERROR']:[]
+   };
+  },
+  list_scheduled_content_jobs:(input,ctx)=>listJobs(db,ctx.tenantId).slice(0,30),
+  cancel_scheduled_content_job:({contentId},ctx)=>cancelJobs(store,null,contentId,ctx.actor,ctx.tenantId),
+  explain_followup_status:({leadId},ctx)=>{
+   const followups=listFollowups(db,ctx.tenantId).filter(f=>f.leadId===leadId);
+   if(!followups.length)return {status:'NO_DATA',leadId};
+   return {leadId,followups:followups.map(f=>({id:f.id,status:f.status,dueAt:f.dueAt,holdReason:f.holdReason||null,sequenceName:f.sequenceName||null}))};
+  },
+  prepare_bulk_followup_plan:(input,ctx)=>{
+   const overdue=listFollowups(db,ctx.tenantId).filter(f=>f.status==='DRAFT'&&f.dueAt&&Date.parse(f.dueAt)<Date.now());
+   const connection=listConnections(db,{},ctx.tenantId).find(c=>c.integrationDefinitionId==='whatsapp');
+   return {
+    targetsCount:overdue.length,
+    targets:overdue.slice(0,20).map(f=>({followupId:f.id,leadId:f.leadId,dueAt:f.dueAt})),
+    channel:'WhatsApp',
+    connection:connection?{id:connection.id,name:connection.name,status:connection.status}:null,
+    approvalRequired:true,
+    note:connection?null:'لا يوجد اتصال واتساب مهيأ لهذه المنشأة — لا يمكن التنفيذ حتى يتم ربط الاتصال أولًا.'
+   };
   }
  };
  const tools=Object.entries(TOOL_METADATA).map(([name,meta])=>({name,...meta,handler:HANDLERS[name]}));

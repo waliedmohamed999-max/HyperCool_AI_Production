@@ -104,10 +104,26 @@ const STEP_LABELS={
  search_brand_memory:'قراءة ذاكرة العلامة المعتمدة',
  get_competitor_data:'قراءة رصد المنافسين',
  update_agent_tool_connection:'تغيير اتصال أداة لوكيل',
- run_followup_sweep:'تشغيل جولة فحص المتابعات المتأخرة'
+ run_followup_sweep:'تشغيل جولة فحص المتابعات المتأخرة',
+ list_scheduled_content_jobs:'قراءة الأعمال المجدولة للمحتوى',
+ cancel_scheduled_content_job:'إيقاف عمل مجدول للمحتوى',
+ explain_followup_status:'قراءة سبب حالة متابعة عميل',
+ prepare_bulk_followup_plan:'تجهيز معاينة متابعة جماعية (بدون إرسال)'
 };
+const DELEGATE_AGENT_LABEL_AR={performance:'وكيل الأداء',intelligence:'وكيل رصد السوق',leads:'وكيل العملاء المحتملين',strategy:'وكيل استراتيجية المحتوى'};
+// Phase 7B — Multi-Agent UI (spec Part 9): a `delegate_to_agent` step is labeled with the REAL
+// target agent and the REAL child-run outcome (status/summary come straight from the tool's own
+// structured result — tools.js's delegate_to_agent handler — never invented here), so the chat
+// timeline shows genuine per-agent progress, not a generic "tool called" line.
 function stepsFromToolCalls(toolCalls) {
- return toolCalls.map(tc=>({tool:tc.tool,label:STEP_LABELS[tc.tool]||tc.tool,status:tc.status,connectionId:tc.connectionId||null,at:tc.at}));
+ return toolCalls.map(tc=>{
+  if(tc.tool==='delegate_to_agent') {
+   const agent=tc.input?.agent;
+   return {tool:tc.tool,label:`تفويض إلى ${DELEGATE_AGENT_LABEL_AR[agent]||agent}`,status:tc.status,
+    delegatedAgent:agent,delegatedStatus:tc.output?.status||null,delegatedRunId:tc.output?.artifacts?.runId||null,at:tc.at};
+  }
+  return {tool:tc.tool,label:STEP_LABELS[tc.tool]||tc.tool,status:tc.status,connectionId:tc.connectionId||null,at:tc.at};
+ });
 }
 function honestFailureMessage(run) {
  const error=run.error||run.output?.reason||'';
@@ -124,16 +140,21 @@ function honestFailureMessage(run) {
  * its own tool calls is paused at WAITING_APPROVAL (the model still produces a final reply
  * acknowledging that), so status alone would miss it.
  */
-export async function sendCommandMessage({store,agentRuntime,env,tenantId,user,conversationId,text}) {
+export async function sendCommandMessage({store,agentRuntime,env,tenantId,user,conversationId,text,attachmentContext=null}) {
  const db=store.db;
  const cleanText=typeof text==='string'?text.trim():'';
  if(!cleanText||cleanText.length>4000)fail(400,'الرسالة مطلوبة (حتى 4000 حرف)');
  getConversation(db,conversationId,tenantId); // 404s if missing or wrong tenant
- insertMessage(db,{conversationId,tenantId,role:'user',content:cleanText});
+ insertMessage(db,{conversationId,tenantId,role:'user',content:cleanText,meta:attachmentContext?{attachmentId:attachmentContext.attachment.id}:null});
  const recentHistory=listMessages(db,conversationId,tenantId).slice(-10).map(m=>({role:m.role,content:m.content}));
  const companyContext=contextSummaryForPlanner(db,tenantId);
+ // Spec item 18 — an attachment referenced in-conversation is passed as real, size-bounded
+ // context for THIS run only; it never touches context_items (Company Brain) unless the human
+ // explicitly pins it (see POST /api/command/attachments/:id/pin-to-brain).
  const run=await agentRuntime.run('frost_commander',{
-  triggerType:'COMMAND',input:{message:cleanText,recentHistory,companyContext,current_datetime:new Date().toISOString(),timezone:'Asia/Riyadh'},
+  triggerType:'COMMAND',input:{message:cleanText,recentHistory,companyContext,
+   ...(attachmentContext?{attachment:{filename:attachmentContext.attachment.filename,mimeType:attachmentContext.attachment.mimeType,text:attachmentContext.text,note:attachmentContext.note}}:{}),
+   current_datetime:new Date().toISOString(),timezone:'Asia/Riyadh'},
   user,tenantId
  });
  const steps=stepsFromToolCalls(run.toolCalls||[]);

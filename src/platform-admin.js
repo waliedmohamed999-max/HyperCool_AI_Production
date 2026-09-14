@@ -62,7 +62,34 @@ export function buildPlatformOverview(db,env) {
  // alongside plain FAILED; RETRY_SCHEDULED is deliberately excluded — it is already being
  // handled automatically and is not yet something an operator needs to act on.
  const failedWebhooksRow=db.prepare("SELECT COUNT(*) n FROM webhook_events WHERE status IN ('FAILED','DEAD_LETTER')").get();
- return {tenants:counts,users:{total:users,verified:verifiedUsers},connectionsNeedingAttention,healthyConnections,agentsFailing,recentCriticalErrors:recentCritical,failedWebhooks:failedWebhooksRow.n};
+ // Phase 7B — real count of connections whose token/OAuth grant needs a human to
+ // re-authorize, cross-tenant (same HEALTHY/unhealthy shape platform-admin already uses).
+ const reauthRequired=db.prepare("SELECT COUNT(*) n FROM integration_connections WHERE status IN ('TOKEN_EXPIRED','PERMISSION_MISSING')").get().n;
+ return {tenants:counts,users:{total:users,verified:verifiedUsers},connectionsNeedingAttention,healthyConnections,agentsFailing,recentCriticalErrors:recentCritical,failedWebhooks:failedWebhooksRow.n,reauthRequired};
+}
+/** Phase 7B (Command Center — Platform Command Center, spec Part 25/27) — the platform-wide
+ * (cross-tenant) dead-letter/failed webhook LIST, not just the count `buildPlatformOverview`
+ * already had. Reuses the exact same `webhook_events` ledger and status values (Phase 6H) —
+ * never a second failure tracker — just without the tenant filter every tenant-scoped read
+ * of this table already applies elsewhere. Platform-Admin gated by the caller (application.js),
+ * same as every other function in this module. */
+export function listPlatformDeadLetterWebhooks(db,{limit=50}={}) {
+ return db.prepare("SELECT id,tenant_id,source,type,status,received_at,error FROM webhook_events WHERE status IN ('FAILED','DEAD_LETTER') ORDER BY received_at DESC LIMIT ?").all(limit)
+  .map(r=>({id:r.id,tenantId:r.tenant_id,source:r.source,type:r.type,status:r.status,receivedAt:r.received_at,lastError:r.error||null}));
+}
+/** Phase 7B — which tenants currently have an unhealthy integration connection, for "أي Tenant
+ * عنده integrations unhealthy؟". Reuses `buildControlCenterSummary` per-tenant exactly like
+ * `buildPlatformOverview`'s own aggregate loop above — never a second computation. */
+export function listTenantsWithUnhealthyIntegrations(db,env) {
+ const tenants=db.prepare('SELECT id,name FROM tenants ORDER BY created_at').all();
+ const result=[];
+ for(const row of tenants) {
+  try {
+   const summary=buildControlCenterSummary(db,env,row.id,'owner');
+   if(summary.integrations.unhealthyConnections>0)result.push({tenantId:row.id,tenantName:row.name,unhealthyConnections:summary.integrations.unhealthyConnections});
+  } catch { /* a broken tenant row must not take the whole listing down */ }
+ }
+ return result;
 }
 
 /** Part 22 — the directory. One row per tenant, safe fields only. */

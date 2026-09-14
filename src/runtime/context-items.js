@@ -98,6 +98,23 @@ export function listContextItems(db,tenantId=null,{type,status='ACTIVE'}={}) {
   :db.prepare('SELECT * FROM context_items WHERE tenant_id=? AND status=? ORDER BY pinned DESC,created_at DESC').all(resolvedTenantId,status);
  return rows.map(hydrate);
 }
+// Spec item 43 — freshness is DERIVED, never a third stored status: a row keeps its real
+// stored status (ACTIVE/ARCHIVED) forever; STALE is just "ACTIVE but past its own expires_at",
+// computed at read time so it can never drift from the truth the way a cached flag could.
+export function withFreshness(item) {
+ const stale=item.status==='ACTIVE' && item.expiresAt && Date.parse(item.expiresAt)<Date.now();
+ return {...item,freshness:item.status==='ARCHIVED'?'ARCHIVED':stale?'STALE':'ACTIVE'};
+}
+// Spec item 42 — Company Brain sections that represent ONE real-world fact (a company has one
+// identity, one brand) must never have two ACTIVE records silently resolved by picking one —
+// surfaced explicitly as a conflict so a human archives the outdated record instead.
+const SINGLETON_BRAIN_TYPES=['brain_identity','brain_brand'];
+export function detectContextConflicts(db,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ return SINGLETON_BRAIN_TYPES
+  .map(type=>({type,items:listContextItems(db,resolvedTenantId,{type,status:'ACTIVE'})}))
+  .filter(group=>group.items.length>1);
+}
 export function searchContextItems(db,tenantId,{query,type}={}) {
  const items=listContextItems(db,tenantId,{type,status:'ACTIVE'});
  if(!query)return items;
