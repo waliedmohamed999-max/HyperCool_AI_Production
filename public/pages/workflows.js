@@ -55,6 +55,11 @@ export async function renderWorkflowsPage({api:client}) {
  ]);
  const order=['ACTIVE','DRAFT','PAUSED','ARCHIVED','FAILED_RUNS'];
  $('#wf-tabs').querySelectorAll('[role=tab]').forEach((tabButton,index)=>{tabButton.addEventListener('click',()=>{currentFilter=order[index];activePanel=panels[index];paintList(activePanel);});});
+ $('#wf-tabs').querySelector('[role=tablist]').addEventListener('keydown',event=>{
+  if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+  const index=[...$('#wf-tabs').querySelectorAll('[role=tab]')].findIndex(tab=>tab.getAttribute('aria-selected')==='true');
+  currentFilter=order[index];activePanel=panels[index];paintList(activePanel);
+ });
  select(order.indexOf(currentFilter));
  activePanel=panels[order.indexOf(currentFilter)];
  $('#wf-search').value=searchQuery;

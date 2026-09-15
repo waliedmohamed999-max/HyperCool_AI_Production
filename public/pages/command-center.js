@@ -19,6 +19,12 @@ const CONTEXT_TYPES=[
  'policy','product_information','brand_information','sales_context',
  'brain_identity','brain_goals','brain_customers','brain_products','brain_brand','brain_rules'
 ];
+// Company Brain (UI-4) — the real category set is exactly this subset of CONTEXT_TYPES, in a
+// fixed display order; there is no separate "Knowledge"/"Recent Insights" type in the data
+// model, so those are represented by the hero's real "recent updates" count instead of an
+// invented category.
+const BRAIN_TYPES=['brain_identity','brain_goals','brain_customers','brain_products','brain_brand','brain_rules','decision'];
+let currentBrainType=BRAIN_TYPES[0],brainRowsCache=BRAIN_TYPES.map(()=>[]),brainConflictsCache=[],dataContextTabsController=null;
 const OPERATION_ICON={agent_run:'agent',audit:'clock'};
 const INBOX_ICON={crm_lead:'users',crm_followup:'clock',content:'file',escalation:'bell',connection:'plug',webhook:'plug'};
 
@@ -62,7 +68,7 @@ export function installCommandCenter() {
   </div>`;
  const panels=['inbox','addContext','companyBrain','runbooks','configHistory','attachments'].map(key=>{const el=document.createElement('div');el.id='cmdc-dc-'+key;return el;});
  $('#cmdc-data-context').append(...panels);
- tabs($('#cmdc-data-context'),[
+ dataContextTabsController=tabs($('#cmdc-data-context'),[
   [t('commandCenter.tabInbox'),panels[0]],
   [t('commandCenter.tabAddContext'),panels[1]],
   [t('commandCenter.tabCompanyBrain'),panels[2]],
@@ -71,6 +77,7 @@ export function installCommandCenter() {
   [t('commandCenter.tabAttachments'),panels[5]]
  ]);
  panels[1].innerHTML=addContextFormHtml();
+ panels[2].innerHTML=`<div class="cmdc-brain-hero" id="cmdc-brain-hero"></div><div class="cmdc-brain-layout"><nav class="cmdc-brain-nav" id="cmdc-brain-nav" role="tablist" aria-label="${escape(t('commandCenter.tabCompanyBrain'))}"></nav><div class="cmdc-brain-content" id="cmdc-brain-content"></div></div>`;
  panels[3].innerHTML=`<div id="cmdc-runbooks-list"></div><form id="cmdc-runbook-form"><input name="name" required maxlength="200" placeholder="${escape(t('commandCenter.runbookNamePlaceholder'))}"><input name="commandText" required maxlength="2000" placeholder="${escape(t('commandCenter.runbookCommandPlaceholder'))}"><button type="submit">${escape(t('commandCenter.runbookSave'))}</button></form>`;
  panels[4].innerHTML=`<div id="cmdc-config-history-list"></div>`;
  panels[5].innerHTML=`<div id="cmdc-attachments-list"></div>`;
@@ -423,24 +430,143 @@ async function onAddContext(event) {
  $('#cmdc-context-just-added').innerHTML=`<p class="notice">${escape(t('commandCenter.contextAdded'))}</p>`;
  await Promise.all([renderInbox(),renderCompanyBrain()]);
 }
-// Spec items 41-43 — Pinned Decisions/Active Goals are just the existing decision/brain_goals
-// types rendered here too (no new data model); conflicts (two ACTIVE singleton-brain records)
-// and freshness (STALE = ACTIVE but past its own expiry) are shown explicitly, never silently
-// resolved by picking one.
+// Spec items 41-43 (Phase 7B) + Phase UI-4 information-architecture pass — Pinned
+// Decisions/Active Goals are just the existing decision/brain_goals types (no new data model);
+// conflicts (two ACTIVE singleton-brain records) and freshness (STALE = ACTIVE but past its own
+// expiry) are shown explicitly, never silently resolved by picking one. UI-4 adds: a real-count
+// hero, a category nav so only one section is read at a time instead of 7 stacked blocks, and
+// wires the already-existing (but previously unused by this page) PATCH/archive endpoints to
+// real Pin/Edit/Archive actions — no new backend capability, just surfacing what already exists.
 async function renderCompanyBrain() {
- const brainTypes=['brain_identity','brain_goals','brain_customers','brain_products','brain_brand','brain_rules','decision'];
  const [rows,conflicts]=await Promise.all([
-  Promise.all(brainTypes.map(type=>api('/api/command/context?type='+type))),
+  Promise.all(BRAIN_TYPES.map(type=>api('/api/command/context?type='+type))),
   api('/api/command/context/conflicts')
  ]);
- const conflictTypes=new Set(conflicts.map(c=>c.type));
- const itemHtml=item=>`<p class="${item.freshness==='STALE'?'cmdc-stale':''}"><strong>${escape(item.title)}</strong> — ${escape(item.description)}${item.freshness==='STALE'?` ${badge(t('commandCenter.stale'),'ERROR')}`:''}</p>`;
- const sections=brainTypes.map((type,i)=>`<div class="cmdc-brain-section">
-   <h4>${escape(t('commandCenter.contextType.'+type))}${conflictTypes.has(type)?` ${badge(t('commandCenter.conflict'),'ERROR')}`:''}</h4>
-   ${rows[i].length?rows[i].map(itemHtml).join(''):`<p class="cmdc-muted">${escape(t('commandCenter.noBrainItem'))}</p>`}
-  </div>`);
- $('#cmdc-dc-companyBrain').innerHTML=sections.join('');
+ brainRowsCache=rows;brainConflictsCache=conflicts;
+ if(!BRAIN_TYPES.includes(currentBrainType))currentBrainType=BRAIN_TYPES[0];
+ renderBrainHero();
+ renderBrainCategory();
 }
+function renderBrainHero() {
+ const all=brainRowsCache.flat();
+ const countOf=type=>brainRowsCache[BRAIN_TYPES.indexOf(type)].length;
+ const weekAgo=Date.now()-7*24*60*60*1000;
+ const recentCount=all.filter(item=>Date.parse(item.updatedAt)>=weekAgo).length;
+ const stat=(value,label)=>`<div class="cmdc-brain-stat"><strong>${escape(String(value))}</strong><span>${escape(label)}</span></div>`;
+ $('#cmdc-brain-hero').innerHTML=`
+  <div class="cmdc-brain-hero-top"><h4>${escape(t('commandCenter.brainHeroTitle'))}</h4><p class="cmdc-muted">${escape(t('commandCenter.brainHeroSubtitle'))}</p></div>
+  <div class="cmdc-brain-hero-stats">
+   ${stat(all.length,t('commandCenter.brainStatActive'))}
+   ${stat(countOf('brain_goals'),t('commandCenter.brainStatGoals'))}
+   ${stat(countOf('brain_rules'),t('commandCenter.brainStatRules'))}
+   ${stat(countOf('decision'),t('commandCenter.brainStatDecisions'))}
+   ${stat(recentCount,t('commandCenter.brainStatRecent'))}
+  </div>`;
+}
+function brainSourceLabel(source) {
+ const key='commandCenter.brainSource.'+source;
+ const translated=t(key);
+ return translated===key?source:translated;
+}
+function brainItemCardHtml(item) {
+ const important=item.pinned||item.priority==='HIGH';
+ const badges=[
+  item.pinned?badge(t('commandCenter.brainPinned'),'CONNECTED'):'',
+  (!item.pinned&&item.priority==='HIGH')?badge(t('commandCenter.priorityHigh'),'BLOCKED'):'',
+  item.freshness==='STALE'?badge(t('commandCenter.stale'),'PENDING'):''
+ ].filter(Boolean).join('');
+ return `<article class="cmdc-brain-card${important?' cmdc-brain-card-important':''}">
+  <div class="cmdc-brain-card-head"><h5>${escape(item.title)}</h5><div class="cmdc-brain-card-badges">${badges}</div></div>
+  <p class="cmdc-brain-card-summary">${item.description?escape(item.description):`<span class="cmdc-muted">${escape(t('commandCenter.brainNoDescription'))}</span>`}</p>
+  <div class="cmdc-brain-card-meta">
+   <span class="cmdc-brain-source-chip">${escape(brainSourceLabel(item.source))}</span>
+   <span>${escape(t('commandCenter.brainUpdated'))} ${escape(fmtDateTime(item.updatedAt))}</span>
+   ${item.confidence!=null?`<span>${escape(t('commandCenter.brainConfidence',{pct:Math.round(item.confidence*100)}))}</span>`:''}
+  </div>
+  <div class="row cmdc-brain-card-actions">
+   <button type="button" class="small ghost" data-brain-pin="${escape(item.id)}">${escape(item.pinned?t('commandCenter.brainUnpin'):t('commandCenter.brainPin'))}</button>
+   <button type="button" class="small ghost" data-brain-edit="${escape(item.id)}">${escape(t('commandCenter.brainEdit'))}</button>
+   <button type="button" class="small ghost" data-brain-archive="${escape(item.id)}">${escape(t('commandCenter.brainArchive'))}</button>
+  </div>
+ </article>`;
+}
+function renderBrainNav() {
+ const conflictTypes=new Set(brainConflictsCache.map(c=>c.type));
+ $('#cmdc-brain-nav').innerHTML=BRAIN_TYPES.map((type,i)=>`<button type="button" class="cmdc-brain-nav-item" data-brain-type="${type}" aria-current="${type===currentBrainType}">
+   <span>${escape(t('commandCenter.contextType.'+type))}</span>
+   <span class="cmdc-brain-nav-count">${brainRowsCache[i].length}</span>
+   ${conflictTypes.has(type)?`<span class="cmdc-brain-nav-flag" title="${escape(t('commandCenter.conflict'))}"></span>`:''}
+  </button>`).join('');
+}
+function renderBrainCategory() {
+ renderBrainNav();
+ const index=BRAIN_TYPES.indexOf(currentBrainType);
+ const items=brainRowsCache[index]||[];
+ const hasConflict=brainConflictsCache.some(c=>c.type===currentBrainType);
+ const conflictHtml=hasConflict?`<div class="cmdc-brain-conflict">${badge(t('commandCenter.conflict'),'PENDING')}<span>${escape(t('commandCenter.brainConflictNote'))}</span></div>`:'';
+ const bodyHtml=items.length
+  ?items.map(brainItemCardHtml).join('')
+  :`<div class="empty">${icon('book')}<strong>${escape(t('commandCenter.brainEmptyCategory',{category:t('commandCenter.contextType.'+currentBrainType)}))}</strong><p>${escape(t('commandCenter.brainEmptyCategoryHint'))}</p><button type="button" class="small secondary" data-brain-add-type="${currentBrainType}">${escape(t('commandCenter.brainAddForCategory'))}</button></div>`;
+ $('#cmdc-brain-content').innerHTML=conflictHtml+bodyHtml;
+}
+function findCachedBrainItem(id) {
+ for(const rows of brainRowsCache){const found=rows.find(item=>item.id===id);if(found)return found;}
+ return null;
+}
+function brainEditFormFields(node,item) {
+ node.innerHTML=`
+  <label>${escape(t('commandCenter.fieldTitle'))}<input name="title" required maxlength="200" value="${escape(item.title)}"></label>
+  <label>${escape(t('commandCenter.fieldPriority'))}<select name="priority"><option value="">—</option><option value="LOW">${escape(t('commandCenter.priorityLow'))}</option><option value="MEDIUM">${escape(t('commandCenter.priorityMedium'))}</option><option value="HIGH">${escape(t('commandCenter.priorityHigh'))}</option></select></label>
+  <label>${escape(t('commandCenter.fieldDescription'))}<textarea name="description" maxlength="5000">${escape(item.description)}</textarea></label>
+  <label>${escape(t('commandCenter.fieldCategory'))}<input name="category" maxlength="100" value="${escape(item.category||'')}"></label>
+  <label>${escape(t('commandCenter.fieldTags'))}<input name="tags" placeholder="${escape(t('commandCenter.fieldTagsPlaceholder'))}" value="${escape((item.tags||[]).join(', '))}"></label>`;
+ const titleInput=node.querySelector('[name=title]');
+ node.querySelector('[name=priority]').value=item.priority||'';
+ return {
+  value:()=>({
+   title:node.querySelector('[name=title]').value.trim(),
+   description:node.querySelector('[name=description]').value.trim(),
+   category:node.querySelector('[name=category]').value.trim()||null,
+   priority:node.querySelector('[name=priority]').value||null,
+   tags:node.querySelector('[name=tags]').value.split(',').map(s=>s.trim()).filter(Boolean)
+  }),
+  validate:()=>{if(!titleInput.value.trim()){titleInput.setCustomValidity(t('common.reasonRequired'));titleInput.reportValidity();return false;}titleInput.setCustomValidity('');return true;},
+  focus:()=>titleInput.focus()
+ };
+}
+async function openBrainEdit(item) {
+ const patch=await promptDrawer(t('commandCenter.brainEditTitle'),node=>brainEditFormFields(node,item),{confirmLabel:t('common.save')});
+ if(!patch)return;
+ await api(`/api/command/context/${item.id}`,patch,'PATCH');
+ await renderCompanyBrain();
+}
+async function toggleBrainPin(item) {
+ await api(`/api/command/context/${item.id}`,{pinned:!item.pinned},'PATCH');
+ await renderCompanyBrain();
+}
+async function archiveBrainItem(item) {
+ const confirmed=await confirmAction(t('commandCenter.brainArchiveConfirmTitle'),t('commandCenter.brainArchiveConfirmBody'));
+ if(!confirmed)return;
+ await api(`/api/command/context/${item.id}/archive`,{},'POST');
+ await renderCompanyBrain();
+}
+document.addEventListener('click',async event=>{
+ const navButton=event.target.closest('#command-center [data-brain-type]');
+ if(navButton){currentBrainType=navButton.dataset.brainType;renderBrainCategory();return;}
+ const addTypeButton=event.target.closest('#command-center [data-brain-add-type]');
+ if(addTypeButton){
+  dataContextTabsController?.select(1);
+  const typeSelect=$('#cmdc-context-form [name=type]');
+  if(typeSelect)typeSelect.value=addTypeButton.dataset.brainAddType;
+  return;
+ }
+ const pinButton=event.target.closest('#command-center [data-brain-pin]');
+ if(pinButton){const item=findCachedBrainItem(pinButton.dataset.brainPin);if(item)await toggleBrainPin(item);return;}
+ const editButton=event.target.closest('#command-center [data-brain-edit]');
+ if(editButton){const item=findCachedBrainItem(editButton.dataset.brainEdit);if(item)await openBrainEdit(item);return;}
+ const archiveButton=event.target.closest('#command-center [data-brain-archive]');
+ if(archiveButton){const item=findCachedBrainItem(archiveButton.dataset.brainArchive);if(item)await archiveBrainItem(item);}
+});
 
 // ------------------------------------------------------------------------------------------
 // Runbooks / Favorites (spec Part 12-14/45) — "Run" sends the SAME real command text through
