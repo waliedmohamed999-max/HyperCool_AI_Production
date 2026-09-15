@@ -239,12 +239,72 @@ scrolls within its own bounds (it already had `overflow:auto`) instead of stretc
 explicit `minmax(0, ...)`, never a bare fraction — this is the single most common cause of
 "page is 8px wider than the viewport" bugs in a grid-based layout.
 
+## Phase UI-4 — Company Brain + advanced Builder polish
+
+### Company Brain (Frost Command Center → Data & Context → Company Brain tab)
+
+Previously a flat stack of 7 always-visible `<h4>`+`<p>` sections with no metadata, no actions,
+and no way to tell an important record from a throwaway note. Rebuilt as: a real-count hero
+(`.cmdc-brain-hero` — Active Context / Goals / Operating Rules / Decisions / Updated This Week,
+all literal counts from the same data already fetched, nothing invented), a category nav
+(`.cmdc-brain-nav`, one category visible at a time instead of 7 stacked) and a card per item
+(`.cmdc-brain-card`) showing title, summary, a real source chip (`brainSourceLabel()` — only
+`manual`/`attachment` exist today; any other value is shown honestly as-is, never mistranslated),
+last-updated date, confidence when the record actually has one, and three real actions — Pin,
+Edit, Archive — wired to the `PATCH`/`archive` endpoints `context-items.js` already exposed but
+no UI ever called. Pinned or high-priority items get a left accent bar
+(`.cmdc-brain-card-important`) so they visibly outrank a plain note. A genuine data-integrity
+conflict (two ACTIVE singleton `brain_identity`/`brain_brand` records) shows an amber
+(`--warn`, not `--critical`) banner and a small nav-item flag — clear, not alarming. An empty
+category shows a real, honest empty state with a working "add to this section" CTA that jumps to
+the Add Context tab and prefills its type. There is no separate "Knowledge"/"Recent Insights"
+category in the real data model — that idea is represented by the hero's real "updated this week"
+count instead of an invented bucket.
+
+### Integration Builder — Actions & Webhooks steps
+
+Every action/trigger used to render as one dense, unscannable line (method + path + slug +
+capability run together with no risk or read/write signal). Now `.builder-card`: name first,
+required capability on its own line, an HTTP method tag (`.http-method-tag` — one restrained
+neutral style for every verb; the verb itself carries no safety meaning, so color is reserved for
+what actually does: a real READ/EXTERNAL_WRITE badge, the real `riskLevel` badge when set, and an
+"Approval required" badge when `requiresApprovalDefault` is true), and the real input/output
+mapping tucked behind a native `<details>` so the list stays compact. Triggers show their real
+`normalizedEventType` prominently instead of buried after the slug. No secret value is ever shown
+in either list — this connector-definition data has none (only auth *type* and header *names*).
+
+### Integration Builder — Review step
+
+Was three lines (status, version, connection count) plus Validate/Publish buttons — now the
+strongest screen in the wizard, exactly as asked: an 8-block grid (Connector Identity,
+Authentication, Capabilities, Actions, Webhooks, Health Check, Version, Security Notes), built
+entirely from the same `detail` object the drawer already loaded — zero new requests. Security
+Notes are plain, literal facts read off real fields (`restConfig.allowHttp`, `authConfig.type
+==='NONE'`, a count of `riskLevel==='HIGH'` actions, a count of `requiresApprovalDefault` actions)
+— never a generated assessment; a connector with none of those shows an honest "no notable
+security flags" line rather than an empty gap. Health/Versions/Analytics steps got a matching
+`<h4>` section heading each for consistency with every other step — no data or logic changed.
+
+### A real, pre-existing RTL/LTR bug fixed
+
+Found while verifying the Review step in English: `dialog.drawer` in `components.css` hardcoded
+`direction:rtl` unconditionally, so **every drawer in the app** — not just the Builder — rendered
+its English content mirrored (tab order, list order, and interpolated sentences like "1 action(s)
+require approval" all came out reversed) regardless of the active locale. This predates Phase
+UI-4; found only because this phase's own instruction to verify Builder LTR called for actually
+opening the Review drawer in English rather than assuming the shared drawer component was fine.
+Fixed by deleting the hardcoded `direction:rtl` so the drawer correctly inherits `<html dir>` —
+its physical anchor to the right edge (`inset:0 0 0 auto`) is unchanged, only the text direction
+now follows the real active language. Full regression (780/780, 8/8) re-confirmed after the fix.
+
 ## What remains unredesigned (honest, not silently dropped)
 
 Agent Detail's tabbed drawer (Control Center → Agent Map → an agent's own name) already uses the
 exact shared `tabs()` component correctly; it looks sparse mainly because a freshly-seeded agent
 with no AI configured genuinely has little to show, not because of a layout defect — left alone
 rather than manufacturing content to fill it (its one real gap, the raw blocker codes, is now
-fixed — see above). The Integration Builder's Actions/Webhooks/Health/Versions/Review/Analytics
-tabs (steps 4-9) were audited for gross defects in UI-2 but not given the same deep pass as step
-1-3's panel; no concrete issue was found there, so none was manufactured.
+fixed — see above). The Integration Builder's Versions step still shows only its existing table
+(version/status/published/connections pinned/change type/diff) — already covers the spec's ask,
+so it only got a heading for consistency, not a rebuild. The Analytics step's metrics are real but
+will read as all-zero for a brand-new, unpublished connector — that is correct, not a defect
+(Part 25's own rule: an empty window shows 0/—, never a generated demo value).

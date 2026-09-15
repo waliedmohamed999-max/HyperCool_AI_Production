@@ -644,11 +644,38 @@ async function openConnectorWizard(summary){
   basicPanel.querySelector('#basic-actions').append(saveButton);
  }
 
+ // Phase UI-4 — Actions read as one dense line before this pass (method+path+slug+capability
+ // crammed together, no risk/type visible at all). Every field used below already existed on
+ // the real action row (src/connectors/dynamic/store.js) — this only makes it scannable: name
+ // first, HTTP method as its own restrained tag (never colored per-verb — the verb itself
+ // carries no safety meaning), a real READ/EXTERNAL_WRITE + risk badge, and the real input/output
+ // mapping fields tucked behind a native <details> so the list stays compact.
+ function actionMappingSummary(a){
+  const hasInput=a.queryMapping||a.headerMapping||a.bodyMapping;
+  const input=hasInput?`<pre dir="ltr">${escape(JSON.stringify({query:a.queryMapping,header:a.headerMapping,body:a.bodyMapping},null,1))}</pre>`:`<p class="cmdc-muted">${escape(t('platform.builder.noInputMapping'))}</p>`;
+  const arrayFrom=a.responseMapping?.array?.from;
+  const output=arrayFrom?`<p>${escape(t('platform.builder.responseArrayFromLabel',{path:arrayFrom}))}</p>`:`<p class="cmdc-muted">${escape(t('platform.builder.noOutputMapping'))}</p>`;
+  return `<p class="builder-mapping-label">${escape(t('platform.builder.inputMappingLabel'))}</p>${input}<p class="builder-mapping-label">${escape(t('platform.builder.outputMappingLabel'))}</p>${output}`;
+ }
  function paintActions(){
   if(!definitionId)return;
   const list=detail?.actions||[];
   actionsPanel.innerHTML=(list.length?'':empty(t('platform.builder.noActionsYet')))+
-   list.map(a=>`<div class="audit-row row-between" data-action="${escape(a.id)}"><span><strong dir="ltr">${escape(a.httpMethod)} ${escape(a.pathTemplate)}</strong> — <span dir="ltr">${escape(a.slug)}</span> (${escape(a.requiredCapability)})</span><span data-del></span></div>`).join('');
+   list.map(a=>`<article class="builder-card" data-action="${escape(a.id)}">
+    <div class="builder-card-head">
+     <div><strong>${escape(getLocale()==='en'?a.nameEn:a.nameAr)}</strong><span class="cmdc-muted" dir="ltr"> · ${escape(a.slug)}</span></div>
+     <div class="builder-card-badges">
+      <span class="http-method-tag" dir="ltr">${escape(a.httpMethod)}</span>
+      ${badge(t('platform.builder.actionType.'+a.actionType)||a.actionType,a.actionType==='READ'?'APPROVED':'PENDING')}
+      ${a.riskLevel?badge(a.riskLevel,a.riskLevel==='HIGH'?'BLOCKED':a.riskLevel==='MEDIUM'?'PENDING':'APPROVED'):''}
+      ${a.requiresApprovalDefault?badge(t('platform.builder.requiresApprovalTag'),'PENDING'):''}
+     </div>
+    </div>
+    <p class="builder-card-path" dir="ltr">${escape(a.pathTemplate)}</p>
+    <p class="cmdc-muted">${escape(t('platform.builder.fields.requiredCapability'))}: <span dir="ltr">${escape(a.requiredCapability)}</span></p>
+    <details class="builder-mapping"><summary>${escape(t('platform.builder.mappingDetails'))}</summary>${actionMappingSummary(a)}</details>
+    <div class="row" data-del></div>
+   </article>`).join('');
   for(const a of list){
    const del=button(t('platform.builder.deleteAction'),{variant:'danger'});
    del.onclick=async()=>{try{await apiClient(`/api/platform/connectors/${definitionId}/actions/${a.id}`,{},'DELETE');await reload();}catch(error){toastError(error.message);}};
@@ -713,7 +740,14 @@ async function openConnectorWizard(summary){
   if(!definitionId)return;
   const list=detail?.triggers||[];
   webhooksPanel.innerHTML=(list.length?'':empty(t('platform.builder.noTriggersYet')))+
-   list.map(tr=>`<div class="audit-row row-between" data-trigger="${escape(tr.id)}"><span><strong dir="ltr">${escape(tr.slug)}</strong> → <span dir="ltr">${escape(tr.normalizedEventType)}</span> (${escape(tr.authentication?.type)})</span><span data-del></span></div>`).join('');
+   list.map(tr=>`<article class="builder-card" data-trigger="${escape(tr.id)}">
+    <div class="builder-card-head">
+     <div><strong dir="ltr">${escape(tr.normalizedEventType)}</strong><span class="cmdc-muted" dir="ltr"> · ${escape(tr.slug)}</span></div>
+     <div class="builder-card-badges">${badge(escape(tr.authentication?.type||'NONE'),tr.authentication?.type&&tr.authentication.type!=='NONE'?'CONNECTED':'PENDING')}</div>
+    </div>
+    <p class="cmdc-muted">${escape(t('platform.builder.triggerEventLabel'))}: <span dir="ltr">${escape(tr.eventIdPath||'—')}</span> (${escape(tr.eventIdPolicy||'OPTIONAL')})</p>
+    <div class="row" data-del></div>
+   </article>`).join('');
   for(const tr of list){
    const del=button(t('platform.builder.deleteTrigger'),{variant:'danger'});
    del.onclick=async()=>{try{await apiClient(`/api/platform/connectors/${definitionId}/triggers/${tr.id}`,{},'DELETE');await reload();}catch(error){toastError(error.message);}};
@@ -830,6 +864,7 @@ async function openConnectorWizard(summary){
   if(!definitionId)return;
   const health=detail?.restConfig?.health||{};
   healthPanel.innerHTML=`
+   <h4>${escape(t('platform.builder.healthSectionTitle'))}</h4>
    <label>${escape(t('platform.builder.fields.healthMethod'))}<select name="method">${['GET','HEAD'].map(m=>`<option ${health.method===m?'selected':''}>${m}</option>`).join('')}</select></label>
    <label>${escape(t('platform.builder.fields.healthPath'))}<input name="path" dir="ltr" value="${escape(health.path||'')}" placeholder="/health"></label>
    <label>${escape(t('platform.builder.fields.healthExpectedStatus'))}<input name="expectedStatus" type="number" value="${escape(health.expectedStatus??200)}"></label>
@@ -857,7 +892,7 @@ async function openConnectorWizard(summary){
   let versions;
   try{versions=await apiClient(`/api/platform/connectors/${definitionId}/versions`);}
   catch(error){versionsPanel.innerHTML=empty(t('controlCenter.loadFailed'),error.message);return;}
-  versionsPanel.innerHTML=`<div id="versions-table"></div><div id="versions-diff"></div><div class="report-actions" id="versions-actions"></div>`;
+  versionsPanel.innerHTML=`<h4>${escape(t('platform.builder.versionsSectionTitle'))}</h4><div id="versions-table"></div><div id="versions-diff"></div><div class="report-actions" id="versions-actions"></div>`;
   versionsPanel.querySelector('#versions-table').innerHTML=table(
    [t('platform.builder.versions.version'),t('platform.builder.versions.status'),t('platform.builder.versions.publishedAt'),t('platform.builder.versions.connectionsPinned'),t('platform.builder.versions.changeType'),t('platform.builder.versions.diff')],
    versions.map(v=>[
@@ -986,7 +1021,7 @@ async function openConnectorWizard(summary){
  let analyticsWindow='7d';
  async function paintAnalytics(){
   if(!definitionId)return;
-  analyticsPanel.innerHTML=`<div class="table-toolbar"><select id="analytics-window">${['24h','7d','30d'].map(w=>`<option value="${w}" ${w===analyticsWindow?'selected':''}>${w}</option>`).join('')}</select></div><div id="analytics-body"></div>`;
+  analyticsPanel.innerHTML=`<h4>${escape(t('platform.builder.analyticsSectionTitle'))}</h4><div class="table-toolbar"><select id="analytics-window">${['24h','7d','30d'].map(w=>`<option value="${w}" ${w===analyticsWindow?'selected':''}>${w}</option>`).join('')}</select></div><div id="analytics-body"></div>`;
   analyticsPanel.querySelector('#analytics-window').onchange=e=>{analyticsWindow=e.target.value;renderAnalyticsBody();};
   await renderAnalyticsBody();
   async function renderAnalyticsBody(){
@@ -1010,11 +1045,32 @@ async function openConnectorWizard(summary){
   }
  }
 
+ // Phase UI-4, section 22 — Review was previously just status+version+connection count; every
+ // field summarized below already exists on `detail` from the same GET this drawer already
+ // loaded (no new request). Security notes are plain facts read straight off real fields
+ // (allowHttp, auth type, riskLevel, requiresApprovalDefault) — never a generated assessment.
+ function reviewBlock(title,bodyHtml){return `<div class="builder-review-block"><h5>${escape(title)}</h5>${bodyHtml}</div>`;}
  function paintReview(){
   if(!definitionId)return;
-  reviewPanel.innerHTML=`<p><strong>${escape(t('platform.builder.table.status'))}:</strong> ${badge(t('platform.builder.status.'+detail.status)||detail.status,detail.status==='PUBLISHED'?'CONNECTED':detail.status==='DRAFT'?'PENDING':'DISCONNECTED')}</p>
-   <p><strong>${escape(t('platform.builder.table.version'))}:</strong> ${escape(detail.version)}</p>
-   <p>${escape(t('platform.builder.connectionsCount',{count:detail.connectionsCount??0}))}</p>
+  const actionsList=detail.actions||[],triggers=detail.triggers||[],health=detail.restConfig?.health;
+  const highRiskCount=actionsList.filter(a=>a.riskLevel==='HIGH').length;
+  const approvalCount=actionsList.filter(a=>a.requiresApprovalDefault).length;
+  const securityNotes=[
+   detail.restConfig?.allowHttp?t('platform.builder.review.securityAllowHttp'):'',
+   detail.authConfig?.type==='NONE'?t('platform.builder.review.securityAuthNone'):'',
+   highRiskCount?t('platform.builder.review.securityHighRiskActions',{count:highRiskCount}):'',
+   approvalCount?t('platform.builder.review.securityApprovalActions',{count:approvalCount}):''
+  ].filter(Boolean);
+  reviewPanel.innerHTML=`<div class="builder-review-grid">
+   ${reviewBlock(t('platform.builder.review.identityTitle'),`<p><strong>${escape(getLocale()==='en'?detail.nameEn:detail.nameAr)}</strong></p><p class="cmdc-muted" dir="ltr">${escape(detail.slug)} · ${escape(detail.category||'—')} · ${escape(detail.connectionMode)}</p>`)}
+   ${reviewBlock(t('platform.builder.review.authTitle'),`<p dir="ltr">${escape(detail.authConfig?.type||'—')}</p>`)}
+   ${reviewBlock(t('platform.builder.fields.capabilities'),(detail.capabilities||[]).length?`<div class="builder-card-badges">${(detail.capabilities||[]).map(c=>`<span class="http-method-tag" dir="ltr">${escape(c)}</span>`).join('')}</div>`:`<p class="cmdc-muted">—</p>`)}
+   ${reviewBlock(t('platform.builder.tabActions'),actionsList.length?`<p>${escape(t('platform.builder.review.actionsCountLabel',{count:actionsList.length}))}</p><ul>${actionsList.slice(0,6).map(a=>`<li><span class="http-method-tag" dir="ltr">${escape(a.httpMethod)}</span> ${escape(getLocale()==='en'?a.nameEn:a.nameAr)}</li>`).join('')}</ul>`:`<p class="cmdc-muted">${escape(t('platform.builder.review.noActions'))}</p>`)}
+   ${reviewBlock(t('platform.builder.tabWebhooks'),triggers.length?`<ul>${triggers.slice(0,6).map(tr=>`<li dir="ltr">${escape(tr.normalizedEventType)}</li>`).join('')}</ul>`:`<p class="cmdc-muted">${escape(t('platform.builder.review.noTriggers'))}</p>`)}
+   ${reviewBlock(t('platform.builder.tabHealth'),health?`<p dir="ltr">${escape(health.method)} ${escape(health.path)} → ${escape(health.expectedStatus)}</p>`:`<p class="cmdc-muted">${escape(t('platform.builder.review.healthNotConfigured'))}</p>`)}
+   ${reviewBlock(t('platform.builder.table.version'),`<p>${badge(t('platform.builder.status.'+detail.status)||detail.status,detail.status==='PUBLISHED'?'CONNECTED':detail.status==='DRAFT'?'PENDING':'DISCONNECTED')} <span class="cmdc-muted">v${escape(detail.version)}</span></p><p class="cmdc-muted">${escape(t('platform.builder.connectionsCount',{count:detail.connectionsCount??0}))}</p>`)}
+   ${reviewBlock(t('platform.builder.review.securityTitle'),securityNotes.length?`<ul>${securityNotes.map(n=>`<li>${escape(n)}</li>`).join('')}</ul>`:`<p class="cmdc-muted">${escape(t('platform.builder.review.securityNoFlags'))}</p>`)}
+  </div>
    <div id="review-validation"></div>
    <div class="report-actions" id="review-actions"></div>`;
   const validateButton=button(t('platform.builder.runValidation'),{variant:'secondary'});

@@ -284,6 +284,27 @@ body.signed-out .fab-shortcut{display:none}
 .builder-basic-panel h4:first-of-type{margin-top:0;padding-top:0;border-top:0}
 .builder-basic-panel fieldset{border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;margin:0}
 .builder-basic-panel fieldset legend{padding:0 6px;color:var(--ink-muted);font-size:var(--text-caption)}
+/* Integration Builder advanced steps (Phase UI-4) — Actions/Webhooks used to be one dense,
+   unscannable line each (method+path+slug+capability run together, no risk/type visible).
+   .builder-card is the shared compact-card shape for both; .http-method-tag is deliberately
+   ONE restrained neutral style for every verb — the verb itself carries no safety meaning, so
+   color is reserved for the real semantic badges (READ/WRITE, risk level, approval-required). */
+.builder-card{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:14px 16px;margin-bottom:10px}
+.builder-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.builder-card-badges{display:flex;gap:6px;flex-wrap:wrap}
+.builder-card-path{margin:8px 0 4px;font-family:ui-monospace,monospace;font-size:12px;color:var(--ink)}
+.http-method-tag{display:inline-flex;align-items:center;font-family:ui-monospace,monospace;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;border:1px solid var(--border);color:var(--ink-muted);background:var(--surface-2)}
+.builder-mapping{margin-top:10px;font-size:12px}
+.builder-mapping summary{cursor:pointer;color:var(--accent-strong)}
+.builder-mapping-label{margin:8px 0 2px;color:var(--ink-muted);font-size:var(--text-caption)}
+.builder-mapping pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface-2);border-radius:var(--radius-sm);padding:8px 10px;margin:2px 0}
+/* Review step (Phase UI-4, section 22) — a real compact summary grid built entirely from the
+   connector detail this drawer already loaded (no new requests). */
+.builder-review-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:16px}
+.builder-review-block{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);padding:14px 16px;min-width:0}
+.builder-review-block h5{margin:0 0 8px;font-size:var(--text-card-title);color:var(--ink-muted)}
+.builder-review-block ul{margin:0;padding-inline-start:18px;font-size:13px}
+.builder-review-block p{margin:0 0 4px;font-size:13px}
 /* HyperCool Frost UI — Part UI-2: Platform Admin gets a quiet, system-level visual cue —
    the same cards/tables/tokens as every tenant page (same design system, per spec item 24),
    just a subtle --info accent instead of --accent on its own report sections and KPI numbers,
