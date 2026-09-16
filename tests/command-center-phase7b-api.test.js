@@ -50,7 +50,7 @@ test('Runbooks: built-ins listed for any member, custom create/archive gated, ru
   const owner=await call('/api/setup',{username:'owner',name:'Owner',password:'test-password-long'});
   const list=await call('/api/command/runbooks',null,owner,{method:'GET'});
   assert.equal(list.status,200);
-  assert.equal(list.data.length,7);
+  assert.equal(list.data.length,12);
   assert.ok(list.data.every(r=>r.isBuiltin));
 
   const created=await call('/api/command/runbooks',{name:'مفضلتي',commandText:'اعرض حالة الشركة'},owner);

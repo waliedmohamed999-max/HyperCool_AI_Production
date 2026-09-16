@@ -67,6 +67,17 @@ import {computeCompanyHealth,deriveQuickCommandKeys} from './runtime/command-hea
 import {installAttachments,createAttachment,getAttachment,listAttachments,pinAttachmentToBrain,readAttachmentTextForChat,ALLOWED_TYPES,MAX_ATTACHMENT_BYTES} from './runtime/attachments.js';
 import {installConfigurationHistory,listConfigurationHistory,undoConfigurationChange} from './runtime/configuration-history.js';
 import {installRunbooks,listRunbooks,createRunbook,archiveRunbook,getRunbook} from './runtime/runbooks.js';
+import {
+ installMarketing,listCampaigns,getCampaign,createCampaign,updateCampaign,archiveCampaign,
+ saveCampaignStrategy,saveCampaignIntelligence,listCampaignContentItems,getCampaignContentItem,
+ createCampaignContentItem,updateCampaignContentItem,buildMarketingOverview,
+ CONTENT_CHANNELS,CONTENT_FORMATS,CAMPAIGN_STATUSES,CONTENT_STATUSES
+} from './marketing.js';
+import {
+ installWebsiteWidgets,getOrCreateWidget,updateWidgetConfig,regenerateWidgetId,
+ resolveActiveWidgetByPublicId,isOriginAllowed,checkWidgetRateLimit,
+ recordWidgetInboundMessage,recordWidgetOutboundReply,listWidgetConversationMessages
+} from './runtime/website-widget.js';
 import {searchCommands} from './runtime/command-search.js';
 import {installWorkflowEngine,installWorkflowEventTriggers,listWorkflows,getWorkflow,getWorkflowWithVersion,createWorkflowDraft,updateWorkflowDraft,activateWorkflow,pauseWorkflow,resumeWorkflow,archiveWorkflow,computeWorkflowReadiness,startWorkflowRun,requestCancelWorkflowRun,resumeWorkflowApproval,listWorkflowRuns,getRunWithSteps,advanceWorkflowRun,WORKFLOW_STEP_TYPES,WORKFLOW_TRIGGER_TYPES,summarizeWorkflowsForCommandCenter} from './runtime/workflow-engine.js';
 import {CONDITION_OPERATORS} from './runtime/workflow-conditions.js';
@@ -219,6 +230,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installAttachments(store.db);
   installConfigurationHistory(store.db);
   installRunbooks(store.db);
+  installMarketing(store.db); // Phase MKT-1 — Marketing & Social Operating Module, see docs/MARKETING_MODULE.md
+  installWebsiteWidgets(store.db);
   installWorkflowEngine(store.db);
   installPlatformFrostChat(store.db);
   installGate(store.db);
@@ -292,6 +305,66 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   function logRequest(fields) {
     console.log(JSON.stringify({timestamp:new Date().toISOString(),level:fields.status>=500?'ERROR':fields.status>=400?'WARN':'INFO',...fields}));
   }
+  // Website AI Chat Widget public endpoint (Phase MKT-1, spec Part 28-29/89-90). The ONE
+  // route in this whole app reachable cross-origin from an arbitrary tenant's own website —
+  // see the isPublicWidgetRoute carve-out above. No session, no secret ever reaches the
+  // frontend: the widget script only ever knows its own public, non-secret widget id. Real
+  // security comes from the widget's own configured domain allowlist (isOriginAllowed) plus a
+  // per-(widget,ip) rate limit — never a session cookie or CSRF token, which a cross-origin
+  // caller cannot present. Reuses the exact same findOrCreateLeadFromChannel/
+  // recordChannelMessage functions the WhatsApp/Email webhooks already use (channel=
+  // 'WebsiteChat'), and the exact same agentRuntime.run('sales', …) pipeline every other
+  // inbound customer message goes through — no second, ad-hoc "just call the LLM" path.
+  async function handlePublicWidgetRoute(req,res,url,send,requestId,startedAt) {
+    const origin=req.headers.origin||'';
+    const match=url.pathname.match(/^\/api\/public\/widget\/([\w-]+)\/chat$/);
+    const respond=(status,value,extraHeaders={})=>{
+      for(const [key,val] of Object.entries(extraHeaders))res.setHeader(key,val);
+      res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});
+      res.end(value===undefined?'':JSON.stringify(value));
+      logRequest({request_id:requestId,method:req.method,path:url.pathname,status,duration_ms:Date.now()-startedAt,user_id:null});
+    };
+    if(!match)return respond(404,{error:'NOT_FOUND'});
+    const publicWidgetId=match[1];
+    if(req.method==='OPTIONS') {
+      const widget=resolveActiveWidgetByPublicId(store.db,publicWidgetId);
+      const headers={'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type','Access-Control-Max-Age':'600'};
+      if(widget && isOriginAllowed(widget,origin))headers['Access-Control-Allow-Origin']=origin;
+      return respond(204,undefined,headers);
+    }
+    if(req.method!=='POST')return respond(405,{error:'METHOD_NOT_ALLOWED'});
+    try {
+      const widget=resolveActiveWidgetByPublicId(store.db,publicWidgetId);
+      if(!widget)fail(404,'الودجت غير موجود أو غير مفعّل');
+      if(!isOriginAllowed(widget,origin))fail(403,'هذا النطاق غير مسموح له باستخدام هذا الودجت');
+      const ip=(req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim();
+      checkWidgetRateLimit(publicWidgetId,ip);
+      const raw=await rawBody(req,20000);
+      let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
+      const text=typeof payload.text==='string'?payload.text.trim().slice(0,2000):'';
+      if(!text)fail(400,'الرسالة مطلوبة');
+      const name=typeof payload.name==='string'?payload.name.trim().slice(0,200):null;
+      const phone=typeof payload.phone==='string'?payload.phone.trim().slice(0,40):null;
+      const email=typeof payload.email==='string'?payload.email.trim().slice(0,200):null;
+      const existingLeadId=typeof payload.leadId==='string'?payload.leadId:null;
+      const {lead,message}=recordWidgetInboundMessage(store,{tenantId:widget.tenantId,name,phone,email,text,existingLeadId});
+      const corsHeaders={'Access-Control-Allow-Origin':origin};
+      if(message.replayed)return respond(200,{leadId:lead.id,replayed:true},corsHeaders);
+      if(message.optedOut)eventBus.emit('CUSTOMER_OPTED_OUT',{leadId:lead.id,channel:'WebsiteChat',tenantId:widget.tenantId});
+      // A real, synchronous call through the exact same sales-agent decision pipeline the
+      // async WhatsApp/Email channels use — the widget just awaits it directly instead of the
+      // reply arriving over a separate channel later, since the visitor is watching this same
+      // window right now. If AI is not configured/fails, this is reported honestly — never a
+      // fabricated reply.
+      const run=await agentRuntime.run('sales',{triggerType:'CHANNEL_MESSAGE',input:{channel:'WebsiteChat',leadId:lead.id,message:text,current_datetime:new Date().toISOString(),timezone:'Asia/Riyadh'},tenantId:widget.tenantId});
+      const replyText=run.output?.payload?.[payload.locale==='en'?'reply_en':'reply_ar']||run.output?.payload?.reply_ar||run.output?.payload?.reply_en||null;
+      if(replyText)recordWidgetOutboundReply(store,{tenantId:widget.tenantId,leadId:lead.id,text:replyText});
+      return respond(200,{leadId:lead.id,reply:replyText,aiAvailable:!!replyText,escalated:!!run.output?.escalation_required},corsHeaders);
+    } catch(error) {
+      const status=error.status||500;
+      return respond(status,{error:error.message||'INTERNAL_ERROR'},{'Access-Control-Allow-Origin':origin});
+    }
+  }
   const server=http.createServer(async(req,res)=>{
     const requestId=crypto.randomUUID();
     const startedAt=Date.now();
@@ -307,14 +380,26 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
     try {
       const host=req.headers.host;
       if(!host || (publicUrl?host!==publicUrl.host:!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host))) fail(403,'Host not allowed');
-      if(req.headers.origin && req.headers.origin!==(publicUrl?.origin||`http://${host}`)) fail(403,'Cross-origin request rejected');
+      const earlyUrl=new URL(req.url,`http://${host}`);
+      // Website AI Chat Widget (Phase MKT-1, spec Part 28-29) — the ONE deliberately
+      // cross-origin-reachable surface in this app: it must be callable from an arbitrary
+      // tenant's own external website, so the app-wide same-origin gates below (which every
+      // other route relies on, session-cookie style) cannot apply to it. Its own
+      // origin/domain allowlist (isOriginAllowed, checked per-tenant against real configured
+      // domains) is the real security boundary here instead — never a session, never a
+      // secret, never a wildcard CORS header.
+      const isPublicWidgetRoute=earlyUrl.pathname.startsWith('/api/public/widget/');
+      if(!isPublicWidgetRoute) {
+        if(req.headers.origin && req.headers.origin!==(publicUrl?.origin||`http://${host}`)) fail(403,'Cross-origin request rejected');
+      }
       // Part 45 — the ONE base used to build every outbound account/invitation link (email
       // verification, password reset, invitation accept). Never inferred from an arbitrary
       // client-controlled header: `host` above is already validated against the configured
       // `PUBLIC_ORIGIN` (or the localhost-only pattern) two lines up, so this can never be
       // spoofed into pointing an emailed link at an attacker-controlled domain.
       const baseUrl=publicUrl?.origin||`http://${host}`;
-      const url=new URL(req.url,`http://${host}`);
+      const url=earlyUrl;
+      if(isPublicWidgetRoute)return handlePublicWidgetRoute(req,res,url,send,requestId,startedAt);
       // External links may open the public shell; API and embedded requests remain protected.
       const publicNavigation=req.method==='GET' && url.pathname==='/' &&
         req.headers['sec-fetch-mode']==='navigate' && req.headers['sec-fetch-dest']==='document';
@@ -1605,6 +1690,83 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
          description:input.description||`مرفق محفوظ من المحادثة: ${attachment.filename}`,source:'attachment',category:'attachment'},session.user,session.tenantId);
         return send(200,pinAttachmentToBrain(store.db,attachmentPin[1],contextItem.id,session.tenantId));
       }
+
+      // -----------------------------------------------------------------------------------
+      // Marketing & Social Operating Module (Phase MKT-1). Reuses agentRuntime/CRM/content/
+      // reporting/approvals/runbooks entirely — the only new state here is campaigns and the
+      // richer campaign content item (see src/marketing.js's own doc comment).
+      // -----------------------------------------------------------------------------------
+      if(req.method==='GET' && url.pathname==='/api/marketing/overview') {
+        const agentRows=listRegistryAgents(store.db),agentRunsRows=listRuns(store.db,{},session.tenantId),
+         escalationRows=listEscalations(store.db,{},session.tenantId),approvalRows=listApprovals(store.db,{},session.tenantId);
+        return send(200,buildMarketingOverview(store,env,{agents:agentRows,agentRuns:agentRunsRows,escalations:escalationRows,approvals:approvalRows},session.tenantId));
+      }
+      if(url.pathname==='/api/marketing/campaigns') {
+        if(req.method==='GET')return send(200,listCampaigns(store.db,session.tenantId,{status:url.searchParams.get('status')||undefined}));
+        if(req.method==='POST') {authorize(session,['owner','operator']);return send(201,createCampaign(store.db,await body(req),session.user,session.tenantId));}
+      }
+      const campaignItem=url.pathname.match(/^\/api\/marketing\/campaigns\/([\w-]+)$/);
+      if(campaignItem) {
+        if(req.method==='GET')return send(200,getCampaign(store.db,campaignItem[1],session.tenantId));
+        if(req.method==='PATCH') {authorize(session,['owner','operator']);return send(200,updateCampaign(store.db,campaignItem[1],await body(req),session.user,session.tenantId));}
+      }
+      const campaignArchive=url.pathname.match(/^\/api\/marketing\/campaigns\/([\w-]+)\/archive$/);
+      if(req.method==='POST' && campaignArchive) {authorize(session,['owner','operator']);return send(200,archiveCampaign(store.db,campaignArchive[1],session.user,session.tenantId));}
+      // Real multi-agent delegation (spec Part 7): a genuine agentRuntime.run('intelligence'/
+      // 'strategy', …) call — never a canned template. If AI is not configured or the run
+      // fails, the campaign's strategy/intelligence simply stays null (shown honestly), not a
+      // fabricated plan.
+      const campaignIntelligence=url.pathname.match(/^\/api\/marketing\/campaigns\/([\w-]+)\/generate-intelligence$/);
+      if(req.method==='POST' && campaignIntelligence) {
+        authorize(session,['owner','operator']);
+        const campaign=getCampaign(store.db,campaignIntelligence[1],session.tenantId);
+        const run=await agentRuntime.run('intelligence',{triggerType:'MANUAL',input:{task:'marketing_intelligence',campaignName:campaign.name,product:campaign.product,market:campaign.market,audience:campaign.audience,current_datetime:new Date().toISOString()},user:session.user,tenantId:session.tenantId});
+        if(run.output?.payload)saveCampaignIntelligence(store.db,campaign.id,run.output.payload,session.tenantId);
+        return send(200,{run:{id:run.id,status:run.status},campaign:getCampaign(store.db,campaign.id,session.tenantId)});
+      }
+      const campaignStrategy=url.pathname.match(/^\/api\/marketing\/campaigns\/([\w-]+)\/generate-strategy$/);
+      if(req.method==='POST' && campaignStrategy) {
+        authorize(session,['owner','operator']);
+        const campaign=getCampaign(store.db,campaignStrategy[1],session.tenantId);
+        const run=await agentRuntime.run('strategy',{triggerType:'MANUAL',input:{task:'marketing_campaign_strategy',campaignName:campaign.name,goal:campaign.goal,product:campaign.product,audience:campaign.audience,market:campaign.market,offer:campaign.offer,channels:campaign.channels,tone:campaign.tone,cta:campaign.cta,marketIntelligence:campaign.intelligence,current_datetime:new Date().toISOString()},user:session.user,tenantId:session.tenantId});
+        if(run.output?.payload)saveCampaignStrategy(store.db,campaign.id,run.output.payload,session.tenantId);
+        return send(200,{run:{id:run.id,status:run.status},campaign:getCampaign(store.db,campaign.id,session.tenantId)});
+      }
+      if(url.pathname==='/api/marketing/content') {
+        if(req.method==='GET')return send(200,listCampaignContentItems(store.db,session.tenantId,{campaignId:url.searchParams.get('campaignId')||undefined,status:url.searchParams.get('status')||undefined}));
+        if(req.method==='POST') {authorize(session,['owner','operator']);return send(201,createCampaignContentItem(store.db,await body(req),session.user,session.tenantId));}
+      }
+      const contentItemRoute=url.pathname.match(/^\/api\/marketing\/content\/([\w-]+)$/);
+      if(contentItemRoute) {
+        if(req.method==='GET')return send(200,getCampaignContentItem(store.db,contentItemRoute[1],session.tenantId));
+        if(req.method==='PATCH') {authorize(session,['owner','operator']);return send(200,updateCampaignContentItem(store.db,contentItemRoute[1],await body(req),session.user,session.tenantId));}
+      }
+      if(req.method==='GET' && url.pathname==='/api/marketing/calendar') {
+        const items=listCampaignContentItems(store.db,session.tenantId).filter(i=>i.scheduledAt||i.publishedAt);
+        return send(200,items);
+      }
+      // Unified Inbox (spec Part 23-25) — the CRM's own lead+message model already IS the
+      // conversation/message model (findOrCreateLeadFromChannel/recordChannelMessage predate
+      // this phase); this is a real read-only aggregation, never a second table.
+      if(req.method==='GET' && url.pathname==='/api/marketing/inbox') {
+        const leads=listLeads(store.db,session.tenantId);
+        const conversations=leads.filter(l=>l.lastInboundAt||l.lastOutboundAt)
+         .sort((a,b)=>(b.lastInboundAt||b.lastOutboundAt||'').localeCompare(a.lastInboundAt||a.lastOutboundAt||''))
+         .slice(0,200)
+         .map(l=>({leadId:l.id,name:l.name,channel:l.channelOrigin,stage:l.stage,temperature:l.temperature,
+          lastInboundAt:l.lastInboundAt,lastOutboundAt:l.lastOutboundAt,replyHold:l.replyHold,humanHold:l.humanHold,assignedTo:l.assignedTo}));
+        return send(200,conversations);
+      }
+      const inboxThread=url.pathname.match(/^\/api\/marketing\/inbox\/([\w-]+)\/messages$/);
+      if(req.method==='GET' && inboxThread)return send(200,leadDetail(store.db,inboxThread[1],session.tenantId).messages);
+      // Website Chat Widget config (tenant-side, authenticated) — the public chat endpoint
+      // itself lives outside the session-gated router entirely (handlePublicWidgetRoute above).
+      if(url.pathname==='/api/marketing/widget') {
+        if(req.method==='GET')return send(200,getOrCreateWidget(store.db,session.tenantId));
+        if(req.method==='PATCH') {authorize(session,['owner','operator']);return send(200,updateWidgetConfig(store.db,await body(req),session.user,session.tenantId));}
+      }
+      if(req.method==='POST' && url.pathname==='/api/marketing/widget/regenerate') {authorize(session,['owner']);return send(200,regenerateWidgetId(store.db,session.user,session.tenantId));}
+      if(req.method==='GET' && url.pathname==='/api/marketing/meta') return send(200,{contentChannels:CONTENT_CHANNELS,contentFormats:CONTENT_FORMATS,campaignStatuses:CAMPAIGN_STATUSES,contentStatuses:CONTENT_STATUSES});
 
       if(req.method==='GET' && url.pathname==='/api/frost/daily-brief')return send(200,buildDailyBrief({store,db:store.db,listEscalations,listRuns,buildBriefFn:buildBrief}));
       if(req.method==='GET' && url.pathname==='/api/frost/status')return send(200,{gate:getGateStatus(store.db),schedulerRunning:scheduler.running(),routes:orchestratorRoutes});

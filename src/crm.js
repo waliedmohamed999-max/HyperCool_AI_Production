@@ -230,7 +230,7 @@ export function findOrCreateLeadFromChannel(store,{phone,email,name,channel},act
  */
 export function recordChannelMessage(store,{leadId,channel,direction,text,externalMessageId,messageType='text',media=null,intent='general',subject=null,cc=null,bcc=null,externalThreadId=null,internetMessageId=null,attachments=null},actor,tenantId=null){
  if(!['INBOUND','OUTBOUND'].includes(direction))fail(400,'اتجاه رسالة غير صالح');
- if(!['WhatsApp','Email','Instagram','Facebook','X','LinkedIn','Phone'].includes(channel))fail(400,'قناة غير مدعومة');
+ if(!['WhatsApp','Email','Instagram','Facebook','X','LinkedIn','Phone','WebsiteChat'].includes(channel))fail(400,'قناة غير مدعومة');
  const eventKey=externalMessageId?`${channel}:${externalMessageId}`:`${channel}:${direction}:${randomUUID()}`;
  return store.mutate(state=>{
   if(externalMessageId){

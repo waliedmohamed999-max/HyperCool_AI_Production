@@ -32,7 +32,25 @@ export const BUILTIN_RUNBOOKS=[
   commandText:'افحص التكاملات واعرض حالة كل اتصال الآن.'},
  {key:'team_workload_review',nameAr:'مراجعة عبء عمل الفريق',nameEn:'Team Workload Review',
   descriptionAr:'خريطة الوكلاء والأدوات وحالة الجاهزية.',
-  commandText:'اعرض خريطة الوكلاء والأدوات وحالة كل وكيل الآن.'}
+  commandText:'اعرض خريطة الوكلاء والأدوات وحالة كل وكيل الآن.'},
+ // Marketing & Social Operating Module (Phase MKT-1, spec Part 38) — same mechanism as every
+ // runbook above: a saved command string through the exact same frost_commander pipeline,
+ // never a separate marketing automation engine.
+ {key:'monthly_marketing_plan',nameAr:'خطة التسويق الشهرية',nameEn:'Monthly Marketing Plan',
+  descriptionAr:'أهداف الشهر، الجمهور، القنوات، وخطة المحتوى الشهرية عبر وكيل الاستراتيجية.',
+  commandText:'اعمل خطة تسويق للشهر القادم: الأهداف، الجمهور، القنوات، وخطة المحتوى الشهرية.'},
+ {key:'weekly_content_plan',nameAr:'خطة المحتوى الأسبوعية',nameEn:'Weekly Content Plan',
+  descriptionAr:'تقويم محتوى الأسبوع القادم عبر القنوات المتصلة.',
+  commandText:'اكتب خطة محتوى للأسبوع القادم عبر القنوات المتصلة.'},
+ {key:'campaign_launch_checklist',nameAr:'قائمة إطلاق الحملة',nameEn:'Campaign Launch Checklist',
+  descriptionAr:'حالة الجاهزية قبل إطلاق حملة: الاستراتيجية، المحتوى، الامتثال، والموافقات.',
+  commandText:'راجع جاهزية إطلاق الحملة: حالة الاستراتيجية، المحتوى، الامتثال، والموافقات المعلقة.'},
+ {key:'competitor_review',nameAr:'مراجعة المنافسين',nameEn:'Competitor Review',
+  descriptionAr:'رصد المنافسين والاتجاهات وفرص التموضع عبر وكيل رصد السوق.',
+  commandText:'راجع المنافسين والاتجاهات الحالية في السوق ولخّص فرص التموضع والمحتوى.'},
+ {key:'social_inbox_review',nameAr:'مراجعة صندوق الرسائل',nameEn:'Social Inbox Review',
+  descriptionAr:'الرسائل التي تحتاج ردًا بشريًا أو تصعيدًا الآن.',
+  commandText:'راجع الرسائل. من يحتاج ردًا بشريًا أو تصعيدًا الآن؟'}
 ];
 
 export function installRunbooks(db) {
