@@ -100,6 +100,19 @@ test('Part K — tenant isolation: Tenant B cannot see, fetch, approve, or delet
  } finally { await cleanup(); }
 });
 
+test('Part O — tenant isolation: Tenant B cannot download Tenant A\'s uploaded file bytes, and cannot reference it as an asset',async()=>{
+ const {call,app,cleanup}=await harness();
+ try {
+  const ownerA=await signupAndCreateWorkspace(call,app,{username:'fileisoa',email:'fileisoa@example.com',companyName:'File Iso A'});
+  const ownerB=await signupAndCreateWorkspace(call,app,{username:'fileisob',email:'fileisob@example.com',companyName:'File Iso B'});
+  const upload=await call('/api/command/attachments',{filename:'secret.png',mimeType:'image/png',contentBase64:TINY_PNG_BASE64},ownerA);
+  assert.equal((await call(`/api/command/attachments/${upload.data.id}/file`,undefined,ownerB,{method:'GET'})).status,404);
+  assert.equal((await call('/api/marketing/assets',{type:'image',source:'upload',fileRef:upload.data.id},ownerB)).status,404);
+  // Tenant A itself can still fetch it — this is a tenant check, not a broken feature.
+  assert.equal((await call(`/api/command/attachments/${upload.data.id}/file`,undefined,ownerA,{method:'GET'})).status,200);
+ } finally { await cleanup(); }
+});
+
 test('Part K — write actions are gated to owner/operator; a reviewer can still list assets',async()=>{
  const {call,app,cleanup}=await harness();
  try {

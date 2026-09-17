@@ -128,6 +128,22 @@ test('Compliance/Creative runs are gated to owner/operator — a reviewer is ref
  } finally {await cleanup();}
 });
 
+// Part O — explicit cross-tenant check for the compliance/creative routes: these read/write
+// a content item by id with no other scoping in the URL, exactly the shape most likely to
+// leak across tenants if getCampaignContentItem's own tenant_id filter were ever missed.
+test('Part O: Tenant B cannot run compliance or generate a creative brief for Tenant A\'s content item',async()=>{
+ const {call,app,cleanup}=await harness(complianceFetcher('PASS'));
+ try {
+  const ownerA=await signupAndCreateWorkspace(call,app,{username:'orcho1a',email:'orcho1a@example.com',companyName:'Orch Sec A'});
+  const ownerB=await signupAndCreateWorkspace(call,app,{username:'orcho1b',email:'orcho1b@example.com',companyName:'Orch Sec B'});
+  const item=await call('/api/marketing/content',{channel:'Instagram',format:'post',body:'محتوى تينانت أ'},ownerA);
+  const crossCompliance=await call(`/api/marketing/content/${item.data.id}/run-compliance`,{},ownerB);
+  assert.equal(crossCompliance.status,404);
+  const crossCreative=await call(`/api/marketing/content/${item.data.id}/generate-creative`,{},ownerB);
+  assert.equal(crossCreative.status,404);
+ } finally {await cleanup();}
+});
+
 // --- Part E: safe CRM update application (pure-function unit tests — no HTTP needed) --------
 test('extractSafeCrmUpdates: only allowlisted fields pass through, stage is never auto-applied',()=>{
  const decision={

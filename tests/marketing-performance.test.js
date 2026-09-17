@@ -183,3 +183,20 @@ test('Part G/H — reviewer role can read reviews but cannot trigger a review or
   assert.equal(deniedCreate.status,403);
  } finally { await cleanup(); }
 });
+
+test('Part O — tenant isolation: Tenant B cannot change the status of, or create content from, Tenant A\'s performance review',async()=>{
+ const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',INTEGRATION_ENCRYPTION_KEY:key32,X_CLIENT_ID:'client-1',X_CLIENT_SECRET:'secret-1',X_REDIRECT_URI:'https://hyper-cool.com/cb',ENABLE_L2_AUTONOMY:'true',PLATFORM_MAIL_TRANSPORT:'capture'};
+ const {call,app,cleanup}=await harness(env,fullFetcher());
+ try {
+  const ownerA=await signupAndCreateWorkspace(call,app,{username:'perfsecoa',email:'perfsecoa@example.com',companyName:'Perf Sec A'});
+  const ownerB=await signupAndCreateWorkspace(call,app,{username:'perfsecob',email:'perfsecob@example.com',companyName:'Perf Sec B'});
+  await connectX(call,ownerA);
+  await publishRealTweetAndSync(call,ownerA);
+  const review=await call('/api/marketing/performance/review',{},ownerA);
+  assert.equal(review.status,201);
+  const crossStatus=await call(`/api/marketing/performance/reviews/${review.data.review.id}/status`,{status:'ACKNOWLEDGED'},ownerB);
+  assert.equal(crossStatus.status,404);
+  const crossCreate=await call(`/api/marketing/performance/reviews/${review.data.review.id}/create-content`,{channel:'X',format:'post',body:'x'},ownerB);
+  assert.equal(crossCreate.status,404);
+ } finally { await cleanup(); }
+});
