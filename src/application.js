@@ -1,5 +1,5 @@
 import http from 'node:http';
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import {readFile,mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
@@ -73,7 +73,8 @@ import {
  createCampaignContentItem,updateCampaignContentItem,buildMarketingOverview,
  CONTENT_CHANNELS,CONTENT_FORMATS,CAMPAIGN_STATUSES,CONTENT_STATUSES,
  saveComplianceResult,saveCreativeBrief,
- createCampaignOrchestrationWorkflow,campaignOrchestrationTriggerContext
+ createCampaignOrchestrationWorkflow,campaignOrchestrationTriggerContext,
+ createMarketingAsset,listMarketingAssets,getMarketingAsset,setMarketingAssetApproval,deleteMarketingAsset
 } from './marketing.js';
 import {
  installMarketingAnalytics,syncAllMarketingAnalytics,getMarketingAnalyticsSummary,
@@ -1698,6 +1699,44 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           const raw=await rawBody(req,Math.ceil(MAX_ATTACHMENT_BYTES*1.4)+8192);
           let input;try{input=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
           return send(201,createAttachment(store.db,env,input,session.user,session.tenantId));
+        }
+      }
+      // Phase MKT-2, Part K — the ONE gap in the existing attachment system: it stores real
+      // files but never serves them back. Real Content-Type from the validated mime_type,
+      // tenant-scoped exactly like getAttachment already is (a wrong-tenant id 404s the same
+      // way, never leaking existence).
+      const attachmentFileRoute=url.pathname.match(/^\/api\/command\/attachments\/([\w-]+)\/file$/);
+      if(req.method==='GET' && attachmentFileRoute) {
+        const attachment=getAttachment(store.db,attachmentFileRoute[1],session.tenantId);
+        const row=store.db.prepare('SELECT disk_path FROM command_attachments WHERE id=? AND tenant_id=?').get(attachmentFileRoute[1],session.tenantId);
+        if(!row||!existsSync(row.disk_path))fail(404,'الملف غير موجود على القرص');
+        res.writeHead(200,{'Content-Type':attachment.mimeType,'Content-Disposition':`inline; filename="${encodeURIComponent(attachment.filename)}"`});
+        return res.end(readFileSync(row.disk_path));
+      }
+      // Phase MKT-2, Part K — real marketing_assets CRUD (image/video/document/external URL/
+      // creative reference metadata). Uploads reuse the EXISTING attachment store above rather
+      // than a second one; this route only ever validates that a referenced upload's id is a
+      // real attachment belonging to THIS tenant before accepting it.
+      if(url.pathname==='/api/marketing/assets') {
+        if(req.method==='GET')return send(200,listMarketingAssets(store.db,session.tenantId,{campaignId:url.searchParams.get('campaignId')||undefined,contentItemId:url.searchParams.get('contentItemId')||undefined}));
+        if(req.method==='POST') {
+         authorize(session,['owner','operator']);
+         const input=await body(req);
+         if(input.source==='upload')getAttachment(store.db,input.fileRef,session.tenantId); // 404s if not this tenant's real attachment
+         return send(201,createMarketingAsset(store.db,input,session.user,session.tenantId));
+        }
+      }
+      const marketingAssetRoute=url.pathname.match(/^\/api\/marketing\/assets\/([\w-]+)$/);
+      if(marketingAssetRoute) {
+        if(req.method==='GET')return send(200,getMarketingAsset(store.db,marketingAssetRoute[1],session.tenantId));
+        if(req.method==='PATCH') {
+         authorize(session,['owner','operator']);
+         const {approved}=await body(req);
+         return send(200,setMarketingAssetApproval(store.db,marketingAssetRoute[1],!!approved,session.user,session.tenantId));
+        }
+        if(req.method==='DELETE') {
+         authorize(session,['owner','operator']);
+         return send(200,deleteMarketingAsset(store.db,marketingAssetRoute[1],session.user,session.tenantId));
         }
       }
       // -----------------------------------------------------------------------------------

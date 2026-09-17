@@ -401,6 +401,76 @@ export function saveCreativeBrief(db,contentId,{runId,payload},tenantId=null) {
 }
 
 // -----------------------------------------------------------------------------------------
+// Marketing Assets (Phase MKT-2, Part K) — wires the EXISTING `marketing_assets` table
+// (created in installMarketing above since MKT-1) to real CRUD. `fileRef` means different
+// things per `source`, and each is validated accordingly, never trusted as opaque:
+//  - 'upload': the id of a real row in `command_attachments` (src/runtime/attachments.js) —
+//    the ONE real file-storage system this codebase has (per the MKT-2 brief: reuse, don't
+//    build a second one). application.js validates the referenced attachment actually exists
+//    and belongs to this tenant before ever accepting it here.
+//  - 'external_url': an HTTPS URL only (a CDN/Drive/Canva share link etc.) — metadata/
+//    reference only, no fetch, no re-hosting.
+//  - 'creative_reference': a free-text pointer into a content item's own creativeBrief (no
+//    binary asset exists yet — this is what Part D's "planning/instructions only" creative
+//    agent output actually produces).
+// -----------------------------------------------------------------------------------------
+export const MARKETING_ASSET_TYPES=['image','video','document','external_url','creative_reference'];
+export const MARKETING_ASSET_SOURCES=['upload','external_url','creative_reference'];
+function hydrateAsset(row) {
+ if(!row)return null;
+ return {id:row.id,tenantId:row.tenant_id,type:row.type,source:row.source,campaignId:row.campaign_id,
+  contentItemId:row.content_item_id,fileRef:row.file_ref,status:row.status,approved:!!row.approved,
+  createdBy:row.created_by,createdByName:row.created_by_name,createdAt:row.created_at};
+}
+export function createMarketingAsset(db,{type,source,campaignId,contentItemId,fileRef},user,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ if(!MARKETING_ASSET_TYPES.includes(type))fail(400,'نوع الأصل غير صالح');
+ if(!MARKETING_ASSET_SOURCES.includes(source))fail(400,'مصدر الأصل غير صالح');
+ if(typeof fileRef!=='string'||!fileRef.trim())fail(400,'مرجع الملف مطلوب');
+ if(source==='external_url') {
+  let parsed;try{parsed=new URL(fileRef);}catch{fail(400,'رابط خارجي غير صالح');}
+  if(parsed.protocol!=='https:')fail(400,'الرابط الخارجي يجب أن يكون HTTPS');
+ }
+ if(campaignId)getCampaign(db,campaignId,resolvedTenantId);
+ if(contentItemId)getCampaignContentItem(db,contentItemId,resolvedTenantId);
+ const now=new Date().toISOString();
+ const row={id:randomUUID(),tenantId:resolvedTenantId,type,source,campaignId:campaignId||null,contentItemId:contentItemId||null,fileRef:fileRef.trim(),status:'ACTIVE',approved:0,createdBy:user?.id||null,createdByName:user?.name||null,createdAt:now};
+ db.prepare(`INSERT INTO marketing_assets (id,tenant_id,type,source,campaign_id,content_item_id,file_ref,status,approved,created_by,created_by_name,created_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(row.id,resolvedTenantId,type,source,row.campaignId,row.contentItemId,row.fileRef,'ACTIVE',0,row.createdBy,row.createdByName,now);
+ recordAudit(db,{id:randomUUID(),action:'MARKETING_ASSET_CREATED',itemId:row.id,detail:{type,source,campaignId:row.campaignId,contentItemId:row.contentItemId},actorId:row.createdBy,actorName:row.createdByName,at:now},resolvedTenantId);
+ return hydrateAsset(db.prepare('SELECT * FROM marketing_assets WHERE id=? AND tenant_id=?').get(row.id,resolvedTenantId));
+}
+export function listMarketingAssets(db,tenantId=null,{campaignId,contentItemId}={}) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ let sql="SELECT * FROM marketing_assets WHERE tenant_id=? AND status='ACTIVE'";
+ const params=[resolvedTenantId];
+ if(campaignId){sql+=' AND campaign_id=?';params.push(campaignId);}
+ if(contentItemId){sql+=' AND content_item_id=?';params.push(contentItemId);}
+ sql+=' ORDER BY created_at DESC';
+ return db.prepare(sql).all(...params).map(hydrateAsset);
+}
+export function getMarketingAsset(db,id,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const row=db.prepare('SELECT * FROM marketing_assets WHERE id=? AND tenant_id=?').get(id,resolvedTenantId);
+ if(!row)fail(404,'الأصل غير موجود');
+ return hydrateAsset(row);
+}
+export function setMarketingAssetApproval(db,id,approved,user,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ getMarketingAsset(db,id,resolvedTenantId);
+ db.prepare('UPDATE marketing_assets SET approved=? WHERE id=? AND tenant_id=?').run(approved?1:0,id,resolvedTenantId);
+ recordAudit(db,{id:randomUUID(),action:'MARKETING_ASSET_APPROVAL_CHANGED',itemId:id,detail:{approved:!!approved},actorId:user?.id||null,actorName:user?.name||null,at:new Date().toISOString()},resolvedTenantId);
+ return getMarketingAsset(db,id,resolvedTenantId);
+}
+export function deleteMarketingAsset(db,id,user,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ getMarketingAsset(db,id,resolvedTenantId);
+ db.prepare("UPDATE marketing_assets SET status='ARCHIVED' WHERE id=? AND tenant_id=?").run(id,resolvedTenantId);
+ recordAudit(db,{id:randomUUID(),action:'MARKETING_ASSET_ARCHIVED',itemId:id,actorId:user?.id||null,actorName:user?.name||null,at:new Date().toISOString()},resolvedTenantId);
+ return {archived:true};
+}
+
+// -----------------------------------------------------------------------------------------
 // Marketing Overview — reuses buildExecutiveReport (CRM/content/approvals numbers already
 // computed there) and adds only the genuinely new marketing-specific counts. Reach/Engagement
 // stay explicitly null/unavailable (reporting.js's own documented rule: never guess social
