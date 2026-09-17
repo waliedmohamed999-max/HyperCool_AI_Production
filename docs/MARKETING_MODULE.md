@@ -104,25 +104,93 @@ routes**, not something introduced by this phase. Fixed with a more specific sel
 - No duplicate agents: zero new agent ids; existing 12 reused for every capability.
 - No external n8n or third-party automation dependency introduced.
 
-## Exact limitations (honest, not silently dropped)
+## Exact limitations as of MKT-1 (see "Phase MKT-2" below for what changed)
 
 - **TikTok, YouTube, HubSpot, Google Drive, Canva**: NOT_IMPLEMENTED — no code exists for any
-  of them. The Marketing UI never shows a connected state for these.
-- **Meta/X/LinkedIn analytics**: publishing works; there is no real tool anywhere that reads
-  back reach/engagement/impressions from these providers. Marketing Overview shows this
-  honestly (`reach: null, engagement: null`) rather than estimating.
-- **Instagram/Facebook inbound (comments/DMs)**: only WhatsApp has a real inbound webhook
-  normalizer (`normalizeWhatsAppWebhook`). "Community mode" (comment/DM reply) is real for
-  WhatsApp and the new Website Chat widget only — not for Instagram/Facebook engagement.
-- **Full automated campaign pipeline**: two real agent-call stages (Intelligence, Strategy) are
-  wired; Copywriting/Creative/Compliance/auto-Publish per campaign stage are not yet chained
-  automatically — content items are created and advanced through status manually via the
-  Content Studio UI, reusing the exact same real agents' capabilities where a user chooses to
-  invoke them (not built as an automatic campaign-stage trigger in this pass).
-- **`marketing_assets` table**: exists in schema, not yet wired to any UI (no asset upload/
-  browse flow built in this pass) — Google Drive folder-pattern storage (spec Part 49) is not
-  applicable since no Drive connector exists.
-- **Calendar view**: List view only; Month/Week grid views are not built.
-- **A/B testing, ad platform read/write**: not built — no ad connector exists to support either.
-- **crm_updates auto-apply**: qualification data from a sales-agent decision is visible in the
-  run record but not automatically written to the lead (see above).
+  of them. The Marketing UI never shows a connected state for these. **Still true after MKT-2**
+  — explicitly out of scope (Part R).
+- ~~**Meta/X/LinkedIn analytics**~~ — **Resolved in MKT-2, Part F.** See below.
+- ~~**Instagram/Facebook inbound (comments/DMs)**~~ — **Resolved in MKT-2, Part I** (Facebook
+  Messenger + Instagram DMs/comments), with an honest caveat (see below).
+- ~~**Full automated campaign pipeline**~~ — **Resolved in MKT-2, Part B**, as an *optional*
+  mode alongside the original manual per-stage flow (unchanged and still fully independent).
+- ~~**`marketing_assets` table not wired to any UI**~~ — **Resolved in MKT-2, Part K.**
+- ~~**Calendar view: List view only**~~ — **Resolved in MKT-2, Part L** (Month/Week/List).
+- **A/B testing, ad platform read/write**: not built — no ad connector exists to support
+  either. **Still true after MKT-2** — explicitly out of scope (Part R).
+- **crm_updates auto-apply**: **Resolved in MKT-2, Part E** for the safe, allowlisted subset;
+  stage changes still require human approval by design (never auto-applied).
+
+## Phase MKT-2 — Marketing Orchestration, Compliance, Analytics & Omnichannel Completion
+
+Full detailed report: **[`docs/MKT_2_REPORT.md`](MKT_2_REPORT.md)** — exact READY/PARTIAL/
+BLOCKED/APPROVAL_REQUIRED/NOT_IMPLEMENTED status per capability, files changed, routes added,
+test coverage, and the exact next recommended phase. Summary of what changed, by part:
+
+- **Part B — Campaign orchestration**: an *optional* automated pipeline (intelligence →
+  strategy → copy → creative → compliance → human APPROVAL → publishing) built entirely on the
+  existing native Workflow Engine (`src/runtime/workflow-engine.js`) — no new orchestration
+  engine. The original manual per-stage flow (`generate-intelligence`/`generate-strategy`)
+  is completely unaffected and still works standalone for any campaign, orchestrated or not.
+- **Part C — Real compliance gate**: `IN_REVIEW → APPROVED` now requires a real
+  `agentRuntime.run('compliance', ...)` result, hash-pinned to the exact content reviewed —
+  editing content after a PASS silently invalidates it, and a BLOCK result can never be
+  approved. Uses the compliance agent directly, never the older, single-tenant
+  `src/compliance.js` mechanism (which remains as-is for the legacy `content_items` table only).
+- **Part D — Creative brief generation**: `agentRuntime.run('creative', ...)` populates the
+  real `creativeBrief` field. Planning/instructions only, matching the agent's own scope — no
+  Canva, no image generation.
+- **Part E — Safe CRM auto-updates**: a strict allowlist (`src/runtime/agent-crm-updates.js`)
+  lets a real sales-agent decision auto-apply non-sensitive lead fields (city, product need,
+  temperature, etc.); a proposed **stage** change always creates a real Approval Center entry
+  instead, applied only on human decision. Fully traceable: agent run → proposed change →
+  approval (if required) → applied change, all through the existing `updateLead`/approvals
+  machinery — no second write path.
+- **Part F — Marketing analytics**: a normalized, tenant-scoped `marketing_analytics_metrics`
+  table (provider, external account/content id, metric, value, period, retrievedAt, tenant_id)
+  populated by real Graph API insights (Meta), the previously-unused `getLinkedInPostMetrics`/
+  `getXPostMetrics` fetchers, and new follower-count fetchers for all three providers. A metric
+  a provider genuinely doesn't return stays `available=0`/`value=NULL` — never estimated.
+  **Known limitation**: only content published through the legacy `content_items` +
+  `meta_publish`/`x_publish`/`linkedin_publish` path has a real external post id to sync —
+  `campaign_content_items` (Part B's pipeline) has no real publish execution wired yet, so
+  campaign-orchestrated content has no per-post analytics until a future phase adds that.
+- **Part G/H — Performance & improvement loop**: the existing performance agent (#11,
+  `agents/performance.md`) runs over real analytics data and stores its recommendation
+  (`marketing_performance_reviews`) with the exact evidence it saw. Acting on a recommendation
+  only ever creates a brand-new DRAFT content item through the unchanged content-creation path
+  — still gated by the real compliance/approval flow, never auto-published, never modifying
+  anything already published.
+- **Part I/J — Meta inbound + social reply**: Facebook Messenger and Instagram DMs/comments now
+  use the same webhook mechanism, signature verification, tenant resolution, and CRM model as
+  WhatsApp's already-shipped inbound path (`crm.js`'s `findOrCreateLeadFromChannel` extended
+  with a channel-scoped `externalContactId` identity key so repeat DMs match the same lead). A
+  new `meta_message_send` tool lets the sales/follow-up agents reply for real, gated exactly
+  like `whatsapp_send`. **Honest status: APPROVAL_REQUIRED, not LIVE** — no live Meta app exists
+  in this environment, so `pages_messaging`/`instagram_manage_messages`/`instagram_manage_comments`
+  permissions have never been verified against a real Meta app review; the code path itself is
+  real and tested against Meta's documented webhook/Send API shapes with a mocked provider.
+- **Part K — Marketing assets**: real CRUD wired to the UI, reusing the existing
+  `command_attachments` store for uploads (no second file-storage system) plus a new
+  `GET /api/command/attachments/:id/file` route that finally serves an uploaded file's bytes
+  back (attachments could be uploaded before but never viewed).
+- **Part L — Calendar Month/Week/List**: reuses the exact grid math and CSS classes the legacy
+  Planning calendar (`public/pages/workspace.js`) already proved — no new grid system. Filters
+  by channel/campaign/status/date.
+- **Part M — Live Operations**: needed **zero new code** — the existing
+  `GET /api/command/operations` route already merges `audit_logs` generically (by kind, not an
+  allowlist), so every real marketing event this phase already records (orchestration runs,
+  compliance/creative/analytics/performance/asset audit entries) surfaces there automatically.
+  Proven with a dedicated test rather than just asserted.
+- **Part N — Marketing Overview**: real per-provider analytics (impressions/reach/engagement
+  rate/followers) with a manual "Sync Now" action, the real orchestration workflow status and
+  step history on the campaign detail drawer, and the new compliance-gate UI on Content Studio
+  (a real regression fix — Part C's backend change would otherwise have made the existing
+  "Approve" button silently fail with no explanation).
+- **Security (Part O)**: a real, pre-existing multi-tenant bug was found and fixed while wiring
+  this up — `saveMetaConnection`/`saveXConnection`/`saveLinkedInConnection` and their
+  status/disconnect/test-connection/metrics counterparts never threaded `tenantId`, silently
+  falling back to a single-tenant default that throws (or, in a laxer configuration, could
+  resolve the wrong tenant's credentials) the instant a second tenant exists. Fixed for Meta,
+  X, and LinkedIn's full OAuth lifecycle. Every new table/route in this phase has an explicit
+  cross-tenant test (Tenant B gets a real 404, never a leak).
