@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {randomUUID, createHash} from 'node:crypto';
 import {fail} from './auth.js';
 import {resolveActiveTenantId} from './tenancy.js';
 import {recordAudit} from './audit.js';
@@ -73,7 +73,21 @@ export function installMarketing(db) {
  );
  CREATE INDEX IF NOT EXISTS idx_campaign_content_tenant ON campaign_content_items(tenant_id,status);
  CREATE INDEX IF NOT EXISTS idx_campaign_content_campaign ON campaign_content_items(campaign_id);
- CREATE INDEX IF NOT EXISTS idx_campaign_content_scheduled ON campaign_content_items(tenant_id,scheduled_at);
+ CREATE INDEX IF NOT EXISTS idx_campaign_content_scheduled ON campaign_content_items(tenant_id,scheduled_at);`);
+ // Phase MKT-2, Part C/D — additive columns for the real compliance gate and creative-brief
+ // evidence trail. Same ALTER TABLE ADD COLUMN pattern already used by
+ // integration_definitions.js — never a table rebuild.
+ const contentColumns=db.prepare('PRAGMA table_info(campaign_content_items)').all().map(c=>c.name);
+ for(const [name,def] of [
+  ['compliance_run_id',"TEXT"],
+  ['compliance_classification',"TEXT"], // PASS | PASS_WITH_EDITS | BLOCK
+  ['compliance_json',"TEXT"], // full compliance agent decision payload
+  ['compliance_checked_at',"TEXT"],
+  ['compliance_content_hash',"TEXT"], // content hash AT THE TIME of the check — a later edit that
+  // changes this hash silently invalidates the stored result (checked at gate time, never trusted blindly)
+  ['creative_run_id',"TEXT"]
+ ]) if(!contentColumns.includes(name))db.exec(`ALTER TABLE campaign_content_items ADD COLUMN ${name} ${def}`);
+ db.exec(`
  CREATE TABLE IF NOT EXISTS marketing_assets (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
@@ -104,16 +118,31 @@ function hydrateCampaign(row) {
 }
 function hydrateContentItem(row) {
  if(!row)return null;
- return {
+ const item={
   id:row.id,tenantId:row.tenant_id,campaignId:row.campaign_id,channel:row.channel,format:row.format,
   objective:row.objective,audience:row.audience,hook:row.hook,body:row.body,cta:row.cta,
   hashtags:JSON.parse(row.hashtags_json||'[]'),creativeBrief:row.creative_brief_json?JSON.parse(row.creative_brief_json):null,
   status:row.status,approvalId:row.approval_id,scheduledAt:row.scheduled_at,publishedAt:row.published_at,
-  createdBy:row.created_by,createdByName:row.created_by_name,createdAt:row.created_at,updatedAt:row.updated_at
+  createdBy:row.created_by,createdByName:row.created_by_name,createdAt:row.created_at,updatedAt:row.updated_at,
+  complianceRunId:row.compliance_run_id||null,complianceClassification:row.compliance_classification||null,
+  compliance:row.compliance_json?JSON.parse(row.compliance_json):null,complianceCheckedAt:row.compliance_checked_at||null,
+  creativeRunId:row.creative_run_id||null
  };
+ // Part C — a compliance result only counts if it was run against the content EXACTLY as it
+ // reads right now; any edit since (hook/body/cta/hashtags) silently invalidates it rather than
+ // letting a stale PASS approve different text. Computed at read time, never trusted from a
+ // cached "isValid" flag that could itself drift.
+ item.complianceValid=!!(row.compliance_content_hash && row.compliance_content_hash===campaignContentHash(item));
+ return item;
 }
 function cleanText(value,max) {
  return typeof value==='string'?value.trim().slice(0,max):null;
+}
+// Hash-pinned approval philosophy (mirrors planning.js's contentHash for the legacy content_items
+// table) — only the fields a compliance reviewer actually looked at count toward the pin; fields
+// like status/scheduledAt/campaignId changing does NOT invalidate a real compliance result.
+export function campaignContentHash(item) {
+ return createHash('sha256').update(JSON.stringify({channel:item.channel,format:item.format,hook:item.hook||'',body:item.body||'',cta:item.cta||'',hashtags:item.hashtags||[]})).digest('hex');
 }
 
 // -----------------------------------------------------------------------------------------
@@ -244,12 +273,6 @@ const CONTENT_TRANSITIONS={DRAFT:['IN_REVIEW','FAILED'],IN_REVIEW:['APPROVED','D
 export function updateCampaignContentItem(db,id,patch,user,tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
  const existing=getCampaignContentItem(db,id,resolvedTenantId);
- let status=existing.status;
- if(patch.status!==undefined && patch.status!==existing.status) {
-  if(!CONTENT_STATUSES.includes(patch.status))fail(400,'حالة غير صالحة');
-  if(!CONTENT_TRANSITIONS[existing.status].includes(patch.status))fail(400,`لا يمكن الانتقال من ${existing.status} إلى ${patch.status} مباشرة`);
-  status=patch.status;
- }
  const next={
   hook:patch.hook!==undefined?cleanText(patch.hook,300):existing.hook,
   body:patch.body!==undefined?(cleanText(patch.body,8000)||''):existing.body,
@@ -257,14 +280,56 @@ export function updateCampaignContentItem(db,id,patch,user,tenantId=null) {
   hashtags:patch.hashtags!==undefined?(Array.isArray(patch.hashtags)?patch.hashtags.slice(0,30).map(h=>String(h).trim()).filter(Boolean):existing.hashtags):existing.hashtags,
   creativeBrief:patch.creativeBrief!==undefined?patch.creativeBrief:existing.creativeBrief,
   scheduledAt:patch.scheduledAt!==undefined?patch.scheduledAt:existing.scheduledAt,
-  publishedAt:status==='PUBLISHED'&&!existing.publishedAt?new Date().toISOString():existing.publishedAt,
   approvalId:patch.approvalId!==undefined?patch.approvalId:existing.approvalId
  };
+ let status=existing.status;
+ if(patch.status!==undefined && patch.status!==existing.status) {
+  if(!CONTENT_STATUSES.includes(patch.status))fail(400,'حالة غير صالحة');
+  if(!CONTENT_TRANSITIONS[existing.status].includes(patch.status))fail(400,`لا يمكن الانتقال من ${existing.status} إلى ${patch.status} مباشرة`);
+  // Part C — the real compliance gate. Checked against the CONTENT AS IT WILL READ after this
+  // very patch (never the stale pre-edit version) — editing hook/body/cta/hashtags in the same
+  // call that tries to approve must NOT sneak past a compliance result that reviewed different
+  // text. A BLOCK classification can never be approved past regardless of hash freshness.
+  if(existing.status==='IN_REVIEW' && patch.status==='APPROVED') {
+   const raw=db.prepare('SELECT compliance_classification,compliance_content_hash FROM campaign_content_items WHERE id=? AND tenant_id=?').get(id,resolvedTenantId);
+   const wouldBeHash=campaignContentHash({channel:existing.channel,format:existing.format,hook:next.hook,body:next.body,cta:next.cta,hashtags:next.hashtags});
+   if(!raw?.compliance_classification)fail(409,'يتطلب الاعتماد فحص امتثال حقيقي أولاً (compliance) — لا يوجد فحص مسجّل لهذا العنصر');
+   if(raw.compliance_content_hash!==wouldBeHash)fail(409,'تغيّر المحتوى بعد آخر فحص امتثال — أعد الفحص قبل الاعتماد');
+   if(raw.compliance_classification==='BLOCK')fail(409,'فحص الامتثال رفض هذا المحتوى (BLOCK) — لا يمكن اعتماده');
+  }
+  status=patch.status;
+ }
+ const publishedAt=status==='PUBLISHED'&&!existing.publishedAt?new Date().toISOString():existing.publishedAt;
  const now=new Date().toISOString();
  db.prepare(`UPDATE campaign_content_items SET hook=?,body=?,cta=?,hashtags_json=?,creative_brief_json=?,status=?,approval_id=?,scheduled_at=?,published_at=?,updated_at=? WHERE id=? AND tenant_id=?`)
-  .run(next.hook,next.body,next.cta,JSON.stringify(next.hashtags),next.creativeBrief?JSON.stringify(next.creativeBrief):null,status,next.approvalId,next.scheduledAt,next.publishedAt,now,id,resolvedTenantId);
+  .run(next.hook,next.body,next.cta,JSON.stringify(next.hashtags),next.creativeBrief?JSON.stringify(next.creativeBrief):null,status,next.approvalId,next.scheduledAt,publishedAt,now,id,resolvedTenantId);
  recordAudit(db,{id:randomUUID(),action:'MARKETING_CONTENT_UPDATED',itemId:id,actorId:user?.id||null,actorName:user?.name||null,actorRole:user?.role||null,at:now},resolvedTenantId);
  return getCampaignContentItem(db,id,resolvedTenantId);
+}
+// Part C — persists a real compliance agent decision against this exact content (hash-pinned).
+// Called by the route AFTER a real agentRuntime.run('compliance', …) call returns; never
+// invents a result itself. Storing here (rather than only in agent_runs) is what lets the
+// APPROVE gate check classification+hash without re-querying agent_runs on every attempt.
+export function saveComplianceResult(db,contentId,{runId,decision},tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const item=getCampaignContentItem(db,contentId,resolvedTenantId);
+ const hash=campaignContentHash(item);
+ const now=new Date().toISOString();
+ db.prepare('UPDATE campaign_content_items SET compliance_run_id=?,compliance_classification=?,compliance_json=?,compliance_checked_at=?,compliance_content_hash=?,updated_at=? WHERE id=? AND tenant_id=?')
+  .run(runId,decision?.classification||null,decision?JSON.stringify(decision):null,now,hash,now,contentId,resolvedTenantId);
+ recordAudit(db,{id:randomUUID(),action:'MARKETING_CONTENT_COMPLIANCE_CHECKED',itemId:contentId,detail:{runId,classification:decision?.classification||null},at:now},resolvedTenantId);
+ return getCampaignContentItem(db,contentId,resolvedTenantId);
+}
+// Part D — persists a real creative agent decision (structured creative brief) against this
+// content item. Populates the existing `creativeBrief` field — no new field/table.
+export function saveCreativeBrief(db,contentId,{runId,payload},tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ getCampaignContentItem(db,contentId,resolvedTenantId);
+ const now=new Date().toISOString();
+ db.prepare('UPDATE campaign_content_items SET creative_brief_json=?,creative_run_id=?,updated_at=? WHERE id=? AND tenant_id=?')
+  .run(payload?JSON.stringify(payload):null,runId,now,contentId,resolvedTenantId);
+ recordAudit(db,{id:randomUUID(),action:'MARKETING_CONTENT_CREATIVE_GENERATED',itemId:contentId,detail:{runId},at:now},resolvedTenantId);
+ return getCampaignContentItem(db,contentId,resolvedTenantId);
 }
 
 // -----------------------------------------------------------------------------------------

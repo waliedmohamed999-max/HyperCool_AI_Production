@@ -75,11 +75,11 @@ test('Content lifecycle: illegal status transitions are rejected, legal ones suc
 
   const toReview=await call(`/api/marketing/content/${item.data.id}`,{status:'IN_REVIEW'},owner,{method:'PATCH'});
   assert.equal(toReview.status,200);
-  const toApproved=await call(`/api/marketing/content/${item.data.id}`,{status:'APPROVED'},owner,{method:'PATCH'});
-  assert.equal(toApproved.status,200);
-  const toPublished=await call(`/api/marketing/content/${item.data.id}`,{status:'PUBLISHED'},owner,{method:'PATCH'});
-  assert.equal(toPublished.status,200);
-  assert.ok(toPublished.data.publishedAt);
+  // Phase MKT-2 Part C: approval now requires a real, matching, non-BLOCK compliance result —
+  // the full mocked-provider happy path is covered in tests/marketing-orchestration.test.js;
+  // this test (no AI configured) only needs to prove the gate genuinely refuses without one.
+  const toApprovedNoCompliance=await call(`/api/marketing/content/${item.data.id}`,{status:'APPROVED'},owner,{method:'PATCH'});
+  assert.equal(toApprovedNoCompliance.status,409);
  } finally {await cleanup();}
 });
 

@@ -71,8 +71,10 @@ import {
  installMarketing,listCampaigns,getCampaign,createCampaign,updateCampaign,archiveCampaign,
  saveCampaignStrategy,saveCampaignIntelligence,listCampaignContentItems,getCampaignContentItem,
  createCampaignContentItem,updateCampaignContentItem,buildMarketingOverview,
- CONTENT_CHANNELS,CONTENT_FORMATS,CAMPAIGN_STATUSES,CONTENT_STATUSES
+ CONTENT_CHANNELS,CONTENT_FORMATS,CAMPAIGN_STATUSES,CONTENT_STATUSES,
+ saveComplianceResult,saveCreativeBrief
 } from './marketing.js';
+import {extractSafeCrmUpdates, applySafeCrmUpdates, proposeStageChangeApproval} from './runtime/agent-crm-updates.js';
 import {
  installWebsiteWidgets,getOrCreateWidget,updateWidgetConfig,regenerateWidgetId,
  resolveActiveWidgetByPublicId,isOriginAllowed,checkWidgetRateLimit,
@@ -359,6 +361,21 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const run=await agentRuntime.run('sales',{triggerType:'CHANNEL_MESSAGE',input:{channel:'WebsiteChat',leadId:lead.id,message:text,current_datetime:new Date().toISOString(),timezone:'Asia/Riyadh'},tenantId:widget.tenantId});
       const replyText=run.output?.payload?.[payload.locale==='en'?'reply_en':'reply_ar']||run.output?.payload?.reply_ar||run.output?.payload?.reply_en||null;
       if(replyText)recordWidgetOutboundReply(store,{tenantId:widget.tenantId,leadId:lead.id,text:replyText});
+      // Phase MKT-2, Part E — the sales agent's real decision may propose real CRM updates.
+      // Safe (non-stage) fields auto-apply through the existing updateLead function; a
+      // proposed STAGE change never auto-applies — it becomes a real, visible Approval Center
+      // entry instead, exactly like every other sensitive agent action in this system.
+      if(run.output?.payload) {
+       const {safe,stageProposal}=extractSafeCrmUpdates(run.output.payload);
+       try {
+        if(Object.keys(safe).length)applySafeCrmUpdates(store,lead.id,safe,{runId:run.id,agentId:'sales'},widget.tenantId);
+        if(stageProposal && stageProposal!==lead.stage)proposeStageChangeApproval(store.db,{leadId:lead.id,fromStage:lead.stage,toStage:stageProposal,runId:run.id,agentId:'sales'},widget.tenantId);
+       } catch(crmUpdateError) {
+        // Never let a malformed/edge-case CRM update proposal break the visitor's chat reply —
+        // the message and lead are already safely recorded regardless of this outcome.
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_CRM_UPDATE_FAILED',itemId:lead.id,detail:{runId:run.id,error:crmUpdateError.message},at:new Date().toISOString()},widget.tenantId);
+       }
+      }
       return respond(200,{leadId:lead.id,reply:replyText,aiAvailable:!!replyText,escalated:!!run.output?.escalation_required},corsHeaders);
     } catch(error) {
       const status=error.status||500;
@@ -1461,6 +1478,20 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_TOOL_APPROVAL_EXECUTED',itemId:decided.id,toolSlug:decided.tool_slug,resultStatus:toolResult?.status||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
           return send(200,{...decided,toolResult});
         }
+        // Phase MKT-2, Part E — a sensitive CRM pipeline-stage change proposed by a real sales
+        // agent run, approved by a human. Applies through the exact same updateLead function a
+        // human editing the CRM form uses; a REJECTED decision simply leaves the lead unchanged
+        // (decideApproval above already recorded the rejection).
+        if(decided.status==='APPROVED' && decided.action_type==='marketing_crm_stage_update') {
+          const proposed=JSON.parse(decided.proposed_output);
+          try {
+           const lead=getLead(store.db,proposed.leadId,session.tenantId);
+           const updated=updateLead(store,proposed.leadId,{stage:proposed.toStage,temperature:lead.temperature,expectedVersion:lead.version,reason:`اعتماد بشري لاقتراح الوكيل ${decided.agent_id} (${decided.id})`,city:lead.city,productNeed:lead.productNeed,productUrl:lead.productUrl,quantity:lead.quantity,valueSAR:lead.valueSAR,timeline:lead.timeline,budgetBand:lead.budgetBand,nextCheckAt:lead.nextCheckAt,assignedTo:lead.assignedTo},session.user,session.tenantId);
+           return send(200,{...decided,leadUpdateResult:{status:'APPLIED',lead:updated}});
+          } catch(error) {
+           return send(200,{...decided,leadUpdateResult:{status:'FAILED',errorDetail:error.message}});
+          }
+        }
         return send(200,decided);
       }
       if(req.method==='GET' && url.pathname==='/api/escalations')return send(200,listEscalations(store.db,{status:url.searchParams.get('status')||undefined},session.tenantId));
@@ -1740,6 +1771,29 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(contentItemRoute) {
         if(req.method==='GET')return send(200,getCampaignContentItem(store.db,contentItemRoute[1],session.tenantId));
         if(req.method==='PATCH') {authorize(session,['owner','operator']);return send(200,updateCampaignContentItem(store.db,contentItemRoute[1],await body(req),session.user,session.tenantId));}
+      }
+      // Phase MKT-2, Part C — the real compliance gate: a real agentRuntime.run('compliance', …)
+      // call (never the legacy src/connectors.js checkCompliance() one-off, and never a second
+      // compliance mechanism) whose decision is hash-pinned to this exact content by
+      // saveComplianceResult. IN_REVIEW -> APPROVED is refused in updateCampaignContentItem
+      // unless a matching, non-BLOCK result exists.
+      const contentCompliance=url.pathname.match(/^\/api\/marketing\/content\/([\w-]+)\/run-compliance$/);
+      if(req.method==='POST' && contentCompliance) {
+        authorize(session,['owner','operator']);
+        const item=getCampaignContentItem(store.db,contentCompliance[1],session.tenantId);
+        const run=await agentRuntime.run('compliance',{triggerType:'MANUAL',input:{task:'marketing_content_compliance_review',channel:item.channel,format:item.format,hook:item.hook,body:item.body,cta:item.cta,hashtags:item.hashtags,current_datetime:new Date().toISOString()},user:session.user,tenantId:session.tenantId});
+        const updated=saveComplianceResult(store.db,item.id,{runId:run.id,decision:run.output?.payload||null},session.tenantId);
+        return send(200,{run:{id:run.id,status:run.status},content:updated});
+      }
+      // Phase MKT-2, Part D — real agentRuntime.run('creative', …); output populates the
+      // existing creativeBrief field. Planning/instructions only — no Canva, no asset generation.
+      const contentCreative=url.pathname.match(/^\/api\/marketing\/content\/([\w-]+)\/generate-creative$/);
+      if(req.method==='POST' && contentCreative) {
+        authorize(session,['owner','operator']);
+        const item=getCampaignContentItem(store.db,contentCreative[1],session.tenantId);
+        const run=await agentRuntime.run('creative',{triggerType:'MANUAL',input:{task:'marketing_creative_brief',channel:item.channel,format:item.format,hook:item.hook,body:item.body,cta:item.cta,current_datetime:new Date().toISOString()},user:session.user,tenantId:session.tenantId});
+        const updated=saveCreativeBrief(store.db,item.id,{runId:run.id,payload:run.output?.payload||null},session.tenantId);
+        return send(200,{run:{id:run.id,status:run.status},content:updated});
       }
       if(req.method==='GET' && url.pathname==='/api/marketing/calendar') {
         const items=listCampaignContentItems(store.db,session.tenantId).filter(i=>i.scheduledAt||i.publishedAt);

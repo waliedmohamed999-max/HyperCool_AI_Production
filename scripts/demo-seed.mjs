@@ -338,20 +338,20 @@ function seedNova() {
   hook: 'الشتاء له عطره الخاص ❄️', body: 'تشكيلتنا الموسمية وصلت — عطور فاخرة بخصم 25% لفترة محدودة فقط.',
   cta: 'تسوق الآن', hashtags: ['عطور', 'عروض', 'نوفا']
  }, owner, tenantId);
+ // Phase MKT-2 Part C: APPROVED now requires a real agentRuntime.run('compliance', …) result —
+ // this seed script has no live AI key, so fabricating a PASS decision would misrepresent what
+ // the system actually did (same rule already applied to strategy/intelligence JSON below).
+ // Stops at IN_REVIEW, honestly reflecting that real approval needs a real AI-backed run.
  updateCampaignContentItem(db, igPost.id, { status: 'IN_REVIEW' }, owner, tenantId);
- updateCampaignContentItem(db, igPost.id, { status: 'APPROVED' }, owner, tenantId);
- updateCampaignContentItem(db, igPost.id, { status: 'SCHEDULED', scheduledAt: new Date(Date.now() + 2 * 86400000).toISOString() }, owner, tenantId);
  const waMessage = createCampaignContentItem(db, {
   campaignId: summerCampaign.id, channel: 'WhatsApp', format: 'whatsapp_message',
   objective: 'تذكير العملاء الحاليين بالعرض', body: 'عرضنا الموسمي بدأ! خصم 25% على تشكيلة العطور لفترة محدودة.', cta: 'اطلب الآن'
  }, owner, tenantId);
  updateCampaignContentItem(db, waMessage.id, { status: 'IN_REVIEW' }, owner, tenantId);
- updateCampaignContentItem(db, waMessage.id, { status: 'APPROVED' }, owner, tenantId);
- updateCampaignContentItem(db, waMessage.id, { status: 'PUBLISHED' }, owner, tenantId);
  // A second, unrelated DRAFT content item with no campaign — shows the Content Studio has
  // real content outside of any campaign too, not just campaign-linked items.
  createCampaignContentItem(db, { channel: 'Email', format: 'email', body: 'نشرتنا البريدية لهذا الشهر — أهم المنتجات الجديدة.' }, owner, tenantId);
- log('Nova Store: 1 active marketing campaign, 3 campaign content items (Instagram scheduled, WhatsApp published, Email draft).');
+ log('Nova Store: 1 active marketing campaign, 3 campaign content items (Instagram + WhatsApp in review pending a real compliance run, Email draft).');
 
  // Real Unified Inbox activity via the Website Chat channel — the exact same
  // findOrCreateLeadFromChannel/recordChannelMessage path the public widget endpoint uses.
@@ -533,11 +533,10 @@ function seedVertex() {
   hook: 'هل بنيتك التقنية جاهزة للنمو القادم؟', body: 'نساعد الشركات على تحديث بنيتها التقنية دون تعطيل العمليات — تعرف على منهجيتنا.',
   cta: 'احجز استشارتك المجانية', hashtags: ['تحول_رقمي', 'B2B']
  }, owner, tenantId);
+ // Phase MKT-2 Part C: stops at IN_REVIEW — same honest reasoning as Nova's items above.
  updateCampaignContentItem(db, liPost.id, { status: 'IN_REVIEW' }, owner, tenantId);
- updateCampaignContentItem(db, liPost.id, { status: 'APPROVED' }, owner, tenantId);
- updateCampaignContentItem(db, liPost.id, { status: 'SCHEDULED', scheduledAt: new Date(Date.now() + 3 * 86400000).toISOString() }, owner, tenantId);
  createCampaignContentItem(db, { channel: 'Email', format: 'landing_page_copy', body: 'نص صفحة هبوط لحملة الاستشارة المجانية.' }, owner, tenantId);
- log('Vertex Solutions: 1 active B2B campaign (LinkedIn), 2 campaign content items.');
+ log('Vertex Solutions: 1 active B2B campaign (LinkedIn), 2 campaign content items (LinkedIn post in review pending compliance).');
 
  const widgetActor = { id: 'connector:website_widget', name: 'ودجت الدردشة', role: 'automation' };
  const { lead: widgetLead } = findOrCreateLeadFromChannel(store, { name: 'زائر موقع الشركة', channel: 'WebsiteChat' }, widgetActor, tenantId);

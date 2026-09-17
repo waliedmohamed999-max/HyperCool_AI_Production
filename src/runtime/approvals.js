@@ -20,7 +20,7 @@ import {resolveActiveTenantId} from '../tenancy.js';
 // Workflow run pausing for a human decision. Not a new approval engine: same table, same
 // decide flow, resumed by workflow-engine.js's resumeWorkflowApproval exactly the way
 // agent_tool_send is already resumed by runtime.js's resumeToolApproval.
-export const ACTION_TYPES=['publish_content','send_marketing_message','discount','large_quote','memory_policy_change','medical_claim','agent_permission_change','agent_tool_send','connector_action','workflow_step_approval'];
+export const ACTION_TYPES=['publish_content','send_marketing_message','discount','large_quote','memory_policy_change','medical_claim','agent_permission_change','agent_tool_send','connector_action','workflow_step_approval','marketing_crm_stage_update'];
 
 // Multi-Tenant Phase 2 (spec Part 14 — Approval isolation): a real `tenant_id`, same
 // optional-trailing-param pattern as Phase 1. `createApproval`'s callers (agent tool
