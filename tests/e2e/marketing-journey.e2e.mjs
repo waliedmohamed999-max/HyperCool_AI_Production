@@ -20,10 +20,15 @@ const directory = await mkdtemp(join(tmpdir(), 'hypercool-e2e-marketing-'));
 const textTurn = obj => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(obj) }], usage: { input_tokens: 5, output_tokens: 5 } });
 const STRATEGY_DECISION = { status: 'OK', action: 'PLAN', rationale: 'خطة مبنية على أهداف الحملة الحقيقية.', verification: [], risk_level: 'LOW', escalation_required: false, missing_data: [], payload: { slots: [{ date: '2026-10-01', platform: 'Instagram', audience: 'عملاء أفراد', funnel_stage: 'AWARENESS', pillar: 'عروض موسمية', product_or_category: null, objective: 'زيادة الوعي بالعرض', hook_angle: 'الشتاء له عطره الخاص', key_message: 'خصم 25% لفترة محدودة', CTA: 'تسوق الآن', landing_url: null, evidence_needed: [], asset_needed: [], priority: 'HIGH', approval_risk: 'LOW', reason_for_selection: 'يخدم هدف الحملة مباشرة' }] } };
 const INTELLIGENCE_DECISION = { status: 'OK', action: 'ANALYZE', rationale: 'رصدنا فرصة تموضع واضحة.', verification: [], risk_level: 'LOW', escalation_required: false, missing_data: [], payload: { signals: [{ topic_or_competitor: 'منافس رئيسي', observed_change: 'خفض الأسعار 10%', date: '2026-09-15', source: 'مراقبة يدوية', fact: 'تغيير سعري معلن', inference: 'ضغط تنافسي على نفس الشريحة', confidence: 0.7, why_it_matters: 'قد يقلل هامش الربح إن لم نستجب', content_opportunity: 'إبراز الجودة بدل التنافس السعري', sales_opportunity: 'استهداف العملاء الحساسين للسعر بعرض قيمة مختلف', recommended_action: 'مراجعة استراتيجية التسعير هذا الشهر', urgency: 'MEDIUM' }] } };
+// Phase MKT-2, Part Q — a real PASS compliance decision, matched on the compliance agent's
+// own prompt heading exactly like Strategy/Intelligence above. This is what unlocks the new
+// real compliance gate (Part C) added this phase before IN_REVIEW -> APPROVED is even offered.
+const COMPLIANCE_DECISION = { status: 'OK', action: 'REVIEW', rationale: 'تحقق حقيقي من المحتوى.', verification: [], risk_level: 'LOW', escalation_required: false, missing_data: [], payload: { classification: 'PASS', issues: [], corrected_text_if_possible: null, evidence_sources: [], verified_fields: ['body'], blocked_fields: [], human_review_required: false, reason: 'لا توجد ادعاءات غير موثقة' } };
 async function fetcher(url, options) {
   const bodyText = typeof options?.body === 'string' ? options.body : '';
   if (bodyText.includes('Content Strategy Agent')) return new Response(JSON.stringify(textTurn(STRATEGY_DECISION)), { status: 200, headers: { 'content-type': 'application/json' } });
   if (bodyText.includes('Competitor & Trend Intelligence Agent')) return new Response(JSON.stringify(textTurn(INTELLIGENCE_DECISION)), { status: 200, headers: { 'content-type': 'application/json' } });
+  if (bodyText.includes('Brand & Compliance Agent')) return new Response(JSON.stringify(textTurn(COMPLIANCE_DECISION)), { status: 200, headers: { 'content-type': 'application/json' } });
   return new Response(JSON.stringify(textTurn({ status: 'NEEDS_DATA', action: 'NONE', rationale: 'Not part of this scenario', verification: [], risk_level: 'LOW', escalation_required: false, missing_data: ['not_mocked'], payload: null })), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
@@ -119,11 +124,16 @@ await page.waitForTimeout(400);
 check('Content item created', (await page.locator('#mkt-content-list .card', { hasText: 'تشكيلتنا الموسمية' }).count()) === 1);
 
 const contentCard = page.locator('#mkt-content-list .card', { hasText: 'تشكيلتنا الموسمية' });
-await contentCard.locator('button').click(); // DRAFT -> IN_REVIEW
+await contentCard.getByRole('button', { name: 'أرسل للمراجعة' }).click(); // DRAFT -> IN_REVIEW
 await page.waitForTimeout(400);
-await contentCard.locator('button').click(); // IN_REVIEW -> APPROVED
+// Part C: a real compliance gate now sits between IN_REVIEW and APPROVED — Approve is not
+// even offered until a real, non-stale, non-BLOCK compliance run exists for this exact text.
+await contentCard.getByRole('button', { name: 'فحص الامتثال' }).click();
+await page.waitForTimeout(600);
+check('Real (mocked-provider) compliance check passed and unlocked Approve', (await contentCard.innerText()).includes('الامتثال: مقبول'));
+await contentCard.getByRole('button', { name: 'اعتماد', exact: true }).click(); // IN_REVIEW -> APPROVED
 await page.waitForTimeout(400);
-await contentCard.locator('button').click(); // APPROVED -> SCHEDULED (prompts for a date)
+await contentCard.getByRole('button', { name: 'جدولة', exact: true }).click(); // APPROVED -> SCHEDULED (prompts for a date)
 await page.waitForSelector('dialog.confirmation [name=scheduledAt]', { state: 'visible' });
 await page.fill('dialog.confirmation [name=scheduledAt]', '2026-10-05T10:00');
 await page.click('dialog.confirmation button.button.primary');
@@ -132,7 +142,17 @@ check('Content item reached SCHEDULED with a real date', (await contentCard.inne
 
 await tabButtons.nth(3).click(); // Calendar
 await page.waitForTimeout(300);
-check('Scheduled content appears on the Social Calendar', (await page.locator('#mkt-calendar-list').innerText()).includes('مجدول'));
+check('Scheduled content appears on the Social Calendar (List view)', (await page.locator('#mkt-calendar-list').innerText()).includes('مجدول'));
+// Part L: Month/Week/List views — reusing the exact grid the legacy Planning calendar already
+// proved; this only checks the real toggle renders a real grid, not an error.
+const calendarModeButtons = page.locator('#mkt-calendar-list .calendar-controls button');
+await calendarModeButtons.nth(0).click(); // Month
+await page.waitForTimeout(300);
+check('Calendar Month view renders a real day grid', (await page.locator('#mkt-calendar-list .calendar-grid').count()) === 1);
+await calendarModeButtons.nth(1).click(); // Week
+await page.waitForTimeout(300);
+check('Calendar Week view renders 7 real day cells', (await page.locator('#mkt-calendar-list .calendar-day').count()) === 7);
+await calendarModeButtons.nth(2).click(); // back to List
 
 // --- Unified Inbox: qualify a lead captured through the real public Website Chat widget ----
 await tabButtons.nth(5).click(); // Widget
@@ -169,12 +189,54 @@ await page.click('#mkt-open-crm');
 await page.waitForTimeout(300);
 check('Deep link opens the real CRM page', page.url().includes('#crm'));
 
+// The CRM deep link navigated away from Marketing — back to it before reusing tabButtons
+// (the old marketing page instance is hidden, not destroyed, but its tabs aren't clickable
+// while hidden; a real navigation back is what a person would actually do here too).
+await page.evaluate(() => { document.querySelector('nav a[href="#marketing"]').click(); });
+await page.waitForSelector('[data-page=marketing]', { state: 'visible', timeout: 10000 });
+await page.waitForTimeout(300);
+
+// --- Assets (Part K): a real external-URL asset, no fake file storage --------------------
+await tabButtons.nth(6).click();
+await page.waitForTimeout(300);
+await page.click('#mkt-new-asset-external');
+await page.waitForSelector('dialog.confirmation [name=ref]', { state: 'visible' });
+await page.fill('dialog.confirmation [name=ref]', 'https://cdn.example.com/journey-asset.png');
+await page.click('dialog.confirmation button.button.primary');
+await page.waitForTimeout(400);
+check('Real external asset appears in the Assets tab', (await page.locator('#mkt-assets-list').innerText()).includes('cdn.example.com'));
+
+// --- Performance (Part G/H): honestly refuses a review with no real analytics yet ---------
+await tabButtons.nth(7).click();
+await page.waitForTimeout(300);
+await page.click('#mkt-run-performance-review');
+await page.waitForTimeout(500);
+check('Performance review is honestly refused with no real analytics data (no fabricated review)', (await page.locator('#mkt-performance').innerText()).includes('لا توجد مراجعات أداء بعد'));
+
+// --- Automated Orchestration (Part B): visible and runnable from the campaign detail drawer -
+await tabButtons.nth(1).click();
+await page.waitForTimeout(200);
+await page.locator('#mkt-campaigns-list a', { hasText: 'حملة رحلة الاختبار' }).click();
+await page.waitForSelector('dialog.drawer[open]', { state: 'visible', timeout: 5000 });
+const detailTabsAgain = page.locator('dialog.drawer[open] .ui-tabs .tab');
+await detailTabsAgain.nth(4).click(); // Automated Orchestration
+await page.waitForTimeout(300);
+await page.locator('dialog.drawer[open] button', { hasText: 'إنشاء تنسيق تلقائي' }).click();
+await page.waitForTimeout(500);
+check('Automated orchestration workflow created from the real campaign detail drawer', (await page.locator('dialog.drawer[open]').innerText()).includes('حالة المسار'));
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+
 // --- Analytics: back to Overview, real counts now reflect this journey's own real actions --
 const finalOverviewResponse = await page.request.get(base + '/api/marketing/overview', { headers: { cookie: (await page.context().cookies()).map(c => `${c.name}=${c.value}`).join('; ') } });
 const finalOverview = await finalOverviewResponse.json();
 check('Overview reflects the real campaign created in this journey', finalOverview.marketing.campaigns.total === 1);
 check('Overview reflects real inbox activity from the widget conversation', finalOverview.marketing.inboxVolume >= 1);
 check('Overview honestly reports reach/engagement as unavailable (no connector provides them)', finalOverview.marketing.reach === null && finalOverview.marketing.engagement === null);
+
+const analyticsSummaryResponse = await page.request.get(base + '/api/marketing/analytics/summary', { headers: { cookie: (await page.context().cookies()).map(c => `${c.name}=${c.value}`).join('; ') } });
+const analyticsSummary = await analyticsSummaryResponse.json();
+check('Analytics summary (Part F) honestly reports no real data connected — no Meta/X/LinkedIn OAuth exists in this journey', analyticsSummary.hasAnyData === false && analyticsSummary.providers.every(p => !p.connected));
 
 await browser.close();
 app.store.close();
