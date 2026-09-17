@@ -2,7 +2,7 @@ import {icon,button,header,drawer,escape,dropdown,tooltip,initials} from '../ui/
 import {t,onLocaleChange,getLocale,setLocale} from '../../i18n.js';
 // Route metadata: only the icon is fixed — title/description are always looked up live from
 // the current locale's navigation.json so a language switch relabels every page instantly.
-const ROUTE_ICONS={overview:'grid','command-center':'agent',workflows:'clock',crm:'users',planning:'calendar',reports:'chart',content:'file',agents:'agent',knowledge:'book',integrations:'plug','control-center':'plug',onboarding:'check',audit:'clock',users:'users',account:'info',platform:'grid'};
+const ROUTE_ICONS={overview:'grid','command-center':'agent',workflows:'clock',marketing:'chart',crm:'users',planning:'calendar',reports:'chart',content:'file',agents:'agent',knowledge:'book',integrations:'plug','control-center':'plug',onboarding:'check',audit:'clock',users:'users',account:'info',platform:'grid'};
 const ROUTE_KEYS=Object.keys(ROUTE_ICONS);
 function routeTitle(key){return t(`navigation.${key}.title`);}
 function routeDescription(key){return t(`navigation.${key}.description`);}
@@ -32,7 +32,7 @@ export function installShell(){
  // Each anchor key is the FIRST route of its cluster in the actual DOM order (index.html) —
  // purely a label insertion point, never touched by ROUTE_ICONS/RAIL_GROUPS/railGroupIndex,
  // which key off the unchanged ROUTE_KEYS array order and are deliberately left alone here.
- for(const [key] of [['overview'],['command-center'],['crm'],['content'],['integrations'],['audit']]){const el=document.createElement('span');el.className='nav-group';nav.querySelector(`[href="#${key}"]`).before(el);groupSpans.set(key,el);}
+ for(const [key] of [['overview'],['command-center'],['marketing'],['crm'],['content'],['integrations'],['audit']]){const el=document.createElement('span');el.className='nav-group';nav.querySelector(`[href="#${key}"]`).before(el);groupSpans.set(key,el);}
  const rail=document.createElement('div');rail.className='sidebar-rail';
  rail.innerHTML='<div class="rail-brand">H</div>'+RAIL_GROUPS.map(([key])=>`<button type="button" class="rail-icon" data-rail="${key}"></button>`).join('');
  rail.querySelectorAll('[data-rail]').forEach(b=>b.onclick=()=>navigate(b.dataset.rail));
@@ -75,7 +75,7 @@ export function installShell(){
  function refreshShellText(){
   aside.setAttribute('aria-label',t('navigation.mainMenu'));
   nav.setAttribute('aria-label',t('navigation.appPages'));
-  const groupKeyByLabel={overview:'navigation.homeGroup','command-center':'navigation.aiOperationsGroup',crm:'navigation.businessGroup',content:'navigation.growthGroup',integrations:'navigation.platformGroup',audit:'navigation.accountGroup'};
+  const groupKeyByLabel={overview:'navigation.homeGroup','command-center':'navigation.aiOperationsGroup',marketing:'navigation.marketingGroup',crm:'navigation.businessGroup',content:'navigation.growthGroup',integrations:'navigation.platformGroup',audit:'navigation.accountGroup'};
   for(const [key,el] of groupSpans)el.textContent=t(groupKeyByLabel[key]);
   // Integration Builder discoverability — `data-route-key` lets a SECOND nav link point at the same real page
   // (`href`, used for actual navigation/icon lookup) while showing its own distinct label
@@ -93,7 +93,12 @@ export function installShell(){
   document.querySelector('#notifications').setAttribute('aria-label',t('navigation.pendingDecisions'));
   notificationTip.querySelector('.ui-tooltip').textContent=t('navigation.pendingDecisions');
   skip.textContent=t('navigation.skipToContent');
-  for(const key of ROUTE_KEYS){const el=pageHeaders.get(key);el.querySelector('h1').textContent=routeTitle(key);el.querySelector('p').textContent=routeDescription(key);}
+  // A pre-existing bug found while building the Marketing route (Phase MKT-1): `header()`'s
+  // markup is <p class="eyebrow">brand</p><h1>title</h1><p>description</p> — `querySelector('p')`
+  // matches the FIRST <p> in document order, which is the brand eyebrow, not the description.
+  // Every route's eyebrow was silently getting clobbered with its own route description on
+  // every locale refresh (confirmed across all 16 pre-existing routes, not marketing-specific).
+  for(const key of ROUTE_KEYS){const el=pageHeaders.get(key);el.querySelector('h1').textContent=routeTitle(key);el.querySelector('p:not(.eyebrow)').textContent=routeDescription(key);}
   dock.setAttribute('aria-label',t('navigation.quickNav'));
   dock.querySelectorAll('[data-mobile-route]').forEach(b=>{b.querySelector('span').textContent=routeTitle(b.dataset.mobileRoute);});
   const more=dock.querySelector('.mobile-more');more.setAttribute('aria-label',t('navigation.morePages'));more.querySelector('span').textContent=t('navigation.morePages');

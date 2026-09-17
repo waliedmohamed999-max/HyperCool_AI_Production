@@ -325,3 +325,23 @@ body.signed-out .fab-shortcut{display:none}
 @media(max-width:1100px){#workflows .wf-hero{grid-template-columns:1fr;gap:24px}.wf-flow-guide{max-width:none}.wf-flow-nodes{max-width:420px;margin-inline:auto}.wf-metric{padding:16px;grid-template-columns:34px 1fr;gap:8px}.wf-metric-icon{width:34px;height:34px}.wf-metric strong{font-size:24px}.wf-library-head{align-items:flex-start;flex-direction:column}.wf-search{width:100%;min-width:0}}
 @media(max-width:600px){#workflows .wf-hero{padding:24px 20px;border-radius:14px}.wf-hero h1{font-size:26px}.wf-hero-copy>p:not(.wf-eyebrow){font-size:13px}.wf-hero-actions{gap:16px}.wf-flow-guide{padding:18px 12px}.wf-flow-node strong{font-size:11px}.wf-metrics{gap:8px}.wf-metric{display:flex;flex-direction:column;align-items:stretch;gap:10px;padding:14px 10px}.wf-metric-icon{display:none}.wf-metric>div{flex-direction:column;gap:8px}.wf-metric>div>span{font-size:11px}.wf-metric>small{display:none}.wf-library-head{padding:20px}#wf-tabs>.ui-tabs{padding-inline:20px;gap:20px}#wf-tabs>[role=tabpanel]{padding:20px 16px}.wf-empty{padding:30px 4px}.wf-empty h3{font-size:17px}.wf-card-grid{grid-template-columns:minmax(0,1fr)}.wf-library{border-radius:14px}}
 @media(prefers-reduced-motion:reduce){.wf-card{transition:none}}
+
+/* Marketing & Social Operating Module (Phase MKT-1) — reuses the shared .report-section,
+   .kpi-grid, .card, .empty, .cmdc-message conventions already established by Command Center;
+   only the layout-specific glue below is new. */
+.mkt-overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+.mkt-channel-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.mkt-inbox-layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px;align-items:start;min-height:420px}
+.mkt-inbox-conversations{display:flex;flex-direction:column;gap:4px;max-height:640px;overflow:auto;padding-inline-end:4px}
+.mkt-inbox-row{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);text-align:start;cursor:pointer;width:100%}
+.mkt-inbox-row:hover{background:var(--surface-2)}
+.mkt-inbox-row time{font-size:11px;color:var(--ink-muted)}
+.mkt-inbox-thread{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);padding:16px;min-height:400px;display:flex;flex-direction:column;gap:12px}
+.mkt-inbox-thread-head{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding-bottom:10px}
+.mkt-inbox-messages{display:flex;flex-direction:column;gap:10px;overflow:auto;max-height:520px;padding-inline-end:4px}
+.mkt-strategy-json{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface-2);border-radius:var(--radius-sm);padding:12px;font-size:12px;max-height:400px;overflow:auto}
+.mkt-embed-snippet{width:100%;min-height:60px;font-family:ui-monospace,monospace;font-size:12px;background:var(--surface-2);resize:vertical}
+@media(max-width:760px){
+ .mkt-inbox-layout{grid-template-columns:minmax(0,1fr)}
+ .mkt-inbox-conversations{max-height:240px}
+}

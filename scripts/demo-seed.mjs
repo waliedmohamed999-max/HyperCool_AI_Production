@@ -18,7 +18,8 @@ import { createTenant, getTenant } from '../src/tenancy.js';
 import { createAuth } from '../src/auth.js';
 import { createConnection, updateConnection } from '../src/integrations/connections.js';
 import { replaceProducts } from '../src/knowledge.js';
-import { createLead, updateLead, stages as LEAD_STAGES } from '../src/crm.js';
+import { createLead, updateLead, stages as LEAD_STAGES, findOrCreateLeadFromChannel, recordChannelMessage } from '../src/crm.js';
+import { createCampaign, updateCampaign, createCampaignContentItem, updateCampaignContentItem } from '../src/marketing.js';
 import { createContent, reviewContent, approveContent } from '../src/domain.js';
 import { insertContent, writeContent } from '../src/content.js';
 import { createApproval, decideApproval } from '../src/runtime/approvals.js';
@@ -320,6 +321,46 @@ function seedNova() {
  ]) createContextItem(db, { ...item, source: 'manual' }, owner, tenantId);
  log('Nova Store: 6 Company Brain context items (Identity/Goals/Customers/Products/Brand/Rules).');
 
+ // --- Marketing & Social (Phase MKT-1) ------------------------------------------------------
+ // A real ACTIVE campaign with real linked content items across the channels Nova actually
+ // has agent-callable tools for (Instagram/WhatsApp) — no fabricated strategy/intelligence
+ // JSON, since those only ever come from a real agentRuntime.run() call; this demo tenant
+ // simply doesn't have one pre-recorded, and the UI shows that honestly (empty state).
+ const summerCampaign = createCampaign(db, {
+  name: 'حملة العروض الموسمية', goal: 'زيادة المبيعات 20% خلال الحملة', product: 'تشكيلة العطور الموسمية',
+  audience: 'عملاء أفراد (B2C) في الرياض وجدة والدمام', market: 'السعودية', offer: 'خصم 25% لفترة محدودة',
+  channels: ['Instagram', 'WhatsApp'], tone: 'ودّي وحماسي', cta: 'تسوق الآن'
+ }, owner, tenantId);
+ updateCampaign(db, summerCampaign.id, { status: 'ACTIVE' }, owner, tenantId);
+ const igPost = createCampaignContentItem(db, {
+  campaignId: summerCampaign.id, channel: 'Instagram', format: 'post',
+  objective: 'زيادة الوعي بالعرض الموسمي', audience: 'عملاء أفراد مهتمون بالعطور',
+  hook: 'الشتاء له عطره الخاص ❄️', body: 'تشكيلتنا الموسمية وصلت — عطور فاخرة بخصم 25% لفترة محدودة فقط.',
+  cta: 'تسوق الآن', hashtags: ['عطور', 'عروض', 'نوفا']
+ }, owner, tenantId);
+ updateCampaignContentItem(db, igPost.id, { status: 'IN_REVIEW' }, owner, tenantId);
+ updateCampaignContentItem(db, igPost.id, { status: 'APPROVED' }, owner, tenantId);
+ updateCampaignContentItem(db, igPost.id, { status: 'SCHEDULED', scheduledAt: new Date(Date.now() + 2 * 86400000).toISOString() }, owner, tenantId);
+ const waMessage = createCampaignContentItem(db, {
+  campaignId: summerCampaign.id, channel: 'WhatsApp', format: 'whatsapp_message',
+  objective: 'تذكير العملاء الحاليين بالعرض', body: 'عرضنا الموسمي بدأ! خصم 25% على تشكيلة العطور لفترة محدودة.', cta: 'اطلب الآن'
+ }, owner, tenantId);
+ updateCampaignContentItem(db, waMessage.id, { status: 'IN_REVIEW' }, owner, tenantId);
+ updateCampaignContentItem(db, waMessage.id, { status: 'APPROVED' }, owner, tenantId);
+ updateCampaignContentItem(db, waMessage.id, { status: 'PUBLISHED' }, owner, tenantId);
+ // A second, unrelated DRAFT content item with no campaign — shows the Content Studio has
+ // real content outside of any campaign too, not just campaign-linked items.
+ createCampaignContentItem(db, { channel: 'Email', format: 'email', body: 'نشرتنا البريدية لهذا الشهر — أهم المنتجات الجديدة.' }, owner, tenantId);
+ log('Nova Store: 1 active marketing campaign, 3 campaign content items (Instagram scheduled, WhatsApp published, Email draft).');
+
+ // Real Unified Inbox activity via the Website Chat channel — the exact same
+ // findOrCreateLeadFromChannel/recordChannelMessage path the public widget endpoint uses.
+ const widgetActor = { id: 'connector:website_widget', name: 'ودجت الدردشة', role: 'automation' };
+ const { lead: widgetLead } = findOrCreateLeadFromChannel(store, { name: 'زائر الموقع', channel: 'WebsiteChat' }, widgetActor, tenantId);
+ recordChannelMessage(store, { leadId: widgetLead.id, channel: 'WebsiteChat', direction: 'INBOUND', text: 'هل التشكيلة الموسمية متوفرة بالدمام؟', messageType: 'text' }, widgetActor, tenantId);
+ recordChannelMessage(store, { leadId: widgetLead.id, channel: 'WebsiteChat', direction: 'OUTBOUND', text: 'نعم، التوصيل متاح لجميع مدن المملكة بما فيها الدمام.', messageType: 'text' }, widgetActor, tenantId);
+ log('Nova Store: 1 real Website Chat conversation (2 messages) for the Unified Inbox demo.');
+
  return tenantId;
 }
 
@@ -476,6 +517,33 @@ function seedVertex() {
   { type: 'brain_rules', title: 'قاعدة تصعيد العميل المحتمل الساخن', description: 'أي عميل محتمل مصنّف HOT بلا تعيين مسؤول خلال 24 ساعة يجب تصعيده كمهمة (Task) لمدير الحسابات.' }
  ]) createContextItem(db, { ...item, source: 'manual' }, owner, tenantId);
  log('Vertex Solutions: 6 Company Brain context items (Identity/Goals/Customers/Products/Brand/Rules).');
+
+ // --- Marketing & Social (Phase MKT-1) — B2B / LinkedIn + website-focused, per Vertex's own
+ // real B2B profile (no Instagram/WhatsApp consumer content here, unlike Nova). ---------------
+ const leadGenCampaign = createCampaign(db, {
+  name: 'حملة توليد عملاء محتملين B2B', goal: 'زيادة العملاء المحتملين المؤهلين 15%',
+  product: 'استشارات تحول رقمي', audience: 'مدراء تقنية المعلومات في شركات متوسطة وكبيرة',
+  market: 'السعودية والخليج', offer: 'استشارة أولية مجانية 30 دقيقة',
+  channels: ['LinkedIn'], tone: 'مهني ومباشر', cta: 'احجز استشارتك المجانية'
+ }, owner, tenantId);
+ updateCampaign(db, leadGenCampaign.id, { status: 'ACTIVE' }, owner, tenantId);
+ const liPost = createCampaignContentItem(db, {
+  campaignId: leadGenCampaign.id, channel: 'LinkedIn', format: 'post',
+  objective: 'إبراز خبرة الشركة في التحول الرقمي', audience: 'صناع القرار التقني في الشركات المتوسطة والكبيرة',
+  hook: 'هل بنيتك التقنية جاهزة للنمو القادم؟', body: 'نساعد الشركات على تحديث بنيتها التقنية دون تعطيل العمليات — تعرف على منهجيتنا.',
+  cta: 'احجز استشارتك المجانية', hashtags: ['تحول_رقمي', 'B2B']
+ }, owner, tenantId);
+ updateCampaignContentItem(db, liPost.id, { status: 'IN_REVIEW' }, owner, tenantId);
+ updateCampaignContentItem(db, liPost.id, { status: 'APPROVED' }, owner, tenantId);
+ updateCampaignContentItem(db, liPost.id, { status: 'SCHEDULED', scheduledAt: new Date(Date.now() + 3 * 86400000).toISOString() }, owner, tenantId);
+ createCampaignContentItem(db, { channel: 'Email', format: 'landing_page_copy', body: 'نص صفحة هبوط لحملة الاستشارة المجانية.' }, owner, tenantId);
+ log('Vertex Solutions: 1 active B2B campaign (LinkedIn), 2 campaign content items.');
+
+ const widgetActor = { id: 'connector:website_widget', name: 'ودجت الدردشة', role: 'automation' };
+ const { lead: widgetLead } = findOrCreateLeadFromChannel(store, { name: 'زائر موقع الشركة', channel: 'WebsiteChat' }, widgetActor, tenantId);
+ recordChannelMessage(store, { leadId: widgetLead.id, channel: 'WebsiteChat', direction: 'INBOUND', text: 'هل تقدمون استشارات لشركات القطاع الحكومي؟', messageType: 'text' }, widgetActor, tenantId);
+ recordChannelMessage(store, { leadId: widgetLead.id, channel: 'WebsiteChat', direction: 'OUTBOUND', text: 'نعم، لدينا خبرة سابقة مع عملاء حكوميين. سيتواصل معك أحد مستشارينا لمناقشة التفاصيل.', messageType: 'text' }, widgetActor, tenantId);
+ log('Vertex Solutions: 1 real Website Chat conversation (2 messages) for the Unified Inbox demo.');
 
  return tenantId;
 }
