@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {fail} from './auth.js';
 import {resolveActiveTenantId} from './tenancy.js';
 import {recordAudit} from './audit.js';
 import {listContent} from './content.js';
@@ -38,6 +39,83 @@ export function installMarketingAnalytics(db) {
  );
  CREATE INDEX IF NOT EXISTS idx_marketing_analytics_tenant ON marketing_analytics_metrics(tenant_id,provider,retrieved_at);
  CREATE INDEX IF NOT EXISTS idx_marketing_analytics_content ON marketing_analytics_metrics(tenant_id,content_id);`);
+ // Phase MKT-2, Part G — a real record of every time the EXISTING `performance` agent
+ // (agent #11, see agents/performance.md) actually reviewed real analytics data, with the
+ // exact evidence it was given and its full structured recommendation. `campaign_id` is
+ // nullable and purely a human-facing tag: real analytics today are account/provider-level
+ // (see the module note above on campaign_content_items having no real publish path yet),
+ // not genuinely attributable to one campaign, so this never pretends otherwise.
+ db.exec(`CREATE TABLE IF NOT EXISTS marketing_performance_reviews (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  campaign_id TEXT,
+  run_id TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'NEW',
+  created_by TEXT,
+  created_by_name TEXT,
+  created_at TEXT NOT NULL
+ );
+ CREATE INDEX IF NOT EXISTS idx_marketing_perf_reviews_tenant ON marketing_performance_reviews(tenant_id,created_at);
+ CREATE INDEX IF NOT EXISTS idx_marketing_perf_reviews_campaign ON marketing_performance_reviews(tenant_id,campaign_id);`);
+}
+export const PERFORMANCE_REVIEW_STATUSES=['NEW','ACKNOWLEDGED','DISMISSED'];
+function hydratePerformanceReview(row) {
+ if(!row)return null;
+ return {
+  id:row.id,tenantId:row.tenant_id,campaignId:row.campaign_id,runId:row.run_id,
+  evidence:JSON.parse(row.evidence_json),result:JSON.parse(row.result_json),status:row.status,
+  createdBy:row.created_by,createdByName:row.created_by_name,createdAt:row.created_at
+ };
+}
+/**
+ * Persists exactly what the performance agent was shown (evidence — a snapshot of
+ * getMarketingAnalyticsSummary at review time) and exactly what it concluded (result — the
+ * full validated `performance` payload). Never mutated after the fact: a later re-review is a
+ * NEW row, so the evidence trail for any past recommendation stays intact even as more
+ * analytics accumulate (spec Part G: "Store with evidence linking to performance data and run
+ * record").
+ */
+export function recordPerformanceReview(db,{campaignId,runId,evidence,result},user,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const now=new Date().toISOString();
+ const row={id:randomUUID(),tenantId:resolvedTenantId,campaignId:campaignId||null,runId,evidence,result,status:'NEW',createdBy:user?.id||null,createdByName:user?.name||null,createdAt:now};
+ db.prepare(`INSERT INTO marketing_performance_reviews (id,tenant_id,campaign_id,run_id,evidence_json,result_json,status,created_by,created_by_name,created_at)
+  VALUES (?,?,?,?,?,?,?,?,?,?)`)
+  .run(row.id,resolvedTenantId,row.campaignId,runId,JSON.stringify(evidence),JSON.stringify(result),'NEW',row.createdBy,row.createdByName,now);
+ recordAudit(db,{id:randomUUID(),action:'MARKETING_PERFORMANCE_REVIEW_CREATED',itemId:row.id,detail:{runId,campaignId:row.campaignId},actorId:row.createdBy,actorName:row.createdByName,at:now},resolvedTenantId);
+ return hydratePerformanceReview(db.prepare('SELECT * FROM marketing_performance_reviews WHERE id=? AND tenant_id=?').get(row.id,resolvedTenantId));
+}
+export function listPerformanceReviews(db,tenantId=null,{campaignId}={}) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ let sql='SELECT * FROM marketing_performance_reviews WHERE tenant_id=?';
+ const params=[resolvedTenantId];
+ if(campaignId){sql+=' AND campaign_id=?';params.push(campaignId);}
+ sql+=' ORDER BY created_at DESC';
+ return db.prepare(sql).all(...params).map(hydratePerformanceReview);
+}
+export function getPerformanceReview(db,id,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const row=db.prepare('SELECT * FROM marketing_performance_reviews WHERE id=? AND tenant_id=?').get(id,resolvedTenantId);
+ if(!row)fail(404,'مراجعة الأداء غير موجودة');
+ return hydratePerformanceReview(row);
+}
+/**
+ * A human acknowledging or dismissing a recommendation — never an automatic transition, and
+ * never itself a content change (spec Part G: "Recommendations must NOT auto-modify or
+ * publish content"). Acting on a recommendation happens through the ordinary, unrelated
+ * campaign-content-item creation path (Part H), which still goes through the full real
+ * compliance/approval gate before anything could ever publish.
+ */
+export function setPerformanceReviewStatus(db,id,status,user,tenantId=null) {
+ if(!PERFORMANCE_REVIEW_STATUSES.includes(status))fail(400,'حالة غير صالحة');
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const existing=getPerformanceReview(db,id,resolvedTenantId);
+ const now=new Date().toISOString();
+ db.prepare('UPDATE marketing_performance_reviews SET status=? WHERE id=? AND tenant_id=?').run(status,id,resolvedTenantId);
+ recordAudit(db,{id:randomUUID(),action:'MARKETING_PERFORMANCE_REVIEW_STATUS_CHANGED',itemId:id,detail:{from:existing.status,to:status},actorId:user?.id||null,actorName:user?.name||null,at:now},resolvedTenantId);
+ return getPerformanceReview(db,id,resolvedTenantId);
 }
 
 export const PROVIDER_BY_PLATFORM={Instagram:'meta',Facebook:'meta',LinkedIn:'linkedin',X:'x'};

@@ -75,7 +75,10 @@ import {
  saveComplianceResult,saveCreativeBrief,
  createCampaignOrchestrationWorkflow,campaignOrchestrationTriggerContext
 } from './marketing.js';
-import {installMarketingAnalytics,syncAllMarketingAnalytics,getMarketingAnalyticsSummary} from './marketing-analytics.js';
+import {
+ installMarketingAnalytics,syncAllMarketingAnalytics,getMarketingAnalyticsSummary,
+ recordPerformanceReview,listPerformanceReviews,getPerformanceReview,setPerformanceReviewStatus
+} from './marketing-analytics.js';
 import {extractSafeCrmUpdates, applySafeCrmUpdates, proposeStageChangeApproval} from './runtime/agent-crm-updates.js';
 import {
  installWebsiteWidgets,getOrCreateWidget,updateWidgetConfig,regenerateWidgetId,
@@ -1806,6 +1809,54 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(req.method==='GET' && url.pathname==='/api/marketing/analytics/summary') {
         return send(200,getMarketingAnalyticsSummary(store.db,session.tenantId));
+      }
+      // Phase MKT-2, Part G — the EXISTING performance agent (#11, agents/performance.md),
+      // run for real over whatever real analytics currently exist (getMarketingAnalyticsSummary
+      // — see marketing-analytics.js's module note: today that's account/provider-level, not
+      // genuinely per-campaign, since campaign_content_items has no real publish execution
+      // wired yet). `campaignId` is an optional human-facing tag only. The stored review keeps
+      // the exact evidence shown to the agent and its full structured recommendation —
+      // `experiments_next_week`/`stop_doing`/`double_down` — and is never auto-applied to any
+      // content (Part G: "must NOT auto-modify or publish content").
+      if(req.method==='POST' && url.pathname==='/api/marketing/performance/review') {
+        authorize(session,['owner','operator']);
+        const input=await body(req);
+        const evidence=getMarketingAnalyticsSummary(store.db,session.tenantId);
+        if(!evidence.hasAnyData)fail(409,'لا توجد بيانات تحليلات حقيقية بعد — شغّل مزامنة التحليلات أولاً');
+        const run=await agentRuntime.run('performance',{triggerType:'MANUAL',input:{task:'marketing_performance_review',metrics:evidence,current_datetime:new Date().toISOString()},user:session.user,tenantId:session.tenantId});
+        if(!run.output?.payload)return send(200,{run:{id:run.id,status:run.status},review:null});
+        const review=recordPerformanceReview(store.db,{campaignId:input?.campaignId||null,runId:run.id,evidence,result:run.output.payload},session.user,session.tenantId);
+        return send(201,{run:{id:run.id,status:run.status},review});
+      }
+      if(req.method==='GET' && url.pathname==='/api/marketing/performance/reviews') {
+        return send(200,listPerformanceReviews(store.db,session.tenantId,{campaignId:url.searchParams.get('campaignId')||undefined}));
+      }
+      const performanceReviewRoute=url.pathname.match(/^\/api\/marketing\/performance\/reviews\/([\w-]+)$/);
+      if(req.method==='GET' && performanceReviewRoute) {
+        return send(200,getPerformanceReview(store.db,performanceReviewRoute[1],session.tenantId));
+      }
+      const performanceReviewStatusRoute=url.pathname.match(/^\/api\/marketing\/performance\/reviews\/([\w-]+)\/status$/);
+      if(req.method==='POST' && performanceReviewStatusRoute) {
+        authorize(session,['owner','operator']);
+        const {status}=await body(req);
+        return send(200,setPerformanceReviewStatus(store.db,performanceReviewStatusRoute[1],status,session.user,session.tenantId));
+      }
+      // Phase MKT-2, Part H — the controlled improvement loop's only real action: a human
+      // deciding to act on a stored recommendation creates a brand-new DRAFT content item
+      // through the EXISTING, unchanged createCampaignContentItem path — never edits or
+      // republishes anything already PUBLISHED (spec: "Never modify previously published
+      // content history; create new version/item"). The new item still has to pass through the
+      // full real compliance gate and human approval before it could ever be scheduled or
+      // published — this route itself has no publishing capability at all. The link back to
+      // the recommendation that inspired it is kept in the audit log, not a new column.
+      const performanceReviewContentRoute=url.pathname.match(/^\/api\/marketing\/performance\/reviews\/([\w-]+)\/create-content$/);
+      if(req.method==='POST' && performanceReviewContentRoute) {
+        authorize(session,['owner','operator']);
+        const review=getPerformanceReview(store.db,performanceReviewContentRoute[1],session.tenantId);
+        const input=await body(req);
+        const item=createCampaignContentItem(store.db,{...input,campaignId:input.campaignId||review.campaignId||null},session.user,session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'MARKETING_CONTENT_CREATED_FROM_RECOMMENDATION',itemId:item.id,detail:{reviewId:review.id,runId:review.runId},actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(201,item);
       }
       if(url.pathname==='/api/marketing/content') {
         if(req.method==='GET')return send(200,listCampaignContentItems(store.db,session.tenantId,{campaignId:url.searchParams.get('campaignId')||undefined,status:url.searchParams.get('status')||undefined}));
