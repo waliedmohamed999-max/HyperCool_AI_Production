@@ -87,20 +87,22 @@ export async function exchangeCodeAndResolveAssets({env,fetcher=fetch,code}) {
  * page tokens later if ever needed); the Page access token and full asset shape go in the
  * encrypted `extra` blob (the Page token IS a bearer secret, unlike the ids around it);
  * the ids/names/usernames meant for display go in the plain `metadata`. */
-export function saveMetaConnection(db,env,{userAccessToken,expiresAt,scopes,page,instagram,whatsapp},user) {
+// Phase MKT-2, Part F/O — tenantId now threads through every real call site instead of
+// silently falling back to the single-tenant default (see x-oauth.js's matching comment).
+export function saveMetaConnection(db,env,{userAccessToken,expiresAt,scopes,page,instagram,whatsapp},user,tenantId=null) {
  return saveCredentials(db,env,'meta',{
   accessToken:userAccessToken,expiresAt,scopes,externalAccountId:page?.id||null,
   extra:{pageAccessToken:page?.accessToken||null},
   metadata:{page:page?{id:page.id,name:page.name}:null,instagram:instagram||null,whatsapp:whatsapp||null}
- },user);
+ },user,tenantId);
 }
-export function metaOAuthStatus(db) {
- const meta=getCredentialsMeta(db,'meta');
+export function metaOAuthStatus(db,tenantId=null) {
+ const meta=getCredentialsMeta(db,'meta',tenantId);
  if(!meta)return {connected:false};
  return {connected:true,expiresAt:meta.expiresAt,scopes:meta.scopes,page:meta.metadata?.page||null,instagram:meta.metadata?.instagram||null,whatsapp:meta.metadata?.whatsapp||null,connectedByName:meta.connectedByName,connectedAt:meta.connectedAt,tokenExpired:isExpiringSoon(meta.expiresAt,0)};
 }
-export function disconnectMeta(db) {
- clearCredentials(db,'meta');
+export function disconnectMeta(db,tenantId=null) {
+ clearCredentials(db,'meta',tenantId);
 }
 /**
  * Every Meta/WhatsApp API call goes through here for its bearer token. `kind` picks which

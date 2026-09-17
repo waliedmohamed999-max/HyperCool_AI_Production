@@ -75,6 +75,7 @@ import {
  saveComplianceResult,saveCreativeBrief,
  createCampaignOrchestrationWorkflow,campaignOrchestrationTriggerContext
 } from './marketing.js';
+import {installMarketingAnalytics,syncAllMarketingAnalytics,getMarketingAnalyticsSummary} from './marketing-analytics.js';
 import {extractSafeCrmUpdates, applySafeCrmUpdates, proposeStageChangeApproval} from './runtime/agent-crm-updates.js';
 import {
  installWebsiteWidgets,getOrCreateWidget,updateWidgetConfig,regenerateWidgetId,
@@ -234,6 +235,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installConfigurationHistory(store.db);
   installRunbooks(store.db);
   installMarketing(store.db); // Phase MKT-1 — Marketing & Social Operating Module, see docs/MARKETING_MODULE.md
+  installMarketingAnalytics(store.db); // Phase MKT-2, Part F — normalized cross-provider analytics metrics
   installWebsiteWidgets(store.db);
   installWorkflowEngine(store.db);
   installPlatformFrostChat(store.db);
@@ -1793,6 +1795,18 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const run=await startWorkflowRun(workflowDeps,campaign.orchestrationWorkflowId,{triggerType:'MANUAL',triggerContext:campaignOrchestrationTriggerContext(campaign),tenantId:session.tenantId});
         return send(201,run);
       }
+      // Phase MKT-2, Part F — real, normalized cross-provider analytics. Sync is a manual,
+      // explicit action (owner/operator only) rather than an automatic background poller —
+      // this app has no job scheduler for external-API polling beyond the existing
+      // scheduler.js (reserved for publish jobs); a manual sync keeps the behavior honest and
+      // observable rather than adding a second background timer.
+      if(req.method==='POST' && url.pathname==='/api/marketing/analytics/sync') {
+        authorize(session,['owner','operator']);
+        return send(200,await syncAllMarketingAnalytics({store,env,fetcher},session.tenantId));
+      }
+      if(req.method==='GET' && url.pathname==='/api/marketing/analytics/summary') {
+        return send(200,getMarketingAnalyticsSummary(store.db,session.tenantId));
+      }
       if(url.pathname==='/api/marketing/content') {
         if(req.method==='GET')return send(200,listCampaignContentItems(store.db,session.tenantId,{campaignId:url.searchParams.get('campaignId')||undefined,status:url.searchParams.get('status')||undefined}));
         if(req.method==='POST') {authorize(session,['owner','operator']);return send(201,createCampaignContentItem(store.db,await body(req),session.user,session.tenantId));}
@@ -1872,10 +1886,10 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(id==='openai')return send(200,await testOpenAIConnection({env,fetcher}));
         if(id==='salla'){const resolved=await resolveSallaAccessToken({store,env,fetcher});return send(200,await testSallaConnection({env,fetcher,accessToken:resolved?.token}));}
         if(id==='whatsapp')return send(200,await testWhatsAppConnection({store,env,fetcher}));
-        if(id==='meta')return send(200,resolveMetaAccessToken({store,env},'page')?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
+        if(id==='meta')return send(200,resolveMetaAccessToken({store,env},'page',session.tenantId)?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
         if(id==='microsoft365')return send(200,await testMicrosoftConnection({store,env,fetcher}));
-        if(id==='x')return send(200,await testXConnection({store,env,fetcher}));
-        if(id==='linkedin')return send(200,await testLinkedInConnection({store,env,fetcher}));
+        if(id==='x')return send(200,await testXConnection({store,env,fetcher},session.tenantId));
+        if(id==='linkedin')return send(200,await testLinkedInConnection({store,env,fetcher},session.tenantId));
         return send(200,{result:'NOT_IMPLEMENTED'});
       }
       // Salla OAuth (owner only — connecting/disconnecting the store's own commerce data is
@@ -1911,7 +1925,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // Meta OAuth (owner only, same bar as Salla above).
       if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/status') {
         authorize(session,['owner']);
-        return send(200,metaOAuthStatus(store.db));
+        return send(200,metaOAuthStatus(store.db,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/start') {
         authorize(session,['owner']);
@@ -1923,13 +1937,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(!code||!oauthState)fail(400,'استجابة ربط Meta ناقصة (code/state)');
         consumeMetaState(oauthState,session.user.id);
         const assets=await exchangeCodeAndResolveAssets({env,fetcher,code});
-        saveMetaConnection(store.db,env,assets,session.user);
+        saveMetaConnection(store.db,env,assets,session.user,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'META_OAUTH_CONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/meta/disconnect') {
         authorize(session,['owner']);
-        disconnectMeta(store.db);
+        disconnectMeta(store.db,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'META_OAUTH_DISCONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
@@ -2012,7 +2026,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // CSRF nonce) — the browser round-trip only ever sees `code`/`state`.
       if(req.method==='GET' && url.pathname==='/api/integrations/x/oauth/status') {
         authorize(session,['owner']);
-        return send(200,xOAuthStatus(store.db));
+        return send(200,xOAuthStatus(store.db,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/x/oauth/start') {
         authorize(session,['owner']);
@@ -2025,13 +2039,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const codeVerifier=consumeXState(oauthState,session.user.id);
         const tokens=await exchangeXCodeForTokens({env,fetcher,code,codeVerifier});
         const profile=await resolveXProfile({fetcher,accessToken:tokens.accessToken});
-        saveXConnection(store.db,env,tokens,profile,session.user);
+        saveXConnection(store.db,env,tokens,profile,session.user,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'X_CONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/x/disconnect') {
         authorize(session,['owner']);
-        disconnectX(store.db);
+        disconnectX(store.db,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'X_DISCONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
@@ -2041,7 +2055,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // stays INTEGRATION_REQUIRED until an organization is actually resolved.
       if(req.method==='GET' && url.pathname==='/api/integrations/linkedin/oauth/status') {
         authorize(session,['owner']);
-        return send(200,linkedInOAuthStatus(store.db));
+        return send(200,linkedInOAuthStatus(store.db,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/linkedin/oauth/start') {
         authorize(session,['owner']);
@@ -2057,14 +2071,14 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         let organization=null;
         try{organization=(await resolveAdministeredOrganizations({fetcher,accessToken:tokens.accessToken}))[0]||null;}
         catch{organization=null;} // rw_organization_admin not granted yet — connection still succeeds as identity-only.
-        saveLinkedInConnection(store.db,env,tokens,profile,organization,session.user);
+        saveLinkedInConnection(store.db,env,tokens,profile,organization,session.user,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_CONNECTED',itemId:'linkedin',organizationId:organization?.id||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         if(organization)recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_ORGANIZATION_SELECTED',itemId:organization.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/linkedin/disconnect') {
         authorize(session,['owner']);
-        disconnectLinkedIn(store.db);
+        disconnectLinkedIn(store.db,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_DISCONNECTED',itemId:'linkedin',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }

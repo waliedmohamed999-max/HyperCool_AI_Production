@@ -75,3 +75,80 @@ export async function publishToFacebook({store,env,fetcher=fetch},{message,link}
 export function alreadyPublished(job) {
  return !!job?.externalPostId;
 }
+
+// Phase MKT-2, Part F — real per-post/account analytics. Mirrors the exact honest-degradation
+// pattern already established for LinkedIn/X (linkedin-publishing.js/x-publishing.js): a
+// missing or unsupported metric becomes `null` with `status:'NOT_AVAILABLE'`/a per-field
+// reason, NEVER a fabricated 0 or estimate. Facebook Page posts and Instagram media use
+// separate Graph API insights metric sets — requesting the wrong metric for a media type
+// (e.g. `saved` on a video reel) 400s the WHOLE call on some API versions, so each metric is
+// requested individually and a per-metric failure never blocks the others.
+async function fetchInsightMetric(fetcher,url,token,metric) {
+ try {
+  const response=await fetcher(`${url}?metric=${metric}&access_token=${encodeURIComponent(token)}`,{signal:AbortSignal.timeout(20000)});
+  const data=await response.json().catch(()=>null);
+  if(!response.ok||!data||data.error)return null;
+  const value=data.data?.[0]?.values?.[0]?.value;
+  return typeof value==='number'?value:null;
+ } catch {return null;}
+}
+export async function getFacebookPostInsights({store,env,fetcher=fetch},externalPostId,tenantId=null) {
+ const resolved=resolveMetaAccessToken({store,env},'page',tenantId);
+ if(!resolved)return {status:'INTEGRATION_REQUIRED'};
+ const base=`${GRAPH_BASE}/${externalPostId}/insights`;
+ const [impressions,engagedUsers,clicks]=await Promise.all([
+  fetchInsightMetric(fetcher,base,resolved.token,'post_impressions'),
+  fetchInsightMetric(fetcher,base,resolved.token,'post_engaged_users'),
+  fetchInsightMetric(fetcher,base,resolved.token,'post_clicks')
+ ]);
+ if(impressions===null&&engagedUsers===null&&clicks===null)return {status:'NOT_AVAILABLE',reason:'NO_METRICS_RETURNED'};
+ return {
+  status:'OK',platform:'Facebook',externalPostId,capturedAt:new Date().toISOString(),
+  impressions,reach:null,engagements:engagedUsers,likes:null,comments:null,shares:null,clicks,video_views:null
+ };
+}
+export async function getInstagramMediaInsights({store,env,fetcher=fetch},externalPostId,tenantId=null) {
+ const resolved=resolveMetaAccessToken({store,env},'page',tenantId);
+ if(!resolved)return {status:'INTEGRATION_REQUIRED'};
+ const base=`${GRAPH_BASE}/${externalPostId}/insights`;
+ const [impressions,reach,engagement,saved]=await Promise.all([
+  fetchInsightMetric(fetcher,base,resolved.token,'impressions'),
+  fetchInsightMetric(fetcher,base,resolved.token,'reach'),
+  fetchInsightMetric(fetcher,base,resolved.token,'engagement'),
+  fetchInsightMetric(fetcher,base,resolved.token,'saved')
+ ]);
+ if(impressions===null&&reach===null&&engagement===null&&saved===null)return {status:'NOT_AVAILABLE',reason:'NO_METRICS_RETURNED'};
+ return {
+  status:'OK',platform:'Instagram',externalPostId,capturedAt:new Date().toISOString(),
+  impressions,reach,engagements:engagement,likes:null,comments:null,shares:saved,clicks:null,video_views:null
+ };
+}
+/**
+ * Account-level follower counts — the one metric available with NO specific post needed.
+ * Facebook Pages expose `fan_count`; Instagram Business accounts expose `followers_count`.
+ * Each is fetched independently so a Page-only (no linked Instagram) connection still
+ * reports its real Facebook follower count instead of failing the whole call.
+ */
+export async function getMetaFollowerCounts({store,env,fetcher=fetch},tenantId=null) {
+ const resolved=resolveMetaAccessToken({store,env},'page',tenantId);
+ if(!resolved)return {status:'INTEGRATION_REQUIRED'};
+ const fbId=pageId(store.db,env,tenantId);
+ const igId=instagramAccountId(store.db,tenantId);
+ let facebookFollowers=null,instagramFollowers=null;
+ if(fbId) {
+  try {
+   const response=await fetcher(`${GRAPH_BASE}/${fbId}?fields=fan_count&access_token=${encodeURIComponent(resolved.token)}`,{signal:AbortSignal.timeout(20000)});
+   const data=await response.json().catch(()=>null);
+   if(response.ok&&typeof data?.fan_count==='number')facebookFollowers=data.fan_count;
+  } catch { /* left null — never fabricated */ }
+ }
+ if(igId) {
+  try {
+   const response=await fetcher(`${GRAPH_BASE}/${igId}?fields=followers_count&access_token=${encodeURIComponent(resolved.token)}`,{signal:AbortSignal.timeout(20000)});
+   const data=await response.json().catch(()=>null);
+   if(response.ok&&typeof data?.followers_count==='number')instagramFollowers=data.followers_count;
+  } catch { /* left null — never fabricated */ }
+ }
+ if(facebookFollowers===null&&instagramFollowers===null)return {status:'NOT_AVAILABLE',reason:'NO_METRICS_RETURNED'};
+ return {status:'OK',capturedAt:new Date().toISOString(),facebookFollowers,instagramFollowers,pageId:fbId||null,instagramAccountId:igId||null};
+}

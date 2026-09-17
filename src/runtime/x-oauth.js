@@ -84,19 +84,26 @@ export async function resolveConnectedProfile({fetcher=fetch,accessToken}) {
  const data=await requestJson(fetcher,`${API_BASE}/users/me`,{headers:{authorization:`Bearer ${accessToken}`}});
  return {id:data.data?.id,username:data.data?.username,name:data.data?.name};
 }
-export function saveXConnection(db,env,{accessToken,refreshToken,expiresAt,scopes},profile,user) {
+// Phase MKT-2, Part F/O — these three used to read/write `integration_credentials` with NO
+// tenant_id at all, falling back to `resolveActiveTenantId(db)`'s single-tenant default
+// exactly like the bug meta-oauth.js's own comment already documented and fixed for Meta.
+// That default silently breaks (throws TENANT_CONTEXT_REQUIRED) the instant a second real
+// tenant exists, and — worse, if that guard were ever loosened — could connect/read/disconnect
+// the WRONG tenant's X account. `tenantId` threaded through from the real session at every
+// call site closes this exactly like the Meta fix did.
+export function saveXConnection(db,env,{accessToken,refreshToken,expiresAt,scopes},profile,user,tenantId=null) {
  return saveCredentials(db,env,'x',{
   accessToken,refreshToken,expiresAt,scopes,externalAccountId:profile?.id||null,
   metadata:{username:profile?.username||null,name:profile?.name||null}
- },user);
+ },user,tenantId);
 }
-export function xOAuthStatus(db) {
- const meta=getCredentialsMeta(db,'x');
+export function xOAuthStatus(db,tenantId=null) {
+ const meta=getCredentialsMeta(db,'x',tenantId);
  if(!meta)return {connected:false};
  return {connected:true,expiresAt:meta.expiresAt,scopes:meta.scopes,username:meta.metadata?.username||null,name:meta.metadata?.name||null,connectedByName:meta.connectedByName,connectedAt:meta.connectedAt,tokenExpired:isExpiringSoon(meta.expiresAt,0)};
 }
-export function disconnectX(db) {
- clearCredentials(db,'x');
+export function disconnectX(db,tenantId=null) {
+ clearCredentials(db,'x',tenantId);
 }
 /**
  * The only token that can actually publish is the OAuth user-context token — X's app-only
