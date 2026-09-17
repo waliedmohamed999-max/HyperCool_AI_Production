@@ -55,6 +55,33 @@ export async function publishToInstagram({store,env,fetcher=fetch},{imageUrl,cap
  if(!published.id)return {status:'FAILED',errorDetail:'No published post id returned'};
  return {status:'PUBLISHED',externalPostId:published.id,liveUrl:`https://www.instagram.com/p/${published.id}/`};
 }
+/**
+ * Phase MKT-2, Part I/J — real Messenger/Instagram DM reply via Meta's unified Send API
+ * (`POST /{page-id}/messages`), which the Messenger Platform docs confirm also serves
+ * Instagram messaging once a Page's Instagram account is linked, using the SAME Page access
+ * token as Facebook publishing/comments. `recipientId` is the sender's PSID/IGSID captured
+ * off the real inbound webhook — never a phone number or arbitrary id, matching Meta's own
+ * requirement that a business can only message a user within an open conversation window.
+ */
+export async function sendMetaMessage({store,env,fetcher=fetch},{recipientId,text},tenantId=null) {
+ const resolved=resolveMetaAccessToken({store,env},'page',tenantId);
+ const id=pageId(store.db,env,tenantId);
+ if(!resolved||!id)return {status:'INTEGRATION_REQUIRED',integration:'meta'};
+ if(!recipientId)return {status:'FAILED',errorDetail:'NO_RECIPIENT_ID'};
+ if(typeof text!=='string'||!text.trim())return {status:'FAILED',errorDetail:'EMPTY_TEXT'};
+ try {
+  const sent=await requestJson(fetcher,`${GRAPH_BASE}/${id}/messages`,{
+   method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${resolved.token}`},
+   body:JSON.stringify({recipient:{id:recipientId},message:{text},messaging_type:'RESPONSE'})
+  });
+  if(!sent.message_id)return {status:'FAILED',errorDetail:'NO_MESSAGE_ID_RETURNED'};
+  return {status:'SENT',externalMessageId:sent.message_id};
+ } catch(error) {
+  if(error?.code==='CREDENTIALS_REJECTED')return {status:'FAILED',errorCode:'AUTH_FAILED'};
+  if(error?.code==='RATE_LIMITED')return {status:'FAILED',errorCode:'RATE_LIMITED'};
+  return {status:'STATUS_UNKNOWN',errorCode:error?.code||'UNKNOWN'};
+ }
+}
 export async function publishToFacebook({store,env,fetcher=fetch},{message,link},tenantId=null) {
  const resolved=resolveMetaAccessToken({store,env},'page',tenantId);
  const id=pageId(store.db,env,tenantId);

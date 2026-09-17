@@ -205,16 +205,27 @@ export function findLeadByEmail(db,email,tenantId=null){
  * this returns the one matched by the channel's own identifier and leaves the conflict for
  * a human to notice and reconcile manually, rather than guessing which record is "right."
  */
-export function findOrCreateLeadFromChannel(store,{phone,email,name,channel},actor,tenantId=null){
+// Phase MKT-2, Part I — a platform-scoped sender id (Meta's PSID for Messenger, IGSID for
+// Instagram) has no phone/email at all, so it needs its own identity key exactly like phone/
+// email already have their own `findLeadBy*` lookups. `channel` is part of the key because a
+// PSID and an IGSID are drawn from different id spaces — Meta does not guarantee they never
+// collide across products.
+export function findLeadByExternalContact(db,channel,externalContactId,tenantId=null){
+ if(!externalContactId)return null;
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const row=db.prepare('SELECT json FROM crm_leads WHERE tenant_id=? AND contact_key=?').get(resolvedTenantId,`ext:${channel}:${externalContactId}`);
+ return row?JSON.parse(row.json):null;
+}
+export function findOrCreateLeadFromChannel(store,{phone,email,name,channel,externalContactId},actor,tenantId=null){
  const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
  const normalizedEmail=email?email.trim().toLowerCase():null;
- const findExisting=()=>(normalizedEmail&&findLeadByEmail(store.db,normalizedEmail,resolvedTenantId))||(phone&&findLeadByPhone(store.db,phone,resolvedTenantId))||null;
+ const findExisting=()=>(normalizedEmail&&findLeadByEmail(store.db,normalizedEmail,resolvedTenantId))||(phone&&findLeadByPhone(store.db,phone,resolvedTenantId))||(externalContactId&&findLeadByExternalContact(store.db,channel,externalContactId,resolvedTenantId))||null;
  const existing=findExisting();
  if(existing)return {lead:existing,created:false};
  return store.mutate(state=>{
   const again=findExisting();if(again)return {lead:again,created:false};
-  const contactKey=normalizedEmail?'email:'+normalizedEmail:phone?'phone:'+phone:null;
-  const lead={id:randomUUID(),name:string(name,200)||normalizedEmail||phone||'عميل جديد',company:'',customerType:'B2C',sourceType:'INBOUND',email:normalizedEmail||'',phone:phone||'',research:null,city:'',productNeed:'',productUrl:'',quantity:null,valueSAR:null,timeline:'',budgetBand:'',stage:'NEW',temperature:'COLD',consent:{Email:null,WhatsApp:null},optOut:false,humanHold:false,replyHold:false,handoffReason:null,assignedTo:null,version:1,createdAt:new Date().toISOString(),createdBy:actor.id,channelOrigin:channel,nextCheckAt:null};
+  const contactKey=normalizedEmail?'email:'+normalizedEmail:phone?'phone:'+phone:externalContactId?`ext:${channel}:${externalContactId}`:null;
+  const lead={id:randomUUID(),name:string(name,200)||normalizedEmail||phone||'عميل جديد',company:'',customerType:'B2C',sourceType:'INBOUND',email:normalizedEmail||'',phone:phone||'',externalContactId:externalContactId||null,research:null,city:'',productNeed:'',productUrl:'',quantity:null,valueSAR:null,timeline:'',budgetBand:'',stage:'NEW',temperature:'COLD',consent:{Email:null,WhatsApp:null},optOut:false,humanHold:false,replyHold:false,handoffReason:null,assignedTo:null,version:1,createdAt:new Date().toISOString(),createdBy:actor.id,channelOrigin:channel,nextCheckAt:null};
   store.db.prepare('INSERT INTO crm_leads (id,tenant_id,contact_key,json) VALUES (?,?,?,?)').run(lead.id,resolvedTenantId,contactKey,JSON.stringify(lead));
   audit(store.db,'CRM_LEAD_CREATED',lead.id,actor,resolvedTenantId);
   return {lead,created:true};

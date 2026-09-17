@@ -94,3 +94,69 @@ function normalizeInboundMessage(msg,contact) {
  // with metadata only — never analyzed or guessed at, per the integration spec.
  return {...base,messageType:'unsupported',text:'',media:{kind:msg.type}};
 }
+
+// Phase MKT-2, Part I — Facebook Messenger and Instagram DMs share the EXACT SAME webhook
+// shape (`entry[].messaging[]` with sender/recipient/message), the only difference being
+// `body.object` ('page' vs 'instagram') and which connected id `entry.id` resolves against
+// (see webhook-tenant-resolver.js's resolveTenantForMetaPageId). `platform` is derived from
+// `body.object` so the caller can record the right CRM channel ('Facebook' vs 'Instagram')
+// without guessing from the payload shape itself.
+export function normalizeMetaMessagingWebhook(db,body,resolveTenant) {
+ const platform=body?.object==='instagram'?'Instagram':'Facebook';
+ const results={messages:[],skipped:0};
+ for(const entry of body?.entry||[]) {
+  const tenantId=resolveTenant(entry.id||null);
+  for(const event of entry.messaging||[]) {
+   const message=event.message;
+   if(!message||message.is_echo) {results.skipped++;continue;} // an echo of our OWN outbound send, never treated as inbound
+   const externalMessageId=message.mid;
+   if(!tenantId) {
+    storeWebhookEvent(db,{source:'meta',externalEventId:externalMessageId,type:platform.toLowerCase()+'.message',payload:event,unresolved:true});
+    results.messages.push({replayed:false,unresolved:true,externalMessageId});
+    continue;
+   }
+   const {stored,id}=storeWebhookEvent(db,{source:'meta',externalEventId:externalMessageId,type:platform.toLowerCase()+'.message',payload:event,tenantId});
+   if(!stored){results.messages.push({replayed:true,externalMessageId});continue;}
+   try {
+    const senderId=event.sender?.id||null;
+    if(!senderId)throw new Error('NO_SENDER_ID');
+    markWebhookEventProcessed(db,id,'PROCESSED');
+    results.messages.push({replayed:false,tenantId,platform,senderId,externalMessageId,text:message.text||'',messageType:message.attachments?.length?'media':'text',media:message.attachments?.length?{kind:message.attachments[0].type,url:message.attachments[0].payload?.url||null}:null});
+   } catch(error) {markWebhookEventProcessed(db,id,'ERROR',error.message);results.messages.push({replayed:false,error:error.message,externalMessageId});}
+  }
+ }
+ return results;
+}
+/**
+ * Facebook/Instagram comment webhooks arrive as `entry[].changes[]` with `field==='comments'`
+ * — a genuinely different shape from DMs (no `messaging[]` array). "Supported comments/
+ * replies" per the spec means: real, verified, deduped intake into the SAME CRM/lead model —
+ * NOT an automatic public reply, which stays out of scope here exactly like every other
+ * outbound action in this codebase (always a separate, gated tool call).
+ */
+export function normalizeMetaCommentWebhook(db,body,resolveTenant) {
+ const platform=body?.object==='instagram'?'Instagram':'Facebook';
+ const results={comments:[],skipped:0};
+ for(const entry of body?.entry||[]) {
+  const tenantId=resolveTenant(entry.id||null);
+  for(const change of entry.changes||[]) {
+   if(change.field!=='comments'){results.skipped++;continue;}
+   const value=change.value||{};
+   const externalCommentId=value.comment_id;
+   if(!tenantId) {
+    storeWebhookEvent(db,{source:'meta',externalEventId:externalCommentId,type:platform.toLowerCase()+'.comment',payload:value,unresolved:true});
+    results.comments.push({replayed:false,unresolved:true,externalCommentId});
+    continue;
+   }
+   const {stored,id}=storeWebhookEvent(db,{source:'meta',externalEventId:externalCommentId,type:platform.toLowerCase()+'.comment',payload:value,tenantId});
+   if(!stored){results.comments.push({replayed:true,externalCommentId});continue;}
+   try {
+    const senderId=value.from?.id||null;
+    if(!senderId)throw new Error('NO_SENDER_ID');
+    markWebhookEventProcessed(db,id,'PROCESSED');
+    results.comments.push({replayed:false,tenantId,platform,senderId,externalCommentId,text:value.text||'',postId:value.post_id||value.media?.id||null});
+   } catch(error) {markWebhookEventProcessed(db,id,'ERROR',error.message);results.comments.push({replayed:false,error:error.message,externalCommentId});}
+  }
+ }
+ return results;
+}

@@ -112,7 +112,7 @@ import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,d
 import {createZidAuthorizeUrl,exchangeZidCodeForTokens} from './runtime/zid-oauth.js';
 import {safeFetch} from './connectors/core/ssrf.js';
 import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
-import {resolveTenantForWhatsAppPhoneNumberId,resolveTenantForMicrosoftSubscription,resolveTenantForSallaMerchant} from './runtime/webhook-tenant-resolver.js';
+import {resolveTenantForWhatsAppPhoneNumberId,resolveTenantForMicrosoftSubscription,resolveTenantForSallaMerchant,resolveTenantForMetaPageId} from './runtime/webhook-tenant-resolver.js';
 import {installIntegrationDefinitions,listIntegrationDefinitions,getIntegrationDefinition} from './integrations/definitions.js';
 import {installIntegrationConnections,createConnection,listConnections,getConnection,getConnectionOrNull,updateConnection,setDefaultConnection,getDefaultConnection,resolveProviderAccount,disconnectConnection,deleteConnection,getOrCreateWebhookPublicId} from './integrations/connections.js';
 import {installCredentialsVault,storeCredential,getCredentialMeta,removeCredential} from './integrations/vault.js';
@@ -120,7 +120,7 @@ import {installOAuthStates,createOAuthState,consumeOAuthState} from './integrati
 import {migrateLegacyIntegrationCredentials} from './integrations/migration.js';
 import {testConnectionHealth} from './integrations/health.js';
 import {verifySallaWebhook,processSallaWebhook} from './runtime/salla-webhooks.js';
-import {handleVerificationChallenge,verifyMetaSignature,normalizeWhatsAppWebhook} from './runtime/meta-webhooks.js';
+import {handleVerificationChallenge,verifyMetaSignature,normalizeWhatsAppWebhook,normalizeMetaMessagingWebhook,normalizeMetaCommentWebhook} from './runtime/meta-webhooks.js';
 import {metaOAuthConfigured,createMetaAuthorizeUrl,consumeMetaState,exchangeCodeAndResolveAssets,saveMetaConnection,metaOAuthStatus,disconnectMeta,resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from './runtime/meta-oauth.js';
 import {sendWhatsAppMessage,testWhatsAppConnection,syncWhatsAppTemplates,installWhatsAppTemplates,listWhatsAppTemplates,whatsappConfigured} from './runtime/whatsapp.js';
 import {microsoftOAuthConfigured,createMicrosoftAuthorizeUrl,consumeMicrosoftState,exchangeCodeForTokens as exchangeMicrosoftCodeForTokens,resolveConnectedProfile,saveMicrosoftConnection,microsoftOAuthStatus,disconnectMicrosoft,resolveMicrosoftAccessToken} from './runtime/microsoft-oauth.js';
@@ -495,6 +495,43 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           updateMessageStatus(store,item.externalMessageId,item.status,{errorCode:item.errorCode});
         }
         return send(200,{received:normalized.messages.length,statuses:normalized.statuses.length,skipped:normalized.skipped});
+      }
+      // Phase MKT-2, Part I — real Facebook Messenger + Instagram DM/comment inbound. Same
+      // verification/signature/dedup/tenant-resolution discipline as the WhatsApp route above
+      // (this is genuinely the SAME Meta App webhook mechanism, just different subscribed
+      // fields) — no second inbox database, no separate signature scheme. `body.object` tells
+      // us whether this delivery is Messenger ('page') or Instagram ('instagram'); comments
+      // arrive as `entry[].changes[]` alongside (or instead of) `entry[].messaging[]`, so both
+      // normalizers run over the same parsed payload.
+      if(req.method==='GET' && url.pathname==='/api/webhooks/meta/social') {
+        res.writeHead(200,{'Content-Type':'text/plain'});return res.end(handleVerificationChallenge(url.searchParams,env));
+      }
+      if(req.method==='POST' && url.pathname==='/api/webhooks/meta/social') {
+        const raw=await rawBody(req);
+        verifyMetaSignature(req,raw,env);
+        let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
+        const resolveTenant=pageOrIgId=>resolveTenantForMetaPageId(store.db,pageOrIgId);
+        const messaging=normalizeMetaMessagingWebhook(store.db,payload,resolveTenant);
+        const comments=normalizeMetaCommentWebhook(store.db,payload,resolveTenant);
+        const paused=isPaused(store.db);
+        const connectorActor={id:'connector:meta-social',name:'موصل التواصل الاجتماعي',role:'automation'};
+        for(const item of messaging.messages) {
+         if(item.replayed||item.error||item.unresolved||!item.senderId)continue;
+         const {lead}=findOrCreateLeadFromChannel(store,{externalContactId:item.senderId,channel:item.platform,name:null},connectorActor,item.tenantId);
+         const message=recordChannelMessage(store,{leadId:lead.id,channel:item.platform,direction:'INBOUND',text:item.text,externalMessageId:item.externalMessageId,messageType:item.messageType,media:item.media||null},connectorActor,item.tenantId);
+         if(message.replayed)continue;
+         if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:item.platform,text:item.text,tenantId:item.tenantId});
+        }
+        // Comments intake real customer text into the CRM/lead model (Part I: "supported
+        // comments/replies") but never auto-triggers an agent — a public comment is not a
+        // private conversation, and this codebase has no public-reply tool for either
+        // platform; a human can act on it from the Shared Inbox like any other real message.
+        for(const item of comments.comments) {
+         if(item.replayed||item.error||item.unresolved||!item.senderId)continue;
+         const {lead}=findOrCreateLeadFromChannel(store,{externalContactId:item.senderId,channel:item.platform,name:null},connectorActor,item.tenantId);
+         recordChannelMessage(store,{leadId:lead.id,channel:item.platform,direction:'INBOUND',text:item.text,externalMessageId:item.externalCommentId,messageType:'comment'},connectorActor,item.tenantId);
+        }
+        return send(200,{received:messaging.messages.length,comments:comments.comments.length,skipped:messaging.skipped+comments.skipped});
       }
       // Microsoft Graph's real webhook mechanism is different from Meta's/Salla's: EVERY
       // POST (including the very first, which is the validation handshake) hits the same
