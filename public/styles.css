@@ -163,7 +163,6 @@ h1, h2, h3 {
 }
 .site-nav nav { display: flex; align-items: center; gap: 4px; }
 .site-nav .nav-actions { display: flex; align-items: center; gap: 8px; }
-.nav-toggle { display: none; }
 
 /* --- Hero: lavender wash gradient background + a floating-card illustration, the same
    visual metaphor the reference site uses (contact cards converging on a glowing device) —
