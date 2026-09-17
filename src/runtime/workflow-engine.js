@@ -513,8 +513,19 @@ async function executeStep({store,env,fetcher,agentRuntime,toolRegistry,step,ste
   if(step.type==='AGENT') {
    if(!agentRuntime)return finish('FAILED',{error:'RUNTIME_NOT_READY'});
    const objective=renderTemplate(step.objective||'',context);
+   // Phase MKT-2, Part B — an OPTIONAL, template-rendered static input object, exactly
+   // mirroring the TOOL step type's existing `step.input`/renderTemplate pattern (never a new
+   // capability, just applying the one that already exists to AGENT steps too). Every existing
+   // workflow that doesn't set `step.input` is completely unaffected — it still gets exactly
+   // the same generic {scenario, current_datetime, timezone} input as before. This lets a real
+   // campaign-orchestration workflow give each agent step real campaign fields (via
+   // `{{trigger.name}}` etc., since `context.trigger` is the real triggerContext the run
+   // started with) instead of only a human-readable one-line objective string.
+   const templatedInput=step.input&&typeof step.input==='object'
+    ?Object.fromEntries(Object.entries(step.input).map(([k,v])=>[k,renderTemplate(v,context)]))
+    :{};
    const run=await agentRuntime.run(step.agentId,{triggerType:'WORKFLOW',parentRunId:null,
-    input:{scenario:`خطوة ضمن Workflow: ${objective}`,current_datetime:new Date().toISOString(),timezone:'Asia/Riyadh'},
+    input:{scenario:`خطوة ضمن Workflow: ${objective}`,current_datetime:new Date().toISOString(),timezone:'Asia/Riyadh',...templatedInput},
     user:WORKFLOW_ACTOR,tenantId});
    const summary=summarizeAgentRun(run);
    const patch={agentRunId:run.id,output:summary};

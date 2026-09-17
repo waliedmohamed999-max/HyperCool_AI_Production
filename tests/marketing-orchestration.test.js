@@ -207,3 +207,71 @@ test('Website widget: a proposed STAGE change creates a real Approval Center ent
   assert.equal(leadAfter.data.lead.stage,'QUALIFIED');
  } finally {await cleanup();}
 });
+
+// --- Part B: automated campaign orchestration via the EXISTING workflow engine --------------
+function orchestrationFetcher() {
+ const decisions=[
+  {match:'Competitor & Trend Intelligence Agent',payload:{signals:[{topic_or_competitor:'منافس',observed_change:'خفض سعر',date:'2026-09-15',source:'رصد',fact:'حقيقة',inference:'استنتاج',confidence:0.6,why_it_matters:'مهم',content_opportunity:'فرصة',sales_opportunity:'فرصة بيع',recommended_action:'إجراء',urgency:'LOW'}]}},
+  {match:'Content Strategy Agent',payload:{slots:[{date:'2026-10-01',platform:'Instagram',audience:'جمهور',funnel_stage:'AWARENESS',pillar:'ركيزة',product_or_category:null,objective:'هدف',hook_angle:'زاوية',key_message:'رسالة',CTA:'ادعوة',landing_url:null,evidence_needed:[],asset_needed:[],priority:'HIGH',approval_risk:'LOW',reason_for_selection:'سبب'}]}},
+  {match:'Copywriting Agent',payload:{arabic_copy:'نص عربي',english_copy:'English copy',hook:'hook',body:'body',CTA:'CTA',URL:null,hashtags:['tag'],factual_dependencies:[],compliance_notes:[],tone_notes:[]}},
+  {match:'Creative Agent',payload:{format:'1:1',dimensions:'1080x1080',hero_asset:null,composition:'comp',visual_hierarchy:[],on_image_text:[],logo_placement:'top-left',product_angles:[],b_roll:[],transitions:[],reel_duration:null,subtitles:'no',CTA_frame:'last',required_assets:[]}},
+  {match:'Brand & Compliance Agent',payload:{classification:'PASS',issues:[],corrected_text_if_possible:null,evidence_sources:[],verified_fields:[],blocked_fields:[],human_review_required:false,reason:'ok'}},
+  {match:'Publishing & Scheduling Agent',payload:{platform:'Instagram',scheduled_at:null,published_at:null,post_id:null,live_url:null,idempotency_key:'idem-1',retry_count:0,error_code:null}}
+ ];
+ return async(url,options)=>{
+  const bodyText=typeof options?.body==='string'?options.body:'';
+  const hit=decisions.find(d=>bodyText.includes(d.match));
+  if(hit)return new Response(JSON.stringify(textTurn({status:'OK',action:'RUN',rationale:'تشغيلة حقيقية ضمن Workflow',verification:[],risk_level:'LOW',escalation_required:false,missing_data:[],payload:hit.payload})),{status:200,headers:{'content-type':'application/json'}});
+  return new Response(JSON.stringify(textTurn({status:'NEEDS_DATA',action:'NONE',rationale:'not mocked',verification:[],risk_level:'LOW',escalation_required:false,missing_data:['x'],payload:null})),{status:200,headers:{'content-type':'application/json'}});
+ };
+}
+test('Campaign orchestration: creates a real workflow, runs real agent steps in order, pauses at the human APPROVAL step, and advances to publishing once approved',async()=>{
+ const {call,app,cleanup}=await harness(orchestrationFetcher());
+ try {
+  const owner=await signupAndCreateWorkspace(call,app,{username:'orch8',email:'orch8@example.com',companyName:'Orch Test 8'});
+  const campaign=await call('/api/marketing/campaigns',{name:'حملة التنسيق الآلي',goal:'هدف',channels:['Instagram']},owner);
+  const created=await call(`/api/marketing/campaigns/${campaign.data.id}/orchestration`,{},owner);
+  assert.equal(created.status,201);
+  assert.ok(created.data.orchestrationWorkflowId);
+
+  const secondCreate=await call(`/api/marketing/campaigns/${campaign.data.id}/orchestration`,{},owner);
+  assert.equal(secondCreate.status,409); // never a second orchestration workflow per campaign
+
+  const runStarted=await call(`/api/marketing/campaigns/${campaign.data.id}/orchestration/run`,{},owner);
+  assert.equal(runStarted.status,201);
+  assert.equal(runStarted.data.status,'WAITING_APPROVAL');
+
+  const state=await call(`/api/marketing/campaigns/${campaign.data.id}/orchestration`,null,owner,{method:'GET'});
+  const stepsById=Object.fromEntries(state.data.runs[0].steps.map(s=>[s.stepId,s]));
+  assert.equal(stepsById.intelligence.status,'COMPLETED');
+  assert.equal(stepsById.strategy.status,'COMPLETED');
+  assert.equal(stepsById.copy.status,'COMPLETED');
+  assert.equal(stepsById.creative.status,'COMPLETED');
+  assert.equal(stepsById.compliance.status,'COMPLETED');
+  assert.equal(stepsById.compliance.output.payload.classification,'PASS');
+  assert.equal(stepsById.approval.status,'WAITING_APPROVAL');
+  assert.equal(stepsById.publishing.status,'PENDING'); // never runs before the human gate
+
+  const pending=await call('/api/approvals?status=PENDING',null,owner,{method:'GET'});
+  const workflowApproval=pending.data.find(a=>a.action_type==='workflow_step_approval');
+  assert.ok(workflowApproval);
+  const decided=await call(`/api/approvals/${workflowApproval.id}/decide`,{decision:'APPROVED'},owner);
+  assert.equal(decided.status,200);
+  assert.equal(decided.data.workflowRun.status,'COMPLETED');
+  const stepsAfter=Object.fromEntries(decided.data.workflowRun.steps.map(s=>[s.stepId,s]));
+  assert.equal(stepsAfter.publishing.status,'COMPLETED');
+ } finally {await cleanup();}
+});
+test('Campaign orchestration: tenant isolation — Tenant B cannot see or run Tenant A\'s orchestration workflow',async()=>{
+ const {call,app,cleanup}=await harness(orchestrationFetcher());
+ try {
+  const ownerA=await signupAndCreateWorkspace(call,app,{username:'orch9a',email:'orch9a@example.com',companyName:'Orch A'});
+  const ownerB=await signupAndCreateWorkspace(call,app,{username:'orch9b',email:'orch9b@example.com',companyName:'Orch B'});
+  const campaignA=await call('/api/marketing/campaigns',{name:'حملة A'},ownerA);
+  await call(`/api/marketing/campaigns/${campaignA.data.id}/orchestration`,{},ownerA);
+  const crossRead=await call(`/api/marketing/campaigns/${campaignA.data.id}/orchestration`,null,ownerB,{method:'GET'});
+  assert.equal(crossRead.status,404);
+  const crossRun=await call(`/api/marketing/campaigns/${campaignA.data.id}/orchestration/run`,{},ownerB);
+  assert.equal(crossRun.status,404);
+ } finally {await cleanup();}
+});

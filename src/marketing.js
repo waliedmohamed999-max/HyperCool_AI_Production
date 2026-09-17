@@ -5,6 +5,7 @@ import {recordAudit} from './audit.js';
 import {listLeads, listAllMessages} from './crm.js';
 import {listContent} from './content.js';
 import {buildExecutiveReport, currentWeekStart} from './reporting.js';
+import {createWorkflowDraft, activateWorkflow} from './runtime/workflow-engine.js';
 
 // Marketing & Social Operating Module (Phase MKT-1). Per the architectural audit (see
 // docs/MARKETING_MODULE.md), this file adds ONLY the two entities that genuinely did not
@@ -48,7 +49,13 @@ export function installMarketing(db) {
   updated_at TEXT NOT NULL,
   archived_at TEXT
  );
- CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant ON marketing_campaigns(tenant_id,archived_at);
+ CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant ON marketing_campaigns(tenant_id,archived_at);`);
+ // Phase MKT-2, Part B — links a campaign to its OPTIONAL real orchestration Workflow
+ // (workflow_definitions.id) — the existing workflow engine owns everything about running it;
+ // this is just the pointer.
+ const campaignColumns=db.prepare('PRAGMA table_info(marketing_campaigns)').all().map(c=>c.name);
+ if(!campaignColumns.includes('orchestration_workflow_id'))db.exec('ALTER TABLE marketing_campaigns ADD COLUMN orchestration_workflow_id TEXT');
+ db.exec(`
  CREATE TABLE IF NOT EXISTS campaign_content_items (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
@@ -113,6 +120,7 @@ function hydrateCampaign(row) {
   startDate:row.start_date,endDate:row.end_date,tone:row.tone,cta:row.cta,status:row.status,
   strategy:row.strategy_json?JSON.parse(row.strategy_json):null,
   intelligence:row.intelligence_json?JSON.parse(row.intelligence_json):null,
+  orchestrationWorkflowId:row.orchestration_workflow_id||null,
   createdBy:row.created_by,createdByName:row.created_by_name,createdAt:row.created_at,updatedAt:row.updated_at
  };
 }
@@ -230,6 +238,66 @@ export function saveCampaignIntelligence(db,id,intelligence,tenantId=null) {
  const now=new Date().toISOString();
  db.prepare('UPDATE marketing_campaigns SET intelligence_json=?,updated_at=? WHERE id=? AND tenant_id=?').run(JSON.stringify(intelligence),now,id,resolvedTenantId);
  return getCampaign(db,id,resolvedTenantId);
+}
+
+// -----------------------------------------------------------------------------------------
+// Part B — OPTIONAL automated campaign orchestration, built entirely on the EXISTING workflow
+// engine (src/runtime/workflow-engine.js) — never a second engine. Manual mode (the
+// generate-strategy/generate-intelligence routes above, unchanged) keeps working exactly as
+// before; this is an ADDITIONAL, opt-in path a campaign owner can pick instead. Every stage is
+// a real AGENT step (intelligence/strategy/copy/creative/compliance — the exact 12 existing
+// agents, zero new ones), the human gate is the workflow engine's own native APPROVAL step
+// type, and "publishing" is the existing publishing agent's own step — it still goes through
+// that agent's own tool-level approval gates (meta_publish/x_publish/etc. already require
+// approval below a level), so this can never silently publish externally without the existing
+// rules. Each AGENT step gets the real campaign brief via the workflow engine's own
+// {{trigger.field}} templating (Part B's one small, backward-compatible extension to
+// executeStep's AGENT branch — see workflow-engine.js) — `context.trigger` is the exact
+// triggerContext this run was started with (see startCampaignOrchestrationRun below).
+export function buildCampaignOrchestrationSteps() {
+ const brief={
+  campaignName:'{{trigger.name}}',goal:'{{trigger.goal}}',product:'{{trigger.product}}',
+  audience:'{{trigger.audience}}',market:'{{trigger.market}}',offer:'{{trigger.offer}}',
+  channels:'{{trigger.channels}}',tone:'{{trigger.tone}}',cta:'{{trigger.cta}}'
+ };
+ return [
+  {id:'intelligence',type:'AGENT',agentId:'intelligence',objective:'رصد السوق للحملة {{trigger.name}}',input:{task:'marketing_campaign_intelligence',...brief},next:['strategy']},
+  {id:'strategy',type:'AGENT',agentId:'strategy',objective:'استراتيجية الحملة {{trigger.name}}',input:{task:'marketing_campaign_strategy',...brief},next:['copy']},
+  {id:'copy',type:'AGENT',agentId:'copy',objective:'صياغة نصوص الحملة {{trigger.name}}',input:{task:'marketing_campaign_copy',...brief},next:['creative']},
+  {id:'creative',type:'AGENT',agentId:'creative',objective:'موجز إبداعي للحملة {{trigger.name}}',input:{task:'marketing_campaign_creative',...brief},next:['compliance']},
+  {id:'compliance',type:'AGENT',agentId:'compliance',objective:'مراجعة امتثال الحملة {{trigger.name}}',input:{task:'marketing_campaign_compliance',...brief},next:['approval']},
+  {id:'approval',type:'APPROVAL',riskLevel:'MEDIUM',reason:`اعتماد بشري مطلوب قبل جدولة/نشر محتوى الحملة {{trigger.name}}`,next:['publishing']},
+  {id:'publishing',type:'AGENT',agentId:'publishing',objective:'خطة جدولة/نشر محتوى الحملة {{trigger.name}} بعد الاعتماد',input:{task:'marketing_campaign_publishing_plan',...brief},next:[]}
+ ];
+}
+// Creates + immediately activates a REAL workflow (never left as an inert draft — a campaign
+// owner choosing "automated mode" expects it runnable right away). Readiness only requires
+// every AGENT step's target agent to be enabled (computeWorkflowReadiness) — it does NOT
+// require AI to be configured (that is checked honestly at RUN time, same as every other
+// agent call in this system), so this activates cleanly even before AI is set up.
+export function createCampaignOrchestrationWorkflow(db,env,campaign,user,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ if(campaign.orchestrationWorkflowId)fail(409,'يوجد مسار تنسيق تلقائي لهذه الحملة بالفعل');
+ const draft=createWorkflowDraft(db,env,resolvedTenantId,{
+  nameAr:`تنسيق حملة: ${campaign.name}`,nameEn:`Campaign Orchestration: ${campaign.name}`,
+  description:'مسار تلقائي اختياري: رصد سوق ← استراتيجية ← نصوص ← إبداع ← امتثال ← اعتماد بشري ← نشر',
+  trigger:{type:'MANUAL'},conditions:null,steps:buildCampaignOrchestrationSteps()
+ },user);
+ const activated=activateWorkflow(db,env,draft.id,user,resolvedTenantId);
+ const now=new Date().toISOString();
+ db.prepare('UPDATE marketing_campaigns SET orchestration_workflow_id=?,updated_at=? WHERE id=? AND tenant_id=?').run(activated.id,now,campaign.id,resolvedTenantId);
+ recordAudit(db,{id:randomUUID(),action:'MARKETING_CAMPAIGN_ORCHESTRATION_CREATED',itemId:campaign.id,detail:{workflowId:activated.id},actorId:user?.id||null,actorName:user?.name||null,actorRole:user?.role||null,at:now},resolvedTenantId);
+ return getCampaign(db,campaign.id,resolvedTenantId);
+}
+// The real triggerContext a run needs — every AGENT step's {{trigger.field}} resolves against
+// exactly this object. Channels is joined to a plain string since renderTemplate does a plain
+// String() conversion on whatever it finds at the path.
+export function campaignOrchestrationTriggerContext(campaign) {
+ return {
+  name:campaign.name,goal:campaign.goal||'',product:campaign.product||'',audience:campaign.audience||'',
+  market:campaign.market||'',offer:campaign.offer||'',channels:(campaign.channels||[]).join('، '),
+  tone:campaign.tone||'',cta:campaign.cta||''
+ };
 }
 
 // -----------------------------------------------------------------------------------------

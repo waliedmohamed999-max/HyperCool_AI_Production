@@ -72,7 +72,8 @@ import {
  saveCampaignStrategy,saveCampaignIntelligence,listCampaignContentItems,getCampaignContentItem,
  createCampaignContentItem,updateCampaignContentItem,buildMarketingOverview,
  CONTENT_CHANNELS,CONTENT_FORMATS,CAMPAIGN_STATUSES,CONTENT_STATUSES,
- saveComplianceResult,saveCreativeBrief
+ saveComplianceResult,saveCreativeBrief,
+ createCampaignOrchestrationWorkflow,campaignOrchestrationTriggerContext
 } from './marketing.js';
 import {extractSafeCrmUpdates, applySafeCrmUpdates, proposeStageChangeApproval} from './runtime/agent-crm-updates.js';
 import {
@@ -1762,6 +1763,35 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const run=await agentRuntime.run('strategy',{triggerType:'MANUAL',input:{task:'marketing_campaign_strategy',campaignName:campaign.name,goal:campaign.goal,product:campaign.product,audience:campaign.audience,market:campaign.market,offer:campaign.offer,channels:campaign.channels,tone:campaign.tone,cta:campaign.cta,marketIntelligence:campaign.intelligence,current_datetime:new Date().toISOString()},user:session.user,tenantId:session.tenantId});
         if(run.output?.payload)saveCampaignStrategy(store.db,campaign.id,run.output.payload,session.tenantId);
         return send(200,{run:{id:run.id,status:run.status},campaign:getCampaign(store.db,campaign.id,session.tenantId)});
+      }
+      // Phase MKT-2, Part B — OPTIONAL automated campaign orchestration, built entirely on the
+      // existing native Workflow Engine (see src/marketing.js's own doc comment). MANUAL mode
+      // (the two routes just above) is completely unaffected and remains available regardless
+      // of whether a campaign also has an orchestration workflow.
+      const campaignOrchestrationCreate=url.pathname.match(/^\/api\/marketing\/campaigns\/([\w-]+)\/orchestration$/);
+      if(req.method==='POST' && campaignOrchestrationCreate) {
+        authorize(session,['owner','operator']);
+        const campaign=getCampaign(store.db,campaignOrchestrationCreate[1],session.tenantId);
+        return send(201,createCampaignOrchestrationWorkflow(store.db,env,campaign,session.user,session.tenantId));
+      }
+      if(req.method==='GET' && campaignOrchestrationCreate) {
+        const campaign=getCampaign(store.db,campaignOrchestrationCreate[1],session.tenantId);
+        if(!campaign.orchestrationWorkflowId)return send(200,{campaign,workflow:null,runs:[]});
+        const workflow=getWorkflowWithVersion(store.db,campaign.orchestrationWorkflowId,session.tenantId);
+        // Real step-level detail per run (agent output, WAITING_APPROVAL state, etc.) — a
+        // campaign realistically has very few orchestration runs, so fetching each run's full
+        // step list here (rather than only a run summary) is cheap and lets the UI show real
+        // progress without a second round-trip per run.
+        const runs=listWorkflowRuns(store.db,session.tenantId,{workflowId:campaign.orchestrationWorkflowId}).map(run=>getRunWithSteps(store.db,run.id,session.tenantId));
+        return send(200,{campaign,workflow,runs});
+      }
+      const campaignOrchestrationRun=url.pathname.match(/^\/api\/marketing\/campaigns\/([\w-]+)\/orchestration\/run$/);
+      if(req.method==='POST' && campaignOrchestrationRun) {
+        authorize(session,['owner','operator']);
+        const campaign=getCampaign(store.db,campaignOrchestrationRun[1],session.tenantId);
+        if(!campaign.orchestrationWorkflowId)fail(400,'أنشئ مسار التنسيق التلقائي أولاً لهذه الحملة');
+        const run=await startWorkflowRun(workflowDeps,campaign.orchestrationWorkflowId,{triggerType:'MANUAL',triggerContext:campaignOrchestrationTriggerContext(campaign),tenantId:session.tenantId});
+        return send(201,run);
       }
       if(url.pathname==='/api/marketing/content') {
         if(req.method==='GET')return send(200,listCampaignContentItems(store.db,session.tenantId,{campaignId:url.searchParams.get('campaignId')||undefined,status:url.searchParams.get('status')||undefined}));
