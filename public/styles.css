@@ -1,0 +1,401 @@
+/* HyperCool — Public Marketing Site
+   Design system: "Wiza" style reference, applied exactly as specified (colors, spacing,
+   radii, shadows, gradients, component shapes) with two adaptations required by this
+   project's real content:
+   1. RTL Arabic — the product itself is Arabic-first (public/index.html: lang="ar" dir="rtl"),
+      so this site is too. Latin-only Britti Sans/Inter are substituted with IBM Plex Sans
+      Arabic (already vendored in the main app under public/fonts/) at the same weights the
+      reference specifies (500 for display/headings, 400 for body, 700 for emphasis) — the
+      SAME weight semantics, a real Arabic-supporting family.
+   2. No fabricated trust signals — the reference includes a "Rating Badge Pair" (G2/Chrome
+      Web Store scores) and a "Logo Cloud" of client logos. Neither exists for real for this
+      product yet, so both are replaced with real, verifiable facts about the product itself
+      (see index.html's "why-hypercool" section) rather than invented external validation.
+*/
+
+:root {
+  /* Colors — verbatim from the Wiza reference */
+  --color-deep-iris: #26114a;
+  --color-plum-velvet: #312749;
+  --color-royal-amethyst: #3e0079;
+  --color-mist-violet: #edecff;
+  --color-canvas: #ffffff;
+  --color-paper: #f6f7fa;
+  --color-mist: #e6e2e3;
+  --color-smoke: #c1c7cf;
+  --color-ash: #9491a1;
+  --color-slate: #615e6e;
+  --color-charcoal: #333333;
+  --color-carbon: #222222;
+  --color-ink: #000000;
+  --gradient-lavender-wash: linear-gradient(90deg, rgb(185, 154, 255), rgb(125, 67, 255) 10%, rgba(125, 67, 255, 0));
+  --gradient-twilight-beam: linear-gradient(to right, rgb(207, 138, 255), rgb(255, 102, 193), rgb(255, 173, 116), rgb(170, 129, 255));
+  --color-lavender-glow: #b99aff;
+
+  /* Typography — IBM Plex Sans Arabic substituted for Britti Sans (display) / Inter (body),
+     same weight roles: 500 for headings/nav, 400 for body, 700 for emphasis. */
+  --font-display: 'IBM Plex Sans Arabic', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans Arabic', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --text-caption: 12px;
+  --text-body-sm: 14px;
+  --text-body: 16px;
+  --text-subheading: 24px;
+  --text-heading-sm: 32px;
+  --text-heading: 40px;
+  --text-heading-lg: 56px;
+  --text-display: 64px;
+
+  /* Spacing */
+  --spacing-8: 8px; --spacing-16: 16px; --spacing-24: 24px; --spacing-32: 32px;
+  --spacing-40: 40px; --spacing-48: 48px; --spacing-56: 56px; --spacing-64: 64px;
+  --spacing-96: 96px;
+
+  /* Radii — 8px for all rectangular surfaces, 1440px for pills, per the reference's own rule */
+  --radius-card: 8px;
+  --radius-icon: 8px;
+  --radius-large: 24px;
+  --radius-pill: 1440px;
+
+  /* Shadows — verbatim from the reference */
+  --shadow-sm: rgba(18, 55, 105, 0.08) 0px 2px 4px 0px, rgba(18, 55, 105, 0.04) 0px 1px 1px 0px, rgba(18, 55, 105, 0.08) 0px 0px 0px 1px;
+  --shadow-lg: rgba(14, 59, 101, 0.06) 0px 32px 24px -12px, rgba(14, 59, 101, 0.01) 0px 11px 4px 0px, rgba(14, 59, 101, 0.02) 0px 6px 4px 0px, rgba(14, 59, 101, 0.03) 0px 3px 3px 0px, rgba(14, 59, 101, 0.04) 0px 1px 1px 0px;
+
+  --page-max-width: 1200px;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  src: url('/fonts/ibm-plex-sans-arabic-400-arabic.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  src: url('/fonts/ibm-plex-sans-arabic-500-arabic.woff2') format('woff2');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans Arabic';
+  src: url('/fonts/ibm-plex-sans-arabic-700-arabic.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-charcoal);
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; display: block; }
+a { color: inherit; text-decoration: none; }
+
+.wrap { max-width: var(--page-max-width); margin-inline: auto; padding-inline: 24px; }
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 1.0;
+  color: var(--color-deep-iris);
+  margin: 0;
+}
+
+/* --- Do's rule: pair every filled button with a same-size ghost button --- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border-radius: var(--radius-card);
+  padding: 16px 24px;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: var(--text-body);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.btn-filled { background: var(--color-deep-iris); color: var(--color-canvas); }
+.btn-filled:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+.btn-ghost { background: transparent; color: var(--color-deep-iris); border-color: var(--color-deep-iris); }
+.btn-ghost:hover { background: var(--color-mist-violet); }
+.btn-sm { padding: 10px 18px; font-size: var(--text-body-sm); }
+
+/* --- Pill nav / tags — 1440px radius exclusively, never on cards --- */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  background: var(--color-mist-violet);
+  color: var(--color-royal-amethyst);
+}
+.pill-nav-btn {
+  border-radius: var(--radius-pill);
+  padding: 8px 16px;
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  color: var(--color-plum-velvet);
+}
+.pill-nav-btn:hover, .pill-nav-btn.active { background: var(--color-mist-violet); }
+
+/* --- Floating navigation bar --- */
+.site-nav {
+  position: sticky; top: 16px; z-index: 40;
+  margin: 16px auto 0;
+  max-width: 1100px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  background: var(--color-canvas);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+  padding: 10px 20px;
+}
+.brand-lockup { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 500; font-size: 20px; color: var(--color-deep-iris); }
+.brand-mark {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--color-lavender-glow), #7d43ff);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 15px;
+}
+.site-nav nav { display: flex; align-items: center; gap: 4px; }
+.site-nav .nav-actions { display: flex; align-items: center; gap: 8px; }
+.nav-toggle { display: none; }
+
+/* --- Hero: lavender wash gradient background + a floating-card illustration, the same
+   visual metaphor the reference site uses (contact cards converging on a glowing device) —
+   rebuilt here with HyperCool's own real domain: real leads flowing automatically into one
+   inbox, converging on the product itself. Pure CSS/SVG, no stock imagery. --- */
+.hero {
+  position: relative;
+  padding: 64px 0 96px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #ffffff 0%, var(--color-mist-violet) 65%, #ffffff 100%);
+}
+.hero::before {
+  content: ''; position: absolute; inset-inline-start: -10%; top: -20%;
+  width: 60%; height: 70%;
+  background: var(--gradient-lavender-wash);
+  filter: blur(60px); opacity: .5; pointer-events: none;
+}
+.hero-inner { position: relative; text-align: center; }
+
+/* Floating illustration: three lead cards on curved gradient threads, converging on a
+   glowing pill "inbox" — echoes the reference's own hero motif, recast with real HyperCool
+   lead data instead of prospecting contacts. */
+.hero-illustration { position: relative; height: 230px; max-width: 640px; margin: 0 auto 8px; }
+.hero-illustration svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.lead-card {
+  position: absolute;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--color-canvas);
+  border-radius: var(--radius-pill);
+  padding: 8px 16px 8px 8px;
+  box-shadow: var(--shadow-sm);
+  font-size: 13px; font-weight: 500; color: var(--color-deep-iris);
+  white-space: nowrap;
+}
+.lead-card .dot { width: 28px; height: 28px; border-radius: 50%; background: var(--gradient-twilight-beam); flex-shrink: 0; }
+.lead-card span.muted { color: var(--color-ash); font-weight: 400; font-size: 12px; }
+.lead-card.c1 { top: 4px; inset-inline-start: 6%; animation: float-a 5s ease-in-out infinite; }
+.lead-card.c2 { top: 36px; inset-inline-end: 8%; animation: float-b 6s ease-in-out infinite; }
+.lead-card.c3 { top: 0; left: 50%; transform: translateX(-50%); animation: float-a 5.5s ease-in-out infinite .4s; }
+@keyframes float-a { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.lead-card.c3 { animation-name: float-a3; }
+@keyframes float-a3 { 0%,100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-8px); } }
+@keyframes float-b { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+.hero-orb {
+  position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 120px; height: 44px; border-radius: var(--radius-pill);
+  background: var(--color-canvas);
+  box-shadow: var(--shadow-lg), 0 0 60px 10px rgba(125,67,255,.25);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: var(--color-royal-amethyst);
+}
+@media (prefers-reduced-motion: reduce) { .lead-card { animation: none !important; } }
+
+.hero h1 { font-size: var(--text-heading-lg); max-width: 820px; margin-inline: auto; }
+.hero p.lead { font-size: 18px; color: var(--color-slate); max-width: 620px; margin: 24px auto 0; line-height: 1.6; }
+.hero-ctas { display: flex; gap: 16px; justify-content: center; margin-top: 32px; flex-wrap: wrap; }
+
+/* --- Product screenshot inside a real browser-chrome frame, with a floating notification
+   card overlapping its corner — the reference site's exact "solution" showcase pattern. --- */
+.browser-frame {
+  position: relative;
+  margin: 64px auto 0; max-width: 1040px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lg);
+  overflow: visible;
+  border: 1px solid var(--color-mist);
+  background: var(--color-canvas);
+}
+.browser-chrome {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-mist);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+.browser-chrome .dots { display: flex; gap: 6px; }
+.browser-chrome .dots span { width: 10px; height: 10px; border-radius: 50%; background: var(--color-mist); }
+.browser-chrome .url-bar {
+  flex: 1; text-align: center;
+  background: var(--color-paper); border-radius: var(--radius-pill);
+  padding: 5px 12px; font-size: 12px; color: var(--color-ash); direction: ltr;
+}
+.browser-frame .shot-body { border-radius: 0 0 var(--radius-card) var(--radius-card); overflow: hidden; }
+.browser-frame img { width: 100%; display: block; }
+.float-toast {
+  position: absolute; z-index: 5; bottom: -20px; inset-inline-start: -24px;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--color-canvas); border-radius: var(--radius-card);
+  box-shadow: var(--shadow-lg);
+  padding: 12px 18px; font-size: 13px; font-weight: 500; color: var(--color-deep-iris);
+  max-width: 260px;
+}
+.float-toast .check { width: 24px; height: 24px; border-radius: 50%; background: #22c55e; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+@media (max-width: 700px) { .float-toast { position: static; margin: 16px auto 0; max-width: 320px; } }
+
+/* --- Stats: a single elevated card (the reference's "accuracy" callout weight), not a bare
+   grid on the page background --- */
+.stats-strip {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;
+  background: var(--color-canvas);
+  border-radius: var(--radius-large);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-mist);
+  padding: 40px 24px;
+  margin: 0 auto;
+  max-width: 1040px;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+.stats-strip .stat strong { display: block; font-family: var(--font-display); font-weight: 500; font-size: var(--text-heading-sm); color: var(--color-deep-iris); }
+.stats-strip .stat span { color: var(--color-slate); font-size: var(--text-body-sm); }
+.stats-wrap { margin-top: -56px; padding-bottom: 64px; position: relative; z-index: 1; }
+
+/* --- Problem / solution strip --- */
+.problem-solution { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+.problem-list { display: flex; flex-direction: column; gap: 16px; }
+.problem-item { display: flex; gap: 12px; align-items: flex-start; color: var(--color-slate); font-size: var(--text-body-sm); }
+.problem-item .x { color: #ef4444; font-weight: 700; flex-shrink: 0; }
+@media (max-width: 900px) { .problem-solution { grid-template-columns: 1fr; } }
+
+/* --- Section heading block --- */
+.section { padding: 80px 0; }
+.section.tint { background: var(--color-mist-violet); }
+.section-head { text-align: center; max-width: 640px; margin: 0 auto 48px; }
+.section-head .pill { margin-bottom: 16px; }
+.section-head h2 { font-size: var(--text-heading); }
+.section-head p { color: var(--color-slate); font-size: 16px; margin-top: 16px; }
+
+/* --- Feature grid + icon tiles --- */
+.feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.feature-card {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-mist);
+  border-radius: var(--radius-card);
+  padding: 24px;
+}
+.feature-icon {
+  width: 40px; height: 40px; border-radius: var(--radius-icon);
+  background: var(--color-mist-violet);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-royal-amethyst); font-size: 18px; margin-bottom: 16px;
+}
+.feature-card h3 { font-size: var(--text-subheading); color: var(--color-deep-iris); margin-bottom: 8px; }
+.feature-card p { color: var(--color-slate); font-size: var(--text-body-sm); margin: 0; }
+
+/* --- Agent roster grid (profile-card pattern) --- */
+.agent-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.agent-card {
+  background: var(--color-canvas); border: 1px solid var(--color-mist);
+  border-radius: var(--radius-card); padding: 16px;
+  display: flex; align-items: flex-start; gap: 12px;
+}
+.agent-avatar {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  background: var(--gradient-twilight-beam);
+}
+.agent-card strong { display: block; color: var(--color-deep-iris); font-size: var(--text-body-sm); font-weight: 500; }
+.agent-card span { display: block; color: var(--color-ash); font-size: var(--text-caption); margin-top: 4px; }
+
+/* --- Channel badges (integrations) — a real icon + label per channel (simple, original line
+   glyphs, not reproduced trademarked logo artwork), never a fabricated "trusted by" logo bar --- */
+.channel-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.channel-badge {
+  display: inline-flex; align-items: center; gap: 10px;
+  border: 1px solid var(--color-mist); border-radius: var(--radius-pill);
+  padding-block: 8px; padding-inline: 16px 20px; font-size: var(--text-body-sm); font-weight: 500; color: var(--color-plum-velvet);
+  background: var(--color-canvas);
+}
+.channel-badge svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--color-royal-amethyst); }
+
+/* --- Data table row pattern (illustrative demo data, clearly labeled) --- */
+.table-card { background: var(--color-canvas); border: 1px solid var(--color-mist); border-radius: var(--radius-card); overflow: hidden; box-shadow: var(--shadow-sm); }
+.table-card table { width: 100%; border-collapse: collapse; }
+.table-card th { text-align: start; font-size: var(--text-caption); font-weight: 500; color: var(--color-slate); text-transform: uppercase; padding: 12px 16px; border-bottom: 1px solid var(--color-mist); }
+.table-card td { padding: 12px 16px; font-size: var(--text-body-sm); color: var(--color-deep-iris); border-bottom: 1px solid var(--color-mist); }
+.table-card tr:nth-child(even) td { background: var(--color-paper); }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-inline-end: 6px; }
+.status-dot.ok { background: #22c55e; }
+.status-dot.pending { background: #f59e0b; }
+
+/* --- Two-column showcase (screenshot + copy) --- */
+.showcase { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+.showcase img { border-radius: var(--radius-card); box-shadow: var(--shadow-lg); border: 1px solid var(--color-mist); }
+.showcase.reverse { direction: ltr; }
+.showcase.reverse > * { direction: rtl; }
+
+/* --- CTA banner --- */
+.cta-banner {
+  background: var(--color-deep-iris);
+  border-radius: var(--radius-large);
+  padding: 64px 48px;
+  text-align: center;
+  margin: 0 24px;
+}
+.cta-banner h2 { color: #fff; font-size: var(--text-heading-sm); }
+.cta-banner p { color: #d8c9ff; margin-top: 12px; }
+.cta-banner .hero-ctas { margin-top: 32px; }
+.cta-banner .btn-ghost { color: #fff; border-color: rgba(255,255,255,.5); }
+.cta-banner .btn-filled { background: #fff; color: var(--color-deep-iris); }
+
+/* --- Footer --- */
+footer { padding: 64px 0 32px; border-top: 1px solid var(--color-mist); }
+.footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 32px; margin-bottom: 48px; }
+footer h4 { font-size: var(--text-body-sm); font-weight: 700; color: var(--color-deep-iris); margin-bottom: 16px; }
+footer a, footer p { color: var(--color-slate); font-size: var(--text-body-sm); }
+footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.footer-bottom { display: flex; justify-content: space-between; align-items: center; padding-top: 24px; border-top: 1px solid var(--color-mist); color: var(--color-ash); font-size: var(--text-caption); flex-wrap: wrap; gap: 8px; }
+
+/* --- Responsive --- */
+@media (max-width: 900px) {
+  .feature-grid { grid-template-columns: 1fr 1fr; }
+  .agent-grid { grid-template-columns: 1fr 1fr; }
+  .stats-strip { grid-template-columns: 1fr 1fr; }
+  .showcase, .showcase.reverse { grid-template-columns: 1fr; direction: rtl; }
+  .footer-grid { grid-template-columns: 1fr 1fr; }
+  .hero h1 { font-size: 40px; }
+}
+@media (max-width: 600px) {
+  .feature-grid, .agent-grid, .stats-strip, .footer-grid { grid-template-columns: 1fr; }
+  .site-nav nav { display: none; }
+  .hero { padding: 110px 0 64px; }
+  .cta-banner { margin: 0 16px; padding: 40px 24px; }
+}
+
+/* --- Utility/semantic classes replacing inline style="" attributes: the app's real CSP
+   (style-src 'self', no 'unsafe-inline') silently drops inline styles — every rule below was
+   an inline style found broken in a real browser check against the actual server, not a
+   preference. --- */
+.wordmark-bold { font-weight: 700; }
+.text-slate { color: var(--color-slate); }
+.showcase-copy { color: var(--color-slate); margin-bottom: 24px; }
+.showcase-title { font-size: 28px; margin-bottom: 16px; }
+.subhead-32 { font-size: 32px; margin: 16px 0; }
+.footer-brand-copy { margin-top: 16px; max-width: 320px; }
+.caption-note { color: var(--color-ash); font-size: 13px; margin-top: 12px; }

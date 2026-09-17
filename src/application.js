@@ -622,7 +622,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           if(!captcha.ok)fail(400,captcha.errorCode);
         }
         const {user,token,normalizedEmail}=registerPublicUser(store.db,auth,{name:input.name,username:input.username,email:input.email,password:input.password});
-        const verifyUrl=`${baseUrl}/#verify-email/${token}`;
+        const verifyUrl=`${baseUrl}/app#verify-email/${token}`;
         const locale=['ar','en'].includes(input.locale)?input.locale:'ar';
         const delivery=await sendVerificationEmail({db:store.db,env,fetcher},{to:normalizedEmail,locale,verifyUrl});
         recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'USER_REGISTERED',itemId:user.id,actorId:user.id,actorName:user.name,at:new Date().toISOString()});
@@ -682,7 +682,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
         const {token,userId}=requestPasswordReset(store.db,input.email);
         if(token) {
-          const resetUrl=`${baseUrl}/#reset-password/${token}`;
+          const resetUrl=`${baseUrl}/app#reset-password/${token}`;
           const locale=['ar','en'].includes(input.locale)?input.locale:'ar';
           await sendPasswordResetEmail({db:store.db,env,fetcher},{to:input.email,locale,resetUrl});
           recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'PASSWORD_RESET_REQUESTED',itemId:userId,actorId:userId,at:new Date().toISOString()});
@@ -752,7 +752,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const input=await body(req);
         const hadVerifiedEmailBefore=!!getUserIdentity(store.db,session.user.id)?.emailVerifiedAt;
         const {token,normalizedEmail}=requestEmailChange(store.db,session.user.id,input.email);
-        const verifyUrl=`${baseUrl}/#verify-email/${token}`;
+        const verifyUrl=`${baseUrl}/app#verify-email/${token}`;
         const locale=session.user.preferredLocale||'ar';
         const delivery=await sendVerificationEmail({db:store.db,env,fetcher},{to:normalizedEmail,locale,verifyUrl});
         recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:hadVerifiedEmailBefore?'USER_EMAIL_CHANGED':'USER_EMAIL_ADDED',itemId:session.user.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
@@ -762,7 +762,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && url.pathname==='/api/account/email/resend-verification') {
         checkEmailVerificationRateLimit(req.socket.remoteAddress);
         const {token,normalizedEmail}=resendEmailVerification(store.db,session.user.id);
-        const verifyUrl=`${baseUrl}/#verify-email/${token}`;
+        const verifyUrl=`${baseUrl}/app#verify-email/${token}`;
         const locale=session.user.preferredLocale||'ar';
         const delivery=await sendVerificationEmail({db:store.db,env,fetcher},{to:normalizedEmail,locale,verifyUrl});
         if(delivery.delivered)recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'EMAIL_VERIFICATION_SENT',itemId:session.user.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()});
@@ -1101,7 +1101,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           // (invitations.js stores only its hash), never returned by the list endpoint, never
           // logged (Part 32/70). The frontend must not claim "sent" unless `delivered:true`.
           const tenant=getTenant(store.db,session.tenantId);
-          const acceptUrl=`${baseUrl}/#invite/${token}`;
+          const acceptUrl=`${baseUrl}/app#invite/${token}`;
           const delivery=await sendInvitationEmail({db:store.db,env,fetcher},{to:invitation.email,locale:session.user.preferredLocale||'ar',workspaceName:tenant.name,acceptUrl,role:invitation.role});
           return send(201,{...invitation,token,delivered:delivery.delivered});
         }
@@ -1112,7 +1112,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const {invitation,token}=resendInvitation(store.db,session.tenantId,invitationResend[1]);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKSPACE_INVITATION_RESENT',itemId:invitation.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         const tenant=getTenant(store.db,session.tenantId);
-        const acceptUrl=`${baseUrl}/#invite/${token}`;
+        const acceptUrl=`${baseUrl}/app#invite/${token}`;
         const delivery=await sendInvitationEmail({db:store.db,env,fetcher},{to:invitation.email,locale:session.user.preferredLocale||'ar',workspaceName:tenant.name,acceptUrl,role:invitation.role});
         return send(200,{...invitation,token,delivered:delivery.delivered});
       }
@@ -1896,7 +1896,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const tokens=await exchangeCodeForTokens({env,fetcher,code});
         saveCredentials(store.db,env,'salla',tokens,session.user);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_OAUTH_CONNECTED',itemId:'salla',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-        res.writeHead(302,{Location:'/#integrations'});return res.end();
+        res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/salla/disconnect') {
         authorize(session,['owner']);
@@ -1925,7 +1925,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const assets=await exchangeCodeAndResolveAssets({env,fetcher,code});
         saveMetaConnection(store.db,env,assets,session.user);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'META_OAUTH_CONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-        res.writeHead(302,{Location:'/#integrations'});return res.end();
+        res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/meta/disconnect') {
         authorize(session,['owner']);
@@ -1982,7 +1982,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const profile=await resolveConnectedProfile({env,fetcher,accessToken:tokens.accessToken});
         saveMicrosoftConnection(store.db,env,tokens,profile,session.user);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'MICROSOFT_CONNECTED',itemId:'microsoft365',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-        res.writeHead(302,{Location:'/#integrations'});return res.end();
+        res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/microsoft/disconnect') {
         authorize(session,['owner']);
@@ -2027,7 +2027,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const profile=await resolveXProfile({fetcher,accessToken:tokens.accessToken});
         saveXConnection(store.db,env,tokens,profile,session.user);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'X_CONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-        res.writeHead(302,{Location:'/#integrations'});return res.end();
+        res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/x/disconnect') {
         authorize(session,['owner']);
@@ -2060,7 +2060,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         saveLinkedInConnection(store.db,env,tokens,profile,organization,session.user);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_CONNECTED',itemId:'linkedin',organizationId:organization?.id||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         if(organization)recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_ORGANIZATION_SELECTED',itemId:organization.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-        res.writeHead(302,{Location:'/#integrations'});return res.end();
+        res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/linkedin/disconnect') {
         authorize(session,['owner']);
@@ -2555,7 +2555,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
          connectedBy:session.user.id,connectedAt:now,lastSuccessAt:now,lastErrorAt:null,lastErrorCode:null,lastErrorMessageSafe:null
         },session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'OAUTH_COMPLETED',itemId:connection.id,provider:slug,actorId:session.user.id,actorName:session.user.name,at:now},session.tenantId);
-        res.writeHead(302,{Location:'/#integrations'});return res.end();
+        res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       // Manual reply outside the agent runtime — same permission/opt-out/approval-category
       // checks as the microsoft_sendEmail agent tool, never a second, looser path.
@@ -2726,7 +2726,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           return send(200,await checkCompliance(compliance[1],await body(req),session.user,session.tenantId));
         }
       }
-      const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
+      // Public marketing home (requested: the platform's public-facing page) — served at the
+      // domain root. The existing admin tool (login + dashboard SPA) is UNCHANGED, just moved
+      // to /app so both are reachable; every email link and OAuth-callback redirect that used
+      // to point at '/#...' now points at '/app#...' (grepped for every real occurrence —
+      // 12 call sites — rather than guessed).
+      const files={'/favicon.svg':'favicon.svg','/':'home.html','/styles.css':'styles.css','/assets/screenshots/hero-marketing-overview.png':'assets/screenshots/hero-marketing-overview.png','/assets/screenshots/feature-command-center.png':'assets/screenshots/feature-command-center.png','/assets/screenshots/feature-crm.png':'assets/screenshots/feature-crm.png','/app':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
       for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js','pages/command-center.js','pages/workflows.js','pages/marketing.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
       for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter','workflows','marketing'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       // Website AI Chat Widget embed script (spec Part 87) — served publicly, unauthenticated,
