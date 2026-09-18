@@ -591,7 +591,8 @@ footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-directi
   .footer-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 600px) {
-  .feature-grid, .stats-strip, .footer-grid { grid-template-columns: 1fr; }
+  .feature-grid, .footer-grid { grid-template-columns: 1fr; }
+  .stats-strip { grid-template-columns: 1fr 1fr; gap: 20px 16px; padding: 28px 20px; }
   .site-nav nav { display: none; }
   .cta-banner { margin: 0 16px; padding: 40px 24px; }
 }
