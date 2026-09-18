@@ -168,94 +168,8 @@ h1, h2, h3 {
    visual metaphor the reference site uses (contact cards converging on a glowing device) —
    rebuilt here with HyperCool's own real domain: real leads flowing automatically into one
    inbox, converging on the product itself. Pure CSS/SVG, no stock imagery. --- */
-.hero {
-  position: relative;
-  padding: 64px 0 96px;
-  overflow: hidden;
-  background: linear-gradient(180deg, #ffffff 0%, var(--color-mist-violet) 65%, #ffffff 100%);
-}
-.hero::before {
-  content: ''; position: absolute; inset-inline-start: -10%; top: -20%;
-  width: 60%; height: 70%;
-  background: var(--gradient-lavender-wash);
-  filter: blur(60px); opacity: .5; pointer-events: none;
-}
-.hero-inner { position: relative; text-align: center; }
-
-/* Floating illustration: three lead cards on curved gradient threads, converging on a
-   glowing pill "inbox" — echoes the reference's own hero motif, recast with real HyperCool
-   lead data instead of prospecting contacts. */
-.hero-illustration { position: relative; height: 230px; max-width: 640px; margin: 0 auto 8px; }
-.hero-illustration svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.lead-card {
-  position: absolute;
-  display: flex; align-items: center; gap: 8px;
-  background: var(--color-canvas);
-  border-radius: var(--radius-pill);
-  padding: 8px 16px 8px 8px;
-  box-shadow: var(--shadow-sm);
-  font-size: 13px; font-weight: 500; color: var(--color-deep-iris);
-  white-space: nowrap;
-}
-.lead-card .dot { width: 28px; height: 28px; border-radius: 50%; background: var(--gradient-twilight-beam); flex-shrink: 0; }
-.lead-card span.muted { color: var(--color-ash); font-weight: 400; font-size: 12px; }
-.lead-card.c1 { top: 4px; inset-inline-start: 6%; animation: float-a 5s ease-in-out infinite; }
-.lead-card.c2 { top: 36px; inset-inline-end: 8%; animation: float-b 6s ease-in-out infinite; }
-.lead-card.c3 { top: 0; left: 50%; transform: translateX(-50%); animation: float-a 5.5s ease-in-out infinite .4s; }
-@keyframes float-a { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-.lead-card.c3 { animation-name: float-a3; }
-@keyframes float-a3 { 0%,100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-8px); } }
-@keyframes float-b { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-.hero-orb {
-  position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
-  width: 120px; height: 44px; border-radius: var(--radius-pill);
-  background: var(--color-canvas);
-  box-shadow: var(--shadow-lg), 0 0 60px 10px rgba(125,67,255,.25);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; color: var(--color-royal-amethyst);
-}
-@media (prefers-reduced-motion: reduce) { .lead-card { animation: none !important; } }
-
-.hero h1 { font-size: var(--text-heading-lg); max-width: 820px; margin-inline: auto; }
-.hero p.lead { font-size: 18px; color: var(--color-slate); max-width: 620px; margin: 24px auto 0; line-height: 1.6; }
+/* .hero-ctas is shared by the CTA banner and (formerly) the hero — kept, still referenced. */
 .hero-ctas { display: flex; gap: 16px; justify-content: center; margin-top: 32px; flex-wrap: wrap; }
-
-/* --- Product screenshot inside a real browser-chrome frame, with a floating notification
-   card overlapping its corner — the reference site's exact "solution" showcase pattern. --- */
-.browser-frame {
-  position: relative;
-  margin: 64px auto 0; max-width: 1040px;
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-lg);
-  overflow: visible;
-  border: 1px solid var(--color-mist);
-  background: var(--color-canvas);
-}
-.browser-chrome {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-mist);
-  border-radius: var(--radius-card) var(--radius-card) 0 0;
-}
-.browser-chrome .dots { display: flex; gap: 6px; }
-.browser-chrome .dots span { width: 10px; height: 10px; border-radius: 50%; background: var(--color-mist); }
-.browser-chrome .url-bar {
-  flex: 1; text-align: center;
-  background: var(--color-paper); border-radius: var(--radius-pill);
-  padding: 5px 12px; font-size: 12px; color: var(--color-ash); direction: ltr;
-}
-.browser-frame .shot-body { border-radius: 0 0 var(--radius-card) var(--radius-card); overflow: hidden; }
-.browser-frame img { width: 100%; display: block; }
-.float-toast {
-  position: absolute; z-index: 5; bottom: -20px; inset-inline-start: -24px;
-  display: flex; align-items: center; gap: 10px;
-  background: var(--color-canvas); border-radius: var(--radius-card);
-  box-shadow: var(--shadow-lg);
-  padding: 12px 18px; font-size: 13px; font-weight: 500; color: var(--color-deep-iris);
-  max-width: 260px;
-}
-.float-toast .check { width: 24px; height: 24px; border-radius: 50%; background: #22c55e; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
-@media (max-width: 700px) { .float-toast { position: static; margin: 16px auto 0; max-width: 320px; } }
 
 /* --- Stats: a single elevated card (the reference's "accuracy" callout weight), not a bare
    grid on the page background --- */
@@ -274,7 +188,11 @@ h1, h2, h3 {
 }
 .stats-strip .stat strong { display: block; font-family: var(--font-display); font-weight: 500; font-size: var(--text-heading-sm); color: var(--color-deep-iris); }
 .stats-strip .stat span { color: var(--color-slate); font-size: var(--text-body-sm); }
-.stats-wrap { margin-top: -56px; padding-bottom: 64px; position: relative; z-index: 1; }
+/* -56px is a screen-pixel "bridge" overlap tuned for the full-size #agents scene. On mobile
+   that scene is shrunk as a whole (transform:scale, see .ann-scene), so scaling this overlap
+   by the same factor keeps it proportional instead of eating into ~4x more of the now-tiny
+   scaled content than intended. */
+.stats-wrap { margin-top: calc(-56px * var(--scene-scale, 1)); padding-bottom: 64px; position: relative; z-index: 1; }
 
 /* --- Problem / solution strip --- */
 .problem-solution { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
@@ -308,19 +226,313 @@ h1, h2, h3 {
 .feature-card h3 { font-size: var(--text-subheading); color: var(--color-deep-iris); margin-bottom: 8px; }
 .feature-card p { color: var(--color-slate); font-size: var(--text-body-sm); margin: 0; }
 
-/* --- Agent roster grid (profile-card pattern) --- */
-.agent-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-.agent-card {
-  background: var(--color-canvas); border: 1px solid var(--color-mist);
-  border-radius: var(--radius-card); padding: 16px;
-  display: flex; align-items: flex-start; gap: 12px;
+.status-dot.idle { background: var(--color-smoke); }
+.status-dot.error { background: #ef4444; }
+
+/* =====================================================================================
+   Agent Network — Frost orchestration diagram (replaces the old flat agent-grid).
+   Data-driven from public/agent-network.js's AGENTS/FROST arrays; this file only styles
+   the DOM that script produces. Per-agent accent colors come from that data (via a JS-set
+   `--ann-color` custom property, applied through the CSSOM, never a `style="..."` attribute
+   string — see agent-network.js's own note on why) layered on top of the page's existing
+   tokens — no parallel design system.
+===================================================================================== */
+.agent-network-section {
+  position: relative; overflow: hidden; padding-top: 40px; padding-bottom: 48px;
+  background: linear-gradient(180deg, #f7f5ff 0%, #faf8ff 45%, #f5f8ff 100%);
 }
-.agent-avatar {
-  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
-  background: var(--gradient-twilight-beam);
+.agent-network-section .section-head { margin-bottom: 28px; }
+.agent-network-section::before,
+.agent-network-section::after {
+  content: ''; position: absolute; z-index: 0; border-radius: 50%; filter: blur(70px); pointer-events: none;
 }
-.agent-card strong { display: block; color: var(--color-deep-iris); font-size: var(--text-body-sm); font-weight: 500; }
-.agent-card span { display: block; color: var(--color-ash); font-size: var(--text-caption); margin-top: 4px; }
+.agent-network-section::before { top: -120px; inset-inline-end: -80px; width: 420px; height: 420px; background: radial-gradient(circle, #fbcfe8 0%, transparent 70%); opacity: .6; }
+.agent-network-section::after { bottom: -140px; inset-inline-start: -100px; width: 480px; height: 480px; background: radial-gradient(circle, #bfdbfe 0%, transparent 70%); opacity: .6; }
+.ann-bg-accent {
+  position: absolute; z-index: 0; border-radius: 50%; filter: blur(80px); pointer-events: none;
+  top: 30%; inset-inline-start: 8%; width: 360px; height: 360px;
+  background: radial-gradient(circle, var(--color-lavender-glow) 0%, transparent 70%); opacity: .28;
+  display: block;
+}
+.ann-bg-accent-2 { top: auto; bottom: 5%; inset-inline-start: auto; inset-inline-end: 6%; width: 340px; height: 340px; background: radial-gradient(circle, #fbcfe8 0%, transparent 70%); opacity: .32; }
+.ann-frost-highlight { background: linear-gradient(90deg, var(--color-royal-amethyst), #4388ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Scale-to-fit scene: the orchestration composition (hero band + network + workflow + CTA)
+   is one fixed-width scene that keeps its exact desktop layout at every viewport. Instead of
+   reflowing on small screens, .ann-scene is shrunk as a whole via transform:scale(), computed
+   in agent-network.js from the stage's available width. .ann-scene-stage reserves the real
+   (post-scale) height in document flow via an inline height set by that same script. */
+/* align-items:flex-start (NOT the flex default of stretch) is required here: without it, once
+   JS sets an explicit stage height below, the default stretch behavior would force .ann-scene
+   itself to shrink to match that height. Since scene.offsetHeight is later re-read as the
+   "natural" height on every resize/orientation event, that would corrupt the measurement —
+   each subsequent call would read the already-shrunk height instead of the true content
+   height, collapsing the scene further on every resize (real mobile browsers fire several
+   resize events shortly after load as the URL bar/viewport settles, so this compounds even
+   though a single-shot check won't show it). Pinning to flex-start keeps .ann-scene's own box
+   at its true natural content height always, independent of the stage's own height. */
+.ann-scene-stage { position: relative; z-index: 1; width: 100%; overflow: hidden; display: flex; justify-content: center; align-items: flex-start; }
+.ann-scene { width: 1560px; max-width: none; flex-shrink: 0; transform: scale(var(--scene-scale, 1)); transform-origin: top center; }
+
+/* Hero: one centered proposition block (badge/headline/copy), with a slim status row directly
+   beneath it that visually frames the network below — no separate/duplicated brand block (the
+   navbar already carries the HyperCool logo), no page-corner-anchored floating cards. */
+.ann-hero { position: relative; z-index: 1; margin-bottom: 20px; }
+.ann-hero-headline { max-width: 800px; margin: 0 auto; }
+.ann-hero-headline h2 { font-size: 52px; line-height: 1.22; }
+.ann-hero-headline p { max-width: 620px; margin-inline: auto; font-size: 18px; line-height: 1.6; }
+/* First DOM child of a flex row lands at the PHYSICAL RIGHT in this RTL page — the status
+   card is written first so it renders right, the event card second so it renders left. */
+.ann-hero-status-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; max-width: 1360px; margin: 22px auto 0; }
+.ann-mini-card { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,.85); backdrop-filter: blur(6px); border: 1px solid rgba(110,70,245,.12); border-radius: var(--radius-pill); padding: 9px 18px 9px 14px; box-shadow: 0 6px 20px rgba(65,40,120,.06); }
+.ann-mini-card .status-dot { margin-inline-end: 0; flex-shrink: 0; }
+.ann-mini-card strong { display: block; font-size: 13px; color: var(--color-deep-iris); font-weight: 600; }
+.ann-mini-card span { display: block; font-size: 11.5px; color: var(--color-slate); margin-top: 1px; }
+.ann-event-icon { width: 30px; height: 30px; border-radius: 50%; background: color-mix(in srgb, var(--ann-color, var(--color-lavender-glow)) 15%, transparent); color: var(--ann-color, var(--color-royal-amethyst)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ann-event-icon svg { width: 15px; height: 15px; }
+.ann-equalizer { display: flex; align-items: flex-end; gap: 3px; height: 18px; margin-inline-start: 2px; }
+.ann-equalizer span { width: 3px; border-radius: 2px; background: var(--color-lavender-glow); }
+.ann-equalizer span:nth-child(1) { height: 8px; background: #7d43ff; }
+.ann-equalizer span:nth-child(2) { height: 16px; background: #4388ff; }
+.ann-equalizer span:nth-child(3) { height: 11px; background: #ef5bce; }
+.ann-equalizer span:nth-child(4) { height: 14px; background: #7d43ff; }
+@media (prefers-reduced-motion: no-preference) {
+  .ann-equalizer span { animation: ann-eq-bounce 1.6s ease-in-out infinite; }
+  .ann-equalizer span:nth-child(2) { animation-delay: .15s; }
+  .ann-equalizer span:nth-child(3) { animation-delay: .3s; }
+  .ann-equalizer span:nth-child(4) { animation-delay: .45s; }
+  @keyframes ann-eq-bounce { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.5); } }
+}
+
+.ann-network { position: relative; margin: 0 auto 24px; max-width: 1520px; overflow: hidden; }
+.ann-network::before {
+  content: ''; position: absolute; z-index: 0; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 640px; height: 640px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(123,77,255,.16), transparent 62%);
+}
+/* overflow:hidden is explicit here because a root <svg> element (unlike a nested one) defaults
+   to overflow:visible — without this, a pulsing anchor-node's CSS transform:scale can paint a
+   sliver of itself outside the network box (getBBox ignores CSS transforms, so this isn't
+   caught by geometry alone; only visible on render). */
+.ann-connections { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: hidden; }
+/* Base connection line is SOLID — motion comes only from the traveling particle
+   (.ann-line-particle, real SVG <animateMotion>, no dash-flow trick on the line itself).
+   Lower resting opacity keeps the idle network calm; hover/active is where it comes alive. */
+.ann-line { fill: none; stroke-width: 1.5; stroke-linecap: round; opacity: .45; transition: opacity .2s ease, stroke-width .2s ease; }
+.ann-line.is-active { stroke-width: 2.25; opacity: 1; }
+.ann-line.is-dimmed { opacity: .1; }
+.ann-line-node { opacity: .55; transition: opacity .2s ease; }
+.ann-line-node.is-active { opacity: 1; }
+.ann-line-node.is-dimmed { opacity: .08; }
+.ann-line-particle { opacity: .85; filter: drop-shadow(0 0 5px currentColor) drop-shadow(0 0 2px currentColor); }
+.ann-line-particle.is-dimmed { opacity: .1; }
+.ann-anchor-node { opacity: .5; transition: opacity .2s ease; transform-box: fill-box; transform-origin: center; }
+.ann-anchor-node.is-active { opacity: 1; }
+.ann-anchor-node.is-dimmed { opacity: .12; }
+@media (prefers-reduced-motion: no-preference) {
+  .ann-anchor-node { animation: ann-anchor-pulse 3.2s ease-in-out infinite; }
+  @keyframes ann-anchor-pulse { 0%, 100% { transform: scale(1); opacity: .5; } 50% { transform: scale(1.5); opacity: 1; } }
+}
+
+.ann-grid { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 100px; align-items: center; justify-content: center; }
+/* Without an explicit align-items, a column flex container's default cross-axis alignment
+   resolves to the SAME physical side (RTL inline-start = physical right) in BOTH .ann-side
+   columns — which pushes the right column's cards outward (toward the page edge) but the left
+   column's cards inward (toward Frost), since "physical right" is the outer edge for one
+   column and the inner edge for the other. That asymmetry was the real cause of the left
+   network lines looking shorter/tighter than the right ones. Pinning each column to its own
+   OUTER physical edge keeps both sides an equal, mirrored distance from Frost. */
+.ann-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ann-side-right { align-items: flex-start; }
+.ann-side-left { align-items: flex-end; }
+
+/* Premium card language: soft surface, generous internal breathing room, restrained border —
+   reads as a specialist roster, not a data-table row. */
+/* One fixed card shell for all 12 agents: a HEIGHT (not min-height), plus title/description
+   both clamped to a single line (ellipsis, never wrap) — so the 12 cards read as one uniform
+   set regardless of how long any given agent's name or description happens to be. */
+.ann-node {
+  background: var(--color-canvas); border: 1px solid rgba(110,70,245,.08); border-radius: 20px;
+  padding: 16px 20px; display: flex; align-items: center; gap: 12px; width: 100%; max-width: 320px; height: 82px;
+  box-shadow: 0 6px 24px rgba(65,40,120,.06); cursor: pointer; position: relative; text-align: start;
+  font-family: var(--font-body); transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.ann-node:hover, .ann-node:focus-visible { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(65,40,120,.15); border-color: var(--ann-color, var(--color-lavender-glow)); z-index: 2; }
+.ann-node:focus-visible { outline: 3px solid var(--ann-color, var(--color-lavender-glow)); outline-offset: 2px; }
+.ann-node-icon { width: 48px; height: 48px; border-radius: 14px; background: color-mix(in srgb, var(--ann-color, var(--color-lavender-glow)) 14%, white); color: var(--ann-color, var(--color-royal-amethyst)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ann-node-icon svg { width: 23px; height: 23px; }
+.ann-node-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.ann-node-top { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.ann-node-number { font-size: 10px; font-weight: 600; color: var(--color-smoke); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.ann-node-top strong { font-size: 16px; color: var(--color-deep-iris); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ann-node-body > span:last-child { display: block; font-size: 13px; color: var(--color-slate); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ann-node-status { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--color-ash); margin-top: 3px; font-weight: 500; white-space: nowrap; flex-shrink: 0; width: 50px; }
+.ann-node-status-pending { color: #d97706; }
+
+.ann-tooltip {
+  position: absolute; top: calc(100% + 8px); inset-inline-start: 0; min-width: 240px; max-width: 280px;
+  background: var(--color-deep-iris); color: #fff; border-radius: var(--radius-card); padding: 12px 14px;
+  font-size: 12px; line-height: 1.7; box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden;
+  transform: translateY(-4px); transition: opacity .15s ease, transform .15s ease; z-index: 5; pointer-events: none;
+}
+.ann-node:hover .ann-tooltip, .ann-node:focus-visible .ann-tooltip { opacity: 1; visibility: visible; transform: translateY(0); }
+.ann-tooltip strong { display: block; color: var(--color-lavender-glow); font-size: 11px; margin-bottom: 2px; }
+.ann-tooltip p { margin: 0 0 8px; }
+.ann-tooltip p:last-child { margin-bottom: 0; }
+.ann-tooltip-approval { color: #fbbf24; }
+
+.ann-core {
+  position: relative; width: 288px; height: 288px; border-radius: 50%; flex-shrink: 0; margin-inline: auto;
+  background:
+    radial-gradient(circle at 32% 22%, rgba(244,114,182,.6), transparent 42%),
+    radial-gradient(circle at 72% 30%, rgba(236,72,153,.4), transparent 40%),
+    radial-gradient(circle at 68% 78%, rgba(59,130,246,.55), transparent 48%),
+    radial-gradient(circle at 50% 50%, var(--color-royal-amethyst) 0%, var(--color-deep-iris) 60%, #1a0e38 100%);
+  color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 24px; cursor: pointer; border: none; font-family: var(--font-body);
+  box-shadow:
+    inset 0 2px 24px rgba(255,255,255,.18),
+    inset 0 -18px 40px rgba(0,0,0,.35),
+    0 24px 80px -12px rgba(124,58,237,.6),
+    0 0 90px -10px rgba(236,72,153,.35);
+}
+/* Soft upper-left glass highlight — a real dimensional layer, not just a flat gradient fill. */
+.ann-core::before {
+  content: ''; position: absolute; top: 8%; inset-inline-start: 14%; width: 46%; height: 30%;
+  border-radius: 50%; background: radial-gradient(ellipse, rgba(255,255,255,.35), transparent 70%);
+  pointer-events: none; filter: blur(2px);
+}
+.ann-core:focus-visible { outline: 3px solid var(--color-lavender-glow); outline-offset: 4px; }
+.ann-core-ring { position: absolute; inset: -20px; border-radius: 50%; border: 1px solid var(--color-lavender-glow); opacity: .35; }
+.ann-core-ring-2 { inset: -38px; border-color: #f472b6; opacity: .2; }
+.ann-core-ring-3 { inset: -58px; border-color: #60a5fa; opacity: .14; border-style: dashed; }
+@media (prefers-reduced-motion: no-preference) {
+  .ann-core { animation: ann-core-breathe 4.5s ease-in-out infinite; }
+  .ann-core-ring { animation: ann-core-pulse 3.2s ease-in-out infinite; }
+  .ann-core-ring-2 { animation: ann-core-pulse 3.2s ease-in-out infinite .4s; }
+  .ann-core-ring-3 { animation: ann-core-spin 60s linear infinite; }
+  @keyframes ann-core-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.015); } }
+  @keyframes ann-core-pulse { 0%, 100% { transform: scale(1); opacity: .35; } 50% { transform: scale(1.06); opacity: .12; } }
+  @keyframes ann-core-spin { to { transform: rotate(360deg); } }
+}
+.ann-core-logo { width: 46px; height: 46px; margin-bottom: 6px; color: var(--color-lavender-glow); filter: drop-shadow(0 0 8px rgba(185,154,255,.5)); }
+.ann-core-logo svg { width: 100%; height: 100%; }
+.ann-core strong { display: block; font-size: 40px; font-weight: 700; letter-spacing: .02em; font-family: var(--font-display); }
+.ann-core-subtitle { display: block; font-size: 15px; color: var(--color-lavender-glow); font-weight: 600; margin-top: 4px; }
+.ann-core-caption { display: block; font-size: 12.5px; color: #e4d9ff; margin-top: 12px; line-height: 1.8; letter-spacing: .02em; }
+.ann-core-status { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; font-weight: 600; margin-top: 14px; background: rgba(255,255,255,.12); padding: 6px 16px; border-radius: var(--radius-pill); }
+.ann-core-count { display: block; font-size: 11px; color: #cbb8ff; margin-top: 10px; }
+
+/* Short, confident single line of consequence — not another paragraph-heavy card. */
+.ann-approval-note {
+  display: flex; align-items: center; justify-content: center; gap: 12px; text-align: start; max-width: 520px; margin: -16px auto 28px;
+  background: rgba(255,255,255,.92); border: 1px solid rgba(110,70,245,.1); border-radius: var(--radius-pill);
+  padding: 12px 22px; box-shadow: 0 8px 30px rgba(65,40,120,.08); position: relative; z-index: 2;
+}
+.ann-approval-icon { width: 34px; height: 34px; border-radius: 50%; background: var(--color-mist-violet); color: var(--color-royal-amethyst); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ann-approval-icon svg { width: 17px; height: 17px; }
+.ann-approval-note strong { font-size: 14px; color: var(--color-deep-iris); font-weight: 600; }
+.ann-approval-note span { font-size: 13px; color: var(--color-slate); margin-inline-start: 6px; }
+
+.ann-demo { background: var(--color-paper); border-top: 1px solid var(--color-mist); border-radius: 0 0 var(--radius-large) var(--radius-large); margin: 24px -36px 0; padding: 18px 36px 20px; }
+.ann-demo-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.ann-demo-head h4 { margin: 0; font-size: 14px; font-weight: 600; color: var(--color-deep-iris); }
+.ann-demo-run-btn { display: inline-flex; align-items: center; gap: 8px; }
+.ann-demo-run-btn svg { width: 14px; height: 14px; }
+.ann-demo-trigger { background: var(--color-canvas); border: 1px solid var(--color-mist); border-radius: var(--radius-card); padding: 6px 12px; font-size: 11px; margin: 0 0 10px; display: inline-block; }
+/* A compact breadcrumb of chips — supports the workflow above with one concrete example
+   instead of repeating it as a second, equally-large flow. */
+.ann-demo-chips { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ann-demo-chip {
+  display: flex; align-items: center; gap: 8px; background: var(--color-canvas); border: 1px solid var(--color-mist);
+  border-radius: var(--radius-pill); padding: 8px 16px; font-size: 13px; color: var(--color-deep-iris);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.ann-demo-chip:not(:last-child)::after { content: '←'; color: var(--color-smoke); font-size: 13px; margin-inline-start: 4px; }
+.ann-demo-chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-smoke); flex-shrink: 0; }
+.ann-demo-chip-status { font-size: 11px; color: var(--color-ash); }
+.ann-demo-chip.is-active { border-color: var(--color-lavender-glow); box-shadow: 0 4px 16px rgba(124,58,237,.14); }
+.ann-demo-chip.is-active .ann-demo-chip-dot { background: var(--color-royal-amethyst); }
+.ann-demo-chip.is-done .ann-demo-chip-dot { background: #16a34a; }
+.ann-demo-chip.is-done .ann-demo-chip-status { color: #16a34a; }
+.ann-demo-chip.is-waiting .ann-demo-chip-dot { background: #d97706; }
+.ann-demo-chip.is-waiting .ann-demo-chip-status { color: #d97706; }
+
+.ann-workflow {
+  margin: 0 auto 32px; max-width: 1520px; background: var(--color-canvas); border: 1px solid var(--color-mist);
+  border-radius: var(--radius-large); box-shadow: var(--shadow-sm); padding: 40px 36px 0; overflow: hidden;
+}
+.ann-workflow-head { margin: 0 auto 8px; }
+.ann-workflow-track {
+  list-style: none; display: flex; align-items: flex-start; justify-content: center; flex-wrap: nowrap;
+  gap: 0; margin: 0; padding: 24px 4px 28px; overflow-x: auto; scroll-snap-type: x proximity;
+  scrollbar-width: thin; scrollbar-color: var(--color-mist) transparent;
+}
+.ann-workflow-track::-webkit-scrollbar { height: 6px; }
+.ann-workflow-track::-webkit-scrollbar-thumb { background: var(--color-mist); border-radius: var(--radius-pill); }
+.ann-workflow-track::-webkit-scrollbar-track { background: transparent; }
+.ann-workflow-step { scroll-snap-align: start; flex: 0 0 auto; width: 168px; display: flex; flex-direction: column; align-items: center; text-align: center; position: relative; gap: 8px; padding: 0 6px; }
+/* Plays once, automatically, the moment the element paints — never gated on scroll position
+   or IntersectionObserver timing (a scroll-triggered version of this bit visitors twice: on a
+   tall page the observer's viewport check can simply never fire in time, leaving the whole
+   step permanently at opacity:0). animation-fill-mode:backwards means each step is already at
+   its "from" state before its delay elapses, so nothing flashes unstyled first. */
+@media (prefers-reduced-motion: no-preference) {
+  .ann-workflow-step { animation: ann-workflow-appear .5s ease-out both; }
+  .ann-workflow-step:nth-child(1) { animation-delay: 0s; } .ann-workflow-step:nth-child(3) { animation-delay: .08s; }
+  .ann-workflow-step:nth-child(5) { animation-delay: .16s; } .ann-workflow-step:nth-child(7) { animation-delay: .24s; }
+  .ann-workflow-step:nth-child(9) { animation-delay: .32s; } .ann-workflow-step:nth-child(11) { animation-delay: .4s; }
+  .ann-workflow-step:nth-child(13) { animation-delay: .48s; }
+  @keyframes ann-workflow-appear { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+}
+.ann-workflow-connector { flex: 0 0 auto; display: flex; align-items: center; padding-top: 32px; width: 40px; justify-content: center; }
+.ann-workflow-icon { width: 64px; height: 64px; border-radius: 20px; background: color-mix(in srgb, var(--ann-color, var(--color-lavender-glow)) 14%, white); color: var(--ann-color, var(--color-royal-amethyst)); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-sm); flex-shrink: 0; }
+.ann-workflow-icon svg { width: 28px; height: 28px; }
+.ann-workflow-label { font-size: 15px; font-weight: 600; color: var(--color-deep-iris); line-height: 1.35; }
+.ann-workflow-note { font-size: 12px; color: var(--color-ash); line-height: 1.4; }
+.ann-workflow-tag { position: absolute; top: -20px; background: #fee2e2; color: #b91c1c; font-size: 10.5px; font-weight: 600; padding: 3px 12px; border-radius: var(--radius-pill); white-space: nowrap; }
+.ann-workflow-step.is-approval .ann-workflow-icon { box-shadow: 0 0 0 4px #fecdd3; }
+.ann-workflow-step.is-approval .ann-workflow-label { color: #be123c; }
+.ann-workflow-arrow { color: var(--color-smoke); font-size: 22px; }
+
+.ann-cta { text-align: center; padding-top: 36px; border-top: 1px solid var(--color-mist); }
+.ann-cta h3 { font-size: var(--text-heading-sm); color: var(--color-deep-iris); margin: 20px 0 0; }
+.ann-cta .btn svg { width: 14px; height: 14px; }
+
+.ann-noscript-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.ann-noscript-list li { background: var(--color-canvas); border: 1px solid var(--color-mist); border-radius: var(--radius-card); padding: 12px 14px; font-size: 13px; }
+
+.ann-panel-backdrop { position: fixed; inset: 0; background: rgba(26, 0, 46, .4); z-index: 90; }
+.ann-panel-backdrop[hidden] { display: none; }
+.ann-panel { position: fixed; top: 0; bottom: 0; inset-inline-end: 0; width: min(420px, 100%); background: var(--color-canvas); z-index: 91; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
+.ann-panel[hidden] { display: none; }
+.ann-panel-head { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--color-mist); }
+.ann-panel-icon { width: 36px; height: 36px; border-radius: var(--radius-icon); background: var(--color-mist-violet); color: var(--color-royal-amethyst); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ann-panel-icon svg { width: 18px; height: 18px; }
+.ann-panel-head h3 { flex: 1; margin: 0; font-size: var(--text-subheading); color: var(--color-deep-iris); }
+.ann-panel-close { background: transparent; border: none; font-size: 16px; color: var(--color-slate); cursor: pointer; width: 32px; height: 32px; border-radius: 50%; }
+.ann-panel-close:hover { background: var(--color-mist-violet); }
+.ann-panel-close:focus-visible { outline: 3px solid var(--color-lavender-glow); outline-offset: 2px; }
+.ann-panel-body { padding: 24px; overflow-y: auto; flex: 1; }
+.ann-panel-body h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--color-ash); margin: 20px 0 8px; }
+.ann-panel-body h4:first-child { margin-top: 0; }
+.ann-panel-body p { margin: 0 0 4px; font-size: 14px; color: var(--color-charcoal); }
+.ann-panel-body ul { list-style: none; margin: 0; padding: 0; font-size: 14px; color: var(--color-charcoal); }
+.ann-panel-body li { position: relative; padding-inline-start: 16px; margin-bottom: 4px; }
+.ann-panel-body li::before { content: '•'; position: absolute; inset-inline-start: 0; color: var(--color-lavender-glow); }
+.ann-panel-approval { margin-top: 20px; padding: 12px 14px; background: #fff7ed; border: 1px solid #fdba74; border-radius: var(--radius-card); color: #9a3412; font-size: 13px; }
+
+@media (max-width: 900px) {
+  /* The orchestration scene (#ann-scene) keeps its full desktop composition at every viewport —
+     it is scaled to fit via transform:scale() in .ann-scene-stage/.ann-scene below, never
+     reflowed. Rules here are only for chrome OUTSIDE that scaled scene. */
+  .ann-panel { width: 100%; }
+  .ann-noscript-list { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+  .ann-noscript-list { grid-template-columns: 1fr; }
+  .agent-network-section { padding-top: 48px; padding-bottom: 48px; }
+}
 
 /* --- Channel badges (integrations) — a real icon + label per channel (simple, original line
    glyphs, not reproduced trademarked logo artwork), never a fabricated "trusted by" logo bar --- */
@@ -374,16 +586,13 @@ footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-directi
 /* --- Responsive --- */
 @media (max-width: 900px) {
   .feature-grid { grid-template-columns: 1fr 1fr; }
-  .agent-grid { grid-template-columns: 1fr 1fr; }
   .stats-strip { grid-template-columns: 1fr 1fr; }
   .showcase, .showcase.reverse { grid-template-columns: 1fr; direction: rtl; }
   .footer-grid { grid-template-columns: 1fr 1fr; }
-  .hero h1 { font-size: 40px; }
 }
 @media (max-width: 600px) {
-  .feature-grid, .agent-grid, .stats-strip, .footer-grid { grid-template-columns: 1fr; }
+  .feature-grid, .stats-strip, .footer-grid { grid-template-columns: 1fr; }
   .site-nav nav { display: none; }
-  .hero { padding: 110px 0 64px; }
   .cta-banner { margin: 0 16px; padding: 40px 24px; }
 }
 
@@ -398,3 +607,17 @@ footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-directi
 .subhead-32 { font-size: 32px; margin: 16px 0; }
 .footer-brand-copy { margin-top: 16px; max-width: 320px; }
 .caption-note { color: var(--color-ash); font-size: 13px; margin-top: 12px; }
+
+/* Pricing (mirrors src/plans.js exactly — same 4 tiers, same prices, same feature split). */
+.pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; }
+.pricing-card { position: relative; background: var(--color-canvas); border: 1px solid var(--color-mist); border-radius: var(--radius-large); padding: 32px 28px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow-sm); }
+.pricing-card.highlighted { border-color: var(--color-deep-iris); box-shadow: var(--shadow-lg); }
+.pricing-ribbon { position: absolute; top: -14px; inset-inline-start: 24px; background: var(--gradient-twilight-beam); color: #fff; font-size: 12px; font-weight: 700; padding: 6px 14px; border-radius: var(--radius-pill); }
+.pricing-card h3 { font-size: var(--text-subheading); color: var(--color-deep-iris); margin: 4px 0 0; }
+.pricing-tagline { color: var(--color-slate); font-size: var(--text-body-sm); margin: 0; min-height: 40px; }
+.pricing-price { font-size: 30px; font-weight: 700; color: var(--color-carbon); margin: 4px 0; }
+.pricing-price span { font-size: var(--text-body-sm); font-weight: 400; color: var(--color-slate); }
+.pricing-features { list-style: none; padding: 0; margin: 0 0 8px; display: flex; flex-direction: column; gap: 10px; }
+.pricing-features li { font-size: var(--text-body-sm); color: var(--color-charcoal); padding-inline-start: 22px; position: relative; }
+.pricing-features li::before { content: '✓'; position: absolute; inset-inline-start: 0; color: var(--color-deep-iris); font-weight: 700; }
+.pricing-card .btn { margin-top: auto; text-align: center; }

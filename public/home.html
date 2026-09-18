@@ -12,12 +12,13 @@
 <body>
 
 <div class="site-nav wrap">
-  <a href="#top" class="brand-lockup"><span class="brand-mark">H</span><span dir="ltr">HYPER<span class="wordmark-bold">COOL</span></span></a>
+  <a href="#agents" class="brand-lockup"><span class="brand-mark">H</span><span dir="ltr">HYPER<span class="wordmark-bold">COOL</span></span></a>
   <nav>
     <a class="pill-nav-btn" href="#features">المميزات</a>
     <a class="pill-nav-btn" href="#agents">الوكلاء</a>
     <a class="pill-nav-btn" href="#channels">القنوات</a>
     <a class="pill-nav-btn" href="#how-it-works">كيف يعمل</a>
+    <a class="pill-nav-btn" href="#pricing">الباقات</a>
   </nav>
   <div class="nav-actions">
     <a class="btn btn-ghost btn-sm" href="/app#overview">تسجيل الدخول</a>
@@ -25,39 +26,97 @@
   </div>
 </div>
 
-<header class="hero" id="top">
-  <div class="wrap hero-inner">
-    <div class="hero-illustration" aria-hidden="true">
-      <svg viewBox="0 0 640 230" preserveAspectRatio="none">
-        <defs><linearGradient id="threadGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b99aff"/><stop offset="1" stop-color="#7d43ff"/></linearGradient></defs>
-        <path d="M 70 40 Q 200 130 300 195" stroke="url(#threadGrad)" stroke-width="2" fill="none" opacity="0.45"/>
-        <path d="M 555 60 Q 420 140 340 195" stroke="url(#threadGrad)" stroke-width="2" fill="none" opacity="0.45"/>
-        <path d="M 320 24 Q 320 110 320 195" stroke="url(#threadGrad)" stroke-width="2" fill="none" opacity="0.45"/>
-      </svg>
-      <div class="lead-card c1"><span class="dot"></span><span>عميل جديد<span class="muted"> · الرياض</span></span></div>
-      <div class="lead-card c2"><span class="dot"></span><span>فرصة B2B<span class="muted"> · 45,000 ر.س</span></span></div>
-      <div class="lead-card c3"><span class="dot"></span><span>عميل ساخن<span class="muted"> · واتساب</span></span></div>
-      <div class="hero-orb" dir="ltr">HYPERCOOL</div>
-    </div>
-    <span class="pill">مركز تشغيل واحد بالذكاء الاصطناعي</span>
-    <h1>من الفكرة إلى محتوى معتمد، ومن الرسالة الأولى إلى صفقة مغلقة — في مكان واحد</h1>
-    <p class="lead">HyperCool يجمع التسويق والمبيعات وخدمة العملاء والتكاملات في مساحة عمل واحدة، يديرها فريق من 12 وكيل ذكاء اصطناعي متخصص — مع اعتماد بشري إلزامي قبل أي نشر أو إرسال فعلي.</p>
-    <div class="hero-ctas">
-      <a class="btn btn-filled" href="/app#overview">ابدأ مجانًا</a>
-      <a class="btn btn-ghost" href="#how-it-works">شاهد كيف يعمل</a>
-    </div>
-    <div class="browser-frame">
-      <div class="browser-chrome">
-        <div class="dots"><span></span><span></span><span></span></div>
-        <div class="url-bar">app.hyper-cool.com/#marketing</div>
+<section class="section agent-network-section" id="agents">
+  <span class="ann-bg-accent" aria-hidden="true"></span>
+  <span class="ann-bg-accent ann-bg-accent-2" aria-hidden="true"></span>
+  <div class="ann-scene-stage" id="ann-scene-stage">
+   <div class="ann-scene" id="ann-scene">
+    <div class="ann-hero">
+      <div class="section-head ann-hero-headline">
+        <span class="pill"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="12" height="12"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z"/></svg>فريق كامل، بعقل واحد</span>
+        <h2>12 وكيل ذكاء اصطناعي،<br>يديرهم <span class="ann-frost-highlight">Frost</span> كفريق واحد</h2>
+        <p>أعطِ HyperCool الهدف فقط — Frost يخطط، يوزّع المهام على الوكيل المناسب، وينفّذ حتى النهاية، مع موافقتك قبل أي قرار حساس.</p>
       </div>
-      <div class="shot-body">
-        <img src="/assets/screenshots/hero-marketing-overview.png" alt="لقطة حقيقية من واجهة HyperCool — نظرة عامة على التسويق والسوشيال" loading="lazy">
+
+      <div class="ann-hero-status-row">
+        <div class="ann-mini-card ann-status">
+          <span class="status-dot ok" aria-hidden="true"></span>
+          <div><strong>النظام يعمل</strong><span>12/12 وكيل متصل — Frost ينسّق العمل</span></div>
+          <span class="ann-equalizer" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        </div>
+        <div class="ann-mini-card ann-event" id="ann-event-ticker" aria-live="polite">
+          <span class="ann-event-icon" id="ann-event-icon" aria-hidden="true"></span>
+          <div><strong id="ann-event-title">Lead جديد</strong><span id="ann-event-sub">وصل عبر واتساب · B2B · 45,000 ريال</span></div>
+        </div>
       </div>
-      <div class="float-toast"><span class="check">✓</span><span>تم اعتماد المحتوى تلقائيًا بعد فحص امتثال حقيقي</span></div>
     </div>
+
+    <div class="ann-network" id="ann-network">
+      <svg class="ann-connections" id="ann-connections" aria-hidden="true" focusable="false"></svg>
+      <div id="ann-nodes"></div>
+      <noscript>
+        <ul class="ann-noscript-list">
+          <li>Frost — إدارة المنظومة وتوجيه الوكلاء</li>
+          <li>استراتيجية المحتوى — تخطيط المحتوى وربطه بأهداف البزنس</li>
+          <li>كتابة المحتوى — صياغة عربية وإنجليزية لكل منصة</li>
+          <li>التصميم — إنشاء التصاميم والصور وسيناريوهات الفيديو</li>
+          <li>مراجعة الامتثال — التحقق من الأسعار والمواصفات والادعاءات</li>
+          <li>النشر والجدولة — تنفيذ المحتوى المعتمد فقط</li>
+          <li>العملاء المحتملون — فرز العملاء وتجهيز ملخص مؤهل</li>
+          <li>المحادثات والمبيعات — تأهيل العميل وتحريك الصفقة</li>
+          <li>المتابعة — متابعات بعد موافقة العميل فقط</li>
+          <li>رصد السوق — متابعة السوق والمنافسين واتجاهات النمو</li>
+          <li>قياس الأداء — تحليل النتائج واقتراح التحسينات</li>
+          <li>ذاكرة العلامة — المعلومات المعتمدة والدروس المستفادة</li>
+          <li>مساعد غرفة القيادة — يجيب عن أسئلة الأداء ويقرأ حالة النظام</li>
+        </ul>
+      </noscript>
+    </div>
+
+    <div class="ann-approval-note">
+      <span class="ann-approval-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"/></svg></span>
+      <div><strong>أنت صاحب القرار</strong><span>الإجراءات الحساسة لا تُنفّذ قبل موافقتك.</span></div>
+    </div>
+
+    <div class="ann-workflow" id="ann-workflow">
+      <div class="section-head ann-workflow-head">
+        <span class="pill">مثال حي</span>
+        <h3>شاهد كيف يعمل الفريق</h3>
+        <p>مثال واحد من الفكرة إلى النشر والتحسين.</p>
+      </div>
+      <ol class="ann-workflow-track" id="ann-workflow-track"></ol>
+
+      <div class="ann-demo" id="ann-demo">
+        <div class="ann-demo-head">
+          <h4>هكذا يوجّه Frost طلبًا حقيقيًا</h4>
+          <button type="button" class="btn btn-ghost btn-sm ann-demo-run-btn" id="ann-demo-run"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>عرض المثال</button>
+        </div>
+        <p class="ann-demo-trigger"><strong>المُحفّز:</strong> وصل Lead جديد من واتساب</p>
+        <ol class="ann-demo-chips" id="ann-demo-steps"></ol>
+        <p class="caption-note">* مثال توضيحي لسير العمل — وليس بثًا مباشرًا لبيانات عميل حقيقي.</p>
+      </div>
+    </div>
+
+    <div class="ann-cta">
+      <h3>بدل ما تدير 12 أداة، خلِّ Frost يدير الفريق بالكامل</h3>
+      <div class="hero-ctas">
+        <a class="btn btn-filled" href="/app#overview"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z"/></svg>ابدأ الآن</a>
+        <a class="btn btn-ghost" href="#how-it-works"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>شاهد كيف يعمل</a>
+      </div>
+    </div>
+   </div>
   </div>
-</header>
+
+  <div class="ann-panel-backdrop" id="ann-panel-backdrop" hidden></div>
+  <aside class="ann-panel" id="ann-panel" hidden aria-labelledby="ann-panel-title">
+    <div class="ann-panel-head">
+      <span class="ann-panel-icon" id="ann-panel-icon" aria-hidden="true"></span>
+      <h3 id="ann-panel-title"></h3>
+      <button type="button" class="ann-panel-close" id="ann-panel-close" aria-label="إغلاق">✕</button>
+    </div>
+    <div class="ann-panel-body" id="ann-panel-body"></div>
+  </aside>
+</section>
 
 <section class="wrap stats-wrap">
   <div class="stats-strip">
@@ -131,30 +190,6 @@
   </div>
 </section>
 
-<section class="section" id="agents">
-  <div class="wrap">
-    <div class="section-head">
-      <span class="pill">فريق كامل، لا أداة واحدة</span>
-      <h2>12 وكيل ذكاء اصطناعي متخصص</h2>
-      <p>كل وكيل له نطاق عمل محدد وصلاحيات واضحة — ولا يتصرف أي منهم خارج ما يسمح به فريقك.</p>
-    </div>
-    <div class="agent-grid">
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>Frost</strong><span>إدارة المنظومة وترتيب الأولويات</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>استراتيجية المحتوى</strong><span>تخطيط المحتوى وربطه بأهداف المبيعات</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>كتابة المحتوى</strong><span>صياغة عربية وإنجليزية لكل منصة</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>التصميم</strong><span>التصور البصري وسيناريوهات الفيديو</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>مراجعة الامتثال</strong><span>التحقق من الأسعار والمواصفات والادعاءات</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>النشر والجدولة</strong><span>تنفيذ المحتوى المعتمد فقط</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>العملاء المحتملون</strong><span>فرص بيع بمصادر ومحفز شراء موثّق</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>المحادثات والمبيعات</strong><span>تأهيل العميل وتجهيز عرض السعر</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>المتابعة</strong><span>متابعات بموافقة العميل فقط</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>رصد السوق</strong><span>المنافسون واتجاهات السوق</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>قياس الأداء</strong><span>تحليل النتائج واقتراح التحسينات</span></div></div>
-      <div class="agent-card"><span class="agent-avatar"></span><div><strong>ذاكرة العلامة</strong><span>المعلومات المعتمدة والدروس المستفادة</span></div></div>
-    </div>
-  </div>
-</section>
-
 <section class="section tint" id="how-it-works">
   <div class="wrap">
     <div class="section-head">
@@ -218,6 +253,66 @@
   </div>
 </section>
 
+<section class="section tint" id="pricing">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="pill">باقات واضحة، بلا مفاجآت</span>
+      <h2>اختر الباقة المناسبة لحجم عملك</h2>
+      <p>كل باقة تربط عدد الوكلاء والقنوات والمزايا المتاحة فعليًا في حسابك — لا حدود مخفية.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="pricing-card">
+        <h3>الأساسية</h3>
+        <p class="pricing-tagline">لأصحاب الأعمال اللي بادئين يبنوا حضورهم الرقمي</p>
+        <p class="pricing-price">990 <span>ريال / شهريًا</span></p>
+        <ul class="pricing-features">
+          <li>4 وكلاء أساسيين: Frost، كتابة المحتوى، النشر والجدولة، العملاء المحتملون</li>
+          <li>قناة واتساب بزنس</li>
+          <li>حتى عضوين في الفريق</li>
+          <li>تقويم نشر ومحتوى أساسي</li>
+        </ul>
+        <a class="btn btn-ghost" href="/app#overview">ابدأ الآن</a>
+      </div>
+      <div class="pricing-card">
+        <h3>النمو</h3>
+        <p class="pricing-tagline">لفرق التسويق والمبيعات النشطة على أكثر من قناة</p>
+        <p class="pricing-price">2,490 <span>ريال / شهريًا</span></p>
+        <ul class="pricing-features">
+          <li>9 وكلاء — يضيف الاستراتيجية والتصميم ومراجعة الامتثال والمحادثات والمتابعة</li>
+          <li>واتساب بزنس + ميتا + إكس</li>
+          <li>حتى 5 أعضاء في الفريق</li>
+          <li>أتمتة المتابعات والجدولة، وتقارير أداء متقدمة</li>
+        </ul>
+        <a class="btn btn-ghost" href="/app#overview">ابدأ الآن</a>
+      </div>
+      <div class="pricing-card highlighted">
+        <span class="pricing-ribbon">الأكثر طلبًا</span>
+        <h3>الاحترافية</h3>
+        <p class="pricing-tagline">القسم الاحترافي — كل الوكلاء وكل القنوات في مكان واحد</p>
+        <p class="pricing-price">4,990 <span>ريال / شهريًا</span></p>
+        <ul class="pricing-features">
+          <li>كل الوكلاء الـ13 بلا استثناء</li>
+          <li>كل القنوات: واتساب، ميتا، إكس، لينكدإن، مايكروسوفت 365، سلة، زد</li>
+          <li>غرفة القيادة (Frost Command Center)</li>
+          <li>أعضاء فريق غير محدودين، وتقارير وتحليلات متقدمة</li>
+        </ul>
+        <a class="btn btn-filled" href="/app#overview">ابدأ الآن</a>
+      </div>
+      <div class="pricing-card">
+        <h3>المؤسسات</h3>
+        <p class="pricing-tagline">تكاملات مخصصة ودعم مباشر واتفاقية مستوى خدمة</p>
+        <p class="pricing-price">تبدأ من 8,000 <span>ريال / شهريًا</span></p>
+        <ul class="pricing-features">
+          <li>كل مزايا الباقة الاحترافية</li>
+          <li>تكاملات مخصصة عبر REST/OAuth2 لأنظمتكم الداخلية</li>
+          <li>دعم مباشر واتفاقية مستوى خدمة (SLA)</li>
+        </ul>
+        <a class="btn btn-ghost" href="/app#overview">ابدأ الآن</a>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="wrap">
   <div class="cta-banner">
     <h2>جاهز تبدأ؟</h2>
@@ -232,7 +327,7 @@
 <footer class="wrap">
   <div class="footer-grid">
     <div>
-      <a href="#top" class="brand-lockup"><span class="brand-mark">H</span><span dir="ltr">HYPER<span class="wordmark-bold">COOL</span></span></a>
+      <a href="#agents" class="brand-lockup"><span class="brand-mark">H</span><span dir="ltr">HYPER<span class="wordmark-bold">COOL</span></span></a>
       <p class="footer-brand-copy">مركز تشغيل واحد للتسويق والمبيعات وخدمة العملاء، بوكلاء ذكاء اصطناعي حقيقيين واعتماد بشري إلزامي.</p>
     </div>
     <div>
@@ -242,6 +337,7 @@
         <li><a href="#agents">الوكلاء</a></li>
         <li><a href="#channels">القنوات</a></li>
         <li><a href="#how-it-works">كيف يعمل</a></li>
+        <li><a href="#pricing">الباقات</a></li>
       </ul>
     </div>
     <div>
@@ -264,5 +360,6 @@
   </div>
 </footer>
 
+<script defer src="/agent-network.js"></script>
 </body>
 </html>
