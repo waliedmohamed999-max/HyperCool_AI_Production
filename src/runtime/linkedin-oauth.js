@@ -83,14 +83,16 @@ export async function resolveAdministeredOrganizations({fetcher=fetch,accessToke
  const data=await requestJson(fetcher,`${API_BASE}/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&projection=(elements*(organizationalTarget~(id,localizedName)))`,{headers:{authorization:`Bearer ${accessToken}`,'X-Restli-Protocol-Version':'2.0.0'}});
  return (data.elements||[]).map(el=>({id:String(el['organizationalTarget~']?.id||''),name:el['organizationalTarget~']?.localizedName||null})).filter(org=>org.id);
 }
-export function saveLinkedInConnection(db,env,{accessToken,refreshToken,expiresAt,scopes},profile,organization,user) {
+// Phase MKT-2, Part F/O — see x-oauth.js's matching comment: tenantId now threads through
+// every real call site instead of silently falling back to the single-tenant default.
+export function saveLinkedInConnection(db,env,{accessToken,refreshToken,expiresAt,scopes},profile,organization,user,tenantId=null) {
  return saveCredentials(db,env,'linkedin',{
   accessToken,refreshToken,expiresAt,scopes,externalAccountId:organization?.id||profile?.sub||null,
   metadata:{profile:profile?{sub:profile.sub,name:profile.name,email:profile.email}:null,organization:organization||null}
- },user);
+ },user,tenantId);
 }
-export function linkedInOAuthStatus(db) {
- const meta=getCredentialsMeta(db,'linkedin');
+export function linkedInOAuthStatus(db,tenantId=null) {
+ const meta=getCredentialsMeta(db,'linkedin',tenantId);
  if(!meta)return {connected:false};
  return {
   connected:true,expiresAt:meta.expiresAt,scopes:meta.scopes,
@@ -100,8 +102,8 @@ export function linkedInOAuthStatus(db) {
   tokenExpired:isExpiringSoon(meta.expiresAt,0),reauthorizeRequired:isExpiringSoon(meta.expiresAt,0)
  };
 }
-export function disconnectLinkedIn(db) {
- clearCredentials(db,'linkedin');
+export function disconnectLinkedIn(db,tenantId=null) {
+ clearCredentials(db,'linkedin',tenantId);
 }
 export function setLinkedInOrganization(db,organization) {
  return updateCredentialsMetadata(db,'linkedin',{organization});

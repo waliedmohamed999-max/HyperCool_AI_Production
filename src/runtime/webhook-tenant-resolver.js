@@ -23,6 +23,25 @@ export function resolveTenantForWhatsAppPhoneNumberId(db,phoneNumberId) {
  }
  return null;
 }
+/**
+ * Phase MKT-2, Part I — resolves a Facebook Messenger or Instagram DM/comment webhook to the
+ * tenant that actually connected that Page/Instagram Business Account. Meta's real messaging
+ * webhook shape puts the id the message was sent TO as `entry[].id` — a Page id for the
+ * 'page' object (Messenger), or the Instagram Business Account id for the 'instagram' object.
+ * This checks both: `external_account_id` is the connected Page (matches saveMetaConnection's
+ * `externalAccountId:page.id`), and the mirrored `metadata.instagram.id` is the linked IG
+ * account — exactly the same two ids `meta-publishing.js`'s `pageId`/`instagramAccountId`
+ * helpers already read for outbound publishing.
+ */
+export function resolveTenantForMetaPageId(db,pageOrInstagramId) {
+ if(!pageOrInstagramId)return null;
+ for(const row of db.prepare("SELECT tenant_id AS tenantId, external_account_id AS externalAccountId, external_account_metadata AS metadata FROM integration_connections WHERE integration_definition_id='meta'").all()) {
+  if(row.externalAccountId===pageOrInstagramId)return row.tenantId;
+  const metadata=row.metadata?JSON.parse(row.metadata):null;
+  if(metadata?.instagram?.id===pageOrInstagramId)return row.tenantId;
+ }
+ return null;
+}
 export function resolveTenantForMicrosoftSubscription(db,subscriptionId) {
  if(!subscriptionId)return null;
  for(const row of db.prepare("SELECT tenant_id AS tenantId, external_account_metadata AS metadata FROM integration_connections WHERE integration_definition_id='microsoft365'").all()) {

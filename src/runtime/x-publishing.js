@@ -81,8 +81,8 @@ export async function publishTweet({store,env,fetcher=fetch},{text},tenantId=nul
  * converts a missing field into 0: an unreturned metric stays null and the caller marks
  * analytics coverage PARTIAL, not fabricates a zero (spec Part W/Y).
  */
-export async function getXPostMetrics({store,env,fetcher=fetch},externalPostId) {
- const resolved=await resolveXAccessToken({store,env,fetcher},'read');
+export async function getXPostMetrics({store,env,fetcher=fetch},externalPostId,tenantId=null) {
+ const resolved=await resolveXAccessToken({store,env,fetcher},'read',tenantId);
  if(!resolved)return {status:'INTEGRATION_REQUIRED'};
  const {response,data,networkError}=await requestJson(fetcher,`${API_BASE}/tweets/${externalPostId}?tweet.fields=public_metrics`,{headers:{authorization:`Bearer ${resolved.token}`}});
  if(networkError)return {status:'NOT_AVAILABLE',reason:'NETWORK_OR_TIMEOUT'};
@@ -96,21 +96,38 @@ export async function getXPostMetrics({store,env,fetcher=fetch},externalPostId) 
  };
 }
 /**
+ * Phase MKT-2, Part F — the connected account's real follower count via X API v2's
+ * `users/me` with `user.fields=public_metrics`. Needs the OAuth user-context token (same as
+ * publishing) — the read-only app bearer alone cannot resolve "me". Reported as
+ * INTEGRATION_REQUIRED (not NOT_AVAILABLE) when only the bearer-only read path is configured,
+ * matching testXConnection's existing distinction between full OAuth and read-only setups.
+ */
+export async function getXFollowerCount({store,env,fetcher=fetch},tenantId=null) {
+ const resolved=await resolveXAccessToken({store,env,fetcher},'publish',tenantId);
+ if(!resolved)return {status:'INTEGRATION_REQUIRED'};
+ const {response,data,networkError}=await requestJson(fetcher,`${API_BASE}/users/me?user.fields=public_metrics`,{headers:{authorization:`Bearer ${resolved.token}`}});
+ if(networkError)return {status:'NOT_AVAILABLE',reason:'NETWORK_OR_TIMEOUT'};
+ if(!response.ok||!data?.data)return {status:'NOT_AVAILABLE',reason:classifyXError(response.status,data).code};
+ const followers=data.data.public_metrics?.followers_count;
+ if(!Number.isFinite(followers))return {status:'NOT_AVAILABLE',reason:'NO_DATA_RETURNED'};
+ return {status:'OK',capturedAt:new Date().toISOString(),followers,userId:data.data.id||null};
+}
+/**
  * Real, minimal connectivity check for the Integrations page's "اختبار الاتصال" button —
  * never claims OK without an actual API response. An OAuth connection proves full identity
  * (and therefore publishing capability); a static X_BEARER_TOKEN-only setup can only prove
  * read reachability (see resolveXAccessToken's 'publish' vs 'read' distinction above), so it
  * is reported honestly as such rather than as a full OK.
  */
-export async function testXConnection({store,env,fetcher=fetch}) {
- const oauth=await resolveXAccessToken({store,env,fetcher},'publish');
+export async function testXConnection({store,env,fetcher=fetch},tenantId=null) {
+ const oauth=await resolveXAccessToken({store,env,fetcher},'publish',tenantId);
  if(oauth) {
   const {response,data,networkError}=await requestJson(fetcher,`${API_BASE}/users/me`,{headers:{authorization:`Bearer ${oauth.token}`}});
   if(networkError)return {result:'NETWORK_ERROR',code:'NETWORK_OR_TIMEOUT'};
   if(!response.ok)return {result:classifyXError(response.status,data).code==='AUTH_FAILED'?'AUTH_FAILED':'NETWORK_ERROR',code:classifyXError(response.status,data).code};
   return {result:'OK',username:data.data?.username||null};
  }
- const readOnly=await resolveXAccessToken({store,env,fetcher},'read');
+ const readOnly=await resolveXAccessToken({store,env,fetcher},'read',tenantId);
  if(!readOnly)return {result:'NOT_CONFIGURED',code:'X_NOT_CONFIGURED'};
  const {response,data,networkError}=await requestJson(fetcher,`${API_BASE}/tweets/${WELL_KNOWN_PUBLIC_TWEET_ID}`,{headers:{authorization:`Bearer ${readOnly.token}`}});
  if(networkError)return {result:'NETWORK_ERROR',code:'NETWORK_OR_TIMEOUT'};
