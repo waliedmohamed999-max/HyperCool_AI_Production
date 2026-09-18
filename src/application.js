@@ -1,5 +1,5 @@
 import http from 'node:http';
-import {readFileSync} from 'node:fs';
+import {readFileSync,existsSync} from 'node:fs';
 import {readFile,mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
@@ -73,8 +73,13 @@ import {
  createCampaignContentItem,updateCampaignContentItem,buildMarketingOverview,
  CONTENT_CHANNELS,CONTENT_FORMATS,CAMPAIGN_STATUSES,CONTENT_STATUSES,
  saveComplianceResult,saveCreativeBrief,
- createCampaignOrchestrationWorkflow,campaignOrchestrationTriggerContext
+ createCampaignOrchestrationWorkflow,campaignOrchestrationTriggerContext,
+ createMarketingAsset,listMarketingAssets,getMarketingAsset,setMarketingAssetApproval,deleteMarketingAsset
 } from './marketing.js';
+import {
+ installMarketingAnalytics,syncAllMarketingAnalytics,getMarketingAnalyticsSummary,
+ recordPerformanceReview,listPerformanceReviews,getPerformanceReview,setPerformanceReviewStatus
+} from './marketing-analytics.js';
 import {extractSafeCrmUpdates, applySafeCrmUpdates, proposeStageChangeApproval} from './runtime/agent-crm-updates.js';
 import {
  installWebsiteWidgets,getOrCreateWidget,updateWidgetConfig,regenerateWidgetId,
@@ -108,7 +113,7 @@ import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,d
 import {createZidAuthorizeUrl,exchangeZidCodeForTokens} from './runtime/zid-oauth.js';
 import {safeFetch} from './connectors/core/ssrf.js';
 import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
-import {resolveTenantForWhatsAppPhoneNumberId,resolveTenantForMicrosoftSubscription,resolveTenantForSallaMerchant} from './runtime/webhook-tenant-resolver.js';
+import {resolveTenantForWhatsAppPhoneNumberId,resolveTenantForMicrosoftSubscription,resolveTenantForSallaMerchant,resolveTenantForMetaPageId} from './runtime/webhook-tenant-resolver.js';
 import {installIntegrationDefinitions,listIntegrationDefinitions,getIntegrationDefinition} from './integrations/definitions.js';
 import {installIntegrationConnections,createConnection,listConnections,getConnection,getConnectionOrNull,updateConnection,setDefaultConnection,getDefaultConnection,resolveProviderAccount,disconnectConnection,deleteConnection,getOrCreateWebhookPublicId} from './integrations/connections.js';
 import {installCredentialsVault,storeCredential,getCredentialMeta,removeCredential} from './integrations/vault.js';
@@ -116,7 +121,7 @@ import {installOAuthStates,createOAuthState,consumeOAuthState} from './integrati
 import {migrateLegacyIntegrationCredentials} from './integrations/migration.js';
 import {testConnectionHealth} from './integrations/health.js';
 import {verifySallaWebhook,processSallaWebhook} from './runtime/salla-webhooks.js';
-import {handleVerificationChallenge,verifyMetaSignature,normalizeWhatsAppWebhook} from './runtime/meta-webhooks.js';
+import {handleVerificationChallenge,verifyMetaSignature,normalizeWhatsAppWebhook,normalizeMetaMessagingWebhook,normalizeMetaCommentWebhook} from './runtime/meta-webhooks.js';
 import {metaOAuthConfigured,createMetaAuthorizeUrl,consumeMetaState,exchangeCodeAndResolveAssets,saveMetaConnection,metaOAuthStatus,disconnectMeta,resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from './runtime/meta-oauth.js';
 import {sendWhatsAppMessage,testWhatsAppConnection,syncWhatsAppTemplates,installWhatsAppTemplates,listWhatsAppTemplates,whatsappConfigured} from './runtime/whatsapp.js';
 import {microsoftOAuthConfigured,createMicrosoftAuthorizeUrl,consumeMicrosoftState,exchangeCodeForTokens as exchangeMicrosoftCodeForTokens,resolveConnectedProfile,saveMicrosoftConnection,microsoftOAuthStatus,disconnectMicrosoft,resolveMicrosoftAccessToken} from './runtime/microsoft-oauth.js';
@@ -234,6 +239,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installConfigurationHistory(store.db);
   installRunbooks(store.db);
   installMarketing(store.db); // Phase MKT-1 — Marketing & Social Operating Module, see docs/MARKETING_MODULE.md
+  installMarketingAnalytics(store.db); // Phase MKT-2, Part F — normalized cross-provider analytics metrics
   installWebsiteWidgets(store.db);
   installWorkflowEngine(store.db);
   installPlatformFrostChat(store.db);
@@ -490,6 +496,43 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           updateMessageStatus(store,item.externalMessageId,item.status,{errorCode:item.errorCode});
         }
         return send(200,{received:normalized.messages.length,statuses:normalized.statuses.length,skipped:normalized.skipped});
+      }
+      // Phase MKT-2, Part I — real Facebook Messenger + Instagram DM/comment inbound. Same
+      // verification/signature/dedup/tenant-resolution discipline as the WhatsApp route above
+      // (this is genuinely the SAME Meta App webhook mechanism, just different subscribed
+      // fields) — no second inbox database, no separate signature scheme. `body.object` tells
+      // us whether this delivery is Messenger ('page') or Instagram ('instagram'); comments
+      // arrive as `entry[].changes[]` alongside (or instead of) `entry[].messaging[]`, so both
+      // normalizers run over the same parsed payload.
+      if(req.method==='GET' && url.pathname==='/api/webhooks/meta/social') {
+        res.writeHead(200,{'Content-Type':'text/plain'});return res.end(handleVerificationChallenge(url.searchParams,env));
+      }
+      if(req.method==='POST' && url.pathname==='/api/webhooks/meta/social') {
+        const raw=await rawBody(req);
+        verifyMetaSignature(req,raw,env);
+        let payload;try{payload=JSON.parse(raw||'{}');}catch{fail(400,'JSON غير صالح');}
+        const resolveTenant=pageOrIgId=>resolveTenantForMetaPageId(store.db,pageOrIgId);
+        const messaging=normalizeMetaMessagingWebhook(store.db,payload,resolveTenant);
+        const comments=normalizeMetaCommentWebhook(store.db,payload,resolveTenant);
+        const paused=isPaused(store.db);
+        const connectorActor={id:'connector:meta-social',name:'موصل التواصل الاجتماعي',role:'automation'};
+        for(const item of messaging.messages) {
+         if(item.replayed||item.error||item.unresolved||!item.senderId)continue;
+         const {lead}=findOrCreateLeadFromChannel(store,{externalContactId:item.senderId,channel:item.platform,name:null},connectorActor,item.tenantId);
+         const message=recordChannelMessage(store,{leadId:lead.id,channel:item.platform,direction:'INBOUND',text:item.text,externalMessageId:item.externalMessageId,messageType:item.messageType,media:item.media||null},connectorActor,item.tenantId);
+         if(message.replayed)continue;
+         if(!paused)eventBus.emit('CUSTOMER_MESSAGE_RECEIVED',{leadId:lead.id,channel:item.platform,text:item.text,tenantId:item.tenantId});
+        }
+        // Comments intake real customer text into the CRM/lead model (Part I: "supported
+        // comments/replies") but never auto-triggers an agent — a public comment is not a
+        // private conversation, and this codebase has no public-reply tool for either
+        // platform; a human can act on it from the Shared Inbox like any other real message.
+        for(const item of comments.comments) {
+         if(item.replayed||item.error||item.unresolved||!item.senderId)continue;
+         const {lead}=findOrCreateLeadFromChannel(store,{externalContactId:item.senderId,channel:item.platform,name:null},connectorActor,item.tenantId);
+         recordChannelMessage(store,{leadId:lead.id,channel:item.platform,direction:'INBOUND',text:item.text,externalMessageId:item.externalCommentId,messageType:'comment'},connectorActor,item.tenantId);
+        }
+        return send(200,{received:messaging.messages.length,comments:comments.comments.length,skipped:messaging.skipped+comments.skipped});
       }
       // Microsoft Graph's real webhook mechanism is different from Meta's/Salla's: EVERY
       // POST (including the very first, which is the validation handshake) hits the same
@@ -1658,6 +1701,44 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
           return send(201,createAttachment(store.db,env,input,session.user,session.tenantId));
         }
       }
+      // Phase MKT-2, Part K — the ONE gap in the existing attachment system: it stores real
+      // files but never serves them back. Real Content-Type from the validated mime_type,
+      // tenant-scoped exactly like getAttachment already is (a wrong-tenant id 404s the same
+      // way, never leaking existence).
+      const attachmentFileRoute=url.pathname.match(/^\/api\/command\/attachments\/([\w-]+)\/file$/);
+      if(req.method==='GET' && attachmentFileRoute) {
+        const attachment=getAttachment(store.db,attachmentFileRoute[1],session.tenantId);
+        const row=store.db.prepare('SELECT disk_path FROM command_attachments WHERE id=? AND tenant_id=?').get(attachmentFileRoute[1],session.tenantId);
+        if(!row||!existsSync(row.disk_path))fail(404,'الملف غير موجود على القرص');
+        res.writeHead(200,{'Content-Type':attachment.mimeType,'Content-Disposition':`inline; filename="${encodeURIComponent(attachment.filename)}"`});
+        return res.end(readFileSync(row.disk_path));
+      }
+      // Phase MKT-2, Part K — real marketing_assets CRUD (image/video/document/external URL/
+      // creative reference metadata). Uploads reuse the EXISTING attachment store above rather
+      // than a second one; this route only ever validates that a referenced upload's id is a
+      // real attachment belonging to THIS tenant before accepting it.
+      if(url.pathname==='/api/marketing/assets') {
+        if(req.method==='GET')return send(200,listMarketingAssets(store.db,session.tenantId,{campaignId:url.searchParams.get('campaignId')||undefined,contentItemId:url.searchParams.get('contentItemId')||undefined}));
+        if(req.method==='POST') {
+         authorize(session,['owner','operator']);
+         const input=await body(req);
+         if(input.source==='upload')getAttachment(store.db,input.fileRef,session.tenantId); // 404s if not this tenant's real attachment
+         return send(201,createMarketingAsset(store.db,input,session.user,session.tenantId));
+        }
+      }
+      const marketingAssetRoute=url.pathname.match(/^\/api\/marketing\/assets\/([\w-]+)$/);
+      if(marketingAssetRoute) {
+        if(req.method==='GET')return send(200,getMarketingAsset(store.db,marketingAssetRoute[1],session.tenantId));
+        if(req.method==='PATCH') {
+         authorize(session,['owner','operator']);
+         const {approved}=await body(req);
+         return send(200,setMarketingAssetApproval(store.db,marketingAssetRoute[1],!!approved,session.user,session.tenantId));
+        }
+        if(req.method==='DELETE') {
+         authorize(session,['owner','operator']);
+         return send(200,deleteMarketingAsset(store.db,marketingAssetRoute[1],session.user,session.tenantId));
+        }
+      }
       // -----------------------------------------------------------------------------------
       // Frost Command Center Phase 7C — Native Workflow Engine HTTP surface. Every write
       // route below delegates straight to workflow-engine.js's own real validation/tenant
@@ -1793,6 +1874,66 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const run=await startWorkflowRun(workflowDeps,campaign.orchestrationWorkflowId,{triggerType:'MANUAL',triggerContext:campaignOrchestrationTriggerContext(campaign),tenantId:session.tenantId});
         return send(201,run);
       }
+      // Phase MKT-2, Part F — real, normalized cross-provider analytics. Sync is a manual,
+      // explicit action (owner/operator only) rather than an automatic background poller —
+      // this app has no job scheduler for external-API polling beyond the existing
+      // scheduler.js (reserved for publish jobs); a manual sync keeps the behavior honest and
+      // observable rather than adding a second background timer.
+      if(req.method==='POST' && url.pathname==='/api/marketing/analytics/sync') {
+        authorize(session,['owner','operator']);
+        return send(200,await syncAllMarketingAnalytics({store,env,fetcher},session.tenantId));
+      }
+      if(req.method==='GET' && url.pathname==='/api/marketing/analytics/summary') {
+        return send(200,getMarketingAnalyticsSummary(store.db,session.tenantId));
+      }
+      // Phase MKT-2, Part G — the EXISTING performance agent (#11, agents/performance.md),
+      // run for real over whatever real analytics currently exist (getMarketingAnalyticsSummary
+      // — see marketing-analytics.js's module note: today that's account/provider-level, not
+      // genuinely per-campaign, since campaign_content_items has no real publish execution
+      // wired yet). `campaignId` is an optional human-facing tag only. The stored review keeps
+      // the exact evidence shown to the agent and its full structured recommendation —
+      // `experiments_next_week`/`stop_doing`/`double_down` — and is never auto-applied to any
+      // content (Part G: "must NOT auto-modify or publish content").
+      if(req.method==='POST' && url.pathname==='/api/marketing/performance/review') {
+        authorize(session,['owner','operator']);
+        const input=await body(req);
+        const evidence=getMarketingAnalyticsSummary(store.db,session.tenantId);
+        if(!evidence.hasAnyData)fail(409,'لا توجد بيانات تحليلات حقيقية بعد — شغّل مزامنة التحليلات أولاً');
+        const run=await agentRuntime.run('performance',{triggerType:'MANUAL',input:{task:'marketing_performance_review',metrics:evidence,current_datetime:new Date().toISOString()},user:session.user,tenantId:session.tenantId});
+        if(!run.output?.payload)return send(200,{run:{id:run.id,status:run.status},review:null});
+        const review=recordPerformanceReview(store.db,{campaignId:input?.campaignId||null,runId:run.id,evidence,result:run.output.payload},session.user,session.tenantId);
+        return send(201,{run:{id:run.id,status:run.status},review});
+      }
+      if(req.method==='GET' && url.pathname==='/api/marketing/performance/reviews') {
+        return send(200,listPerformanceReviews(store.db,session.tenantId,{campaignId:url.searchParams.get('campaignId')||undefined}));
+      }
+      const performanceReviewRoute=url.pathname.match(/^\/api\/marketing\/performance\/reviews\/([\w-]+)$/);
+      if(req.method==='GET' && performanceReviewRoute) {
+        return send(200,getPerformanceReview(store.db,performanceReviewRoute[1],session.tenantId));
+      }
+      const performanceReviewStatusRoute=url.pathname.match(/^\/api\/marketing\/performance\/reviews\/([\w-]+)\/status$/);
+      if(req.method==='POST' && performanceReviewStatusRoute) {
+        authorize(session,['owner','operator']);
+        const {status}=await body(req);
+        return send(200,setPerformanceReviewStatus(store.db,performanceReviewStatusRoute[1],status,session.user,session.tenantId));
+      }
+      // Phase MKT-2, Part H — the controlled improvement loop's only real action: a human
+      // deciding to act on a stored recommendation creates a brand-new DRAFT content item
+      // through the EXISTING, unchanged createCampaignContentItem path — never edits or
+      // republishes anything already PUBLISHED (spec: "Never modify previously published
+      // content history; create new version/item"). The new item still has to pass through the
+      // full real compliance gate and human approval before it could ever be scheduled or
+      // published — this route itself has no publishing capability at all. The link back to
+      // the recommendation that inspired it is kept in the audit log, not a new column.
+      const performanceReviewContentRoute=url.pathname.match(/^\/api\/marketing\/performance\/reviews\/([\w-]+)\/create-content$/);
+      if(req.method==='POST' && performanceReviewContentRoute) {
+        authorize(session,['owner','operator']);
+        const review=getPerformanceReview(store.db,performanceReviewContentRoute[1],session.tenantId);
+        const input=await body(req);
+        const item=createCampaignContentItem(store.db,{...input,campaignId:input.campaignId||review.campaignId||null},session.user,session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'MARKETING_CONTENT_CREATED_FROM_RECOMMENDATION',itemId:item.id,detail:{reviewId:review.id,runId:review.runId},actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(201,item);
+      }
       if(url.pathname==='/api/marketing/content') {
         if(req.method==='GET')return send(200,listCampaignContentItems(store.db,session.tenantId,{campaignId:url.searchParams.get('campaignId')||undefined,status:url.searchParams.get('status')||undefined}));
         if(req.method==='POST') {authorize(session,['owner','operator']);return send(201,createCampaignContentItem(store.db,await body(req),session.user,session.tenantId));}
@@ -1872,10 +2013,10 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(id==='openai')return send(200,await testOpenAIConnection({env,fetcher}));
         if(id==='salla'){const resolved=await resolveSallaAccessToken({store,env,fetcher});return send(200,await testSallaConnection({env,fetcher,accessToken:resolved?.token}));}
         if(id==='whatsapp')return send(200,await testWhatsAppConnection({store,env,fetcher}));
-        if(id==='meta')return send(200,resolveMetaAccessToken({store,env},'page')?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
+        if(id==='meta')return send(200,resolveMetaAccessToken({store,env},'page',session.tenantId)?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
         if(id==='microsoft365')return send(200,await testMicrosoftConnection({store,env,fetcher}));
-        if(id==='x')return send(200,await testXConnection({store,env,fetcher}));
-        if(id==='linkedin')return send(200,await testLinkedInConnection({store,env,fetcher}));
+        if(id==='x')return send(200,await testXConnection({store,env,fetcher},session.tenantId));
+        if(id==='linkedin')return send(200,await testLinkedInConnection({store,env,fetcher},session.tenantId));
         return send(200,{result:'NOT_IMPLEMENTED'});
       }
       // Salla OAuth (owner only — connecting/disconnecting the store's own commerce data is
@@ -1911,7 +2052,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // Meta OAuth (owner only, same bar as Salla above).
       if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/status') {
         authorize(session,['owner']);
-        return send(200,metaOAuthStatus(store.db));
+        return send(200,metaOAuthStatus(store.db,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/start') {
         authorize(session,['owner']);
@@ -1923,13 +2064,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(!code||!oauthState)fail(400,'استجابة ربط Meta ناقصة (code/state)');
         consumeMetaState(oauthState,session.user.id);
         const assets=await exchangeCodeAndResolveAssets({env,fetcher,code});
-        saveMetaConnection(store.db,env,assets,session.user);
+        saveMetaConnection(store.db,env,assets,session.user,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'META_OAUTH_CONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/meta/disconnect') {
         authorize(session,['owner']);
-        disconnectMeta(store.db);
+        disconnectMeta(store.db,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'META_OAUTH_DISCONNECTED',itemId:'meta',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
@@ -2012,7 +2153,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // CSRF nonce) — the browser round-trip only ever sees `code`/`state`.
       if(req.method==='GET' && url.pathname==='/api/integrations/x/oauth/status') {
         authorize(session,['owner']);
-        return send(200,xOAuthStatus(store.db));
+        return send(200,xOAuthStatus(store.db,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/x/oauth/start') {
         authorize(session,['owner']);
@@ -2025,13 +2166,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const codeVerifier=consumeXState(oauthState,session.user.id);
         const tokens=await exchangeXCodeForTokens({env,fetcher,code,codeVerifier});
         const profile=await resolveXProfile({fetcher,accessToken:tokens.accessToken});
-        saveXConnection(store.db,env,tokens,profile,session.user);
+        saveXConnection(store.db,env,tokens,profile,session.user,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'X_CONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/x/disconnect') {
         authorize(session,['owner']);
-        disconnectX(store.db);
+        disconnectX(store.db,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'X_DISCONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
@@ -2041,7 +2182,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // stays INTEGRATION_REQUIRED until an organization is actually resolved.
       if(req.method==='GET' && url.pathname==='/api/integrations/linkedin/oauth/status') {
         authorize(session,['owner']);
-        return send(200,linkedInOAuthStatus(store.db));
+        return send(200,linkedInOAuthStatus(store.db,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/linkedin/oauth/start') {
         authorize(session,['owner']);
@@ -2057,14 +2198,14 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         let organization=null;
         try{organization=(await resolveAdministeredOrganizations({fetcher,accessToken:tokens.accessToken}))[0]||null;}
         catch{organization=null;} // rw_organization_admin not granted yet — connection still succeeds as identity-only.
-        saveLinkedInConnection(store.db,env,tokens,profile,organization,session.user);
+        saveLinkedInConnection(store.db,env,tokens,profile,organization,session.user,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_CONNECTED',itemId:'linkedin',organizationId:organization?.id||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         if(organization)recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_ORGANIZATION_SELECTED',itemId:organization.id,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/linkedin/disconnect') {
         authorize(session,['owner']);
-        disconnectLinkedIn(store.db);
+        disconnectLinkedIn(store.db,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'LINKEDIN_DISCONNECTED',itemId:'linkedin',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }

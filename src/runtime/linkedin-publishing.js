@@ -59,8 +59,8 @@ export async function publishLinkedInPost({store,env,fetcher=fetch},{text,link},
  * it. Never simulated: a 403/permission failure here is reported as NOT_AVAILABLE, exactly
  * as the spec requires (Part X: "If not: mark ANALYTICS_NOT_AVAILABLE. Do not simulate.").
  */
-export async function getLinkedInPostMetrics({store,env,fetcher=fetch},externalPostId) {
- const resolved=await resolveLinkedInAccessToken({store,env,fetcher});
+export async function getLinkedInPostMetrics({store,env,fetcher=fetch},externalPostId,tenantId=null) {
+ const resolved=await resolveLinkedInAccessToken({store,env,fetcher},tenantId);
  if(!resolved||!resolved.organizationId)return {status:'INTEGRATION_REQUIRED'};
  const url=`${API_BASE}/organizationalEntityShareStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent('urn:li:organization:'+resolved.organizationId)}&shares[0]=${encodeURIComponent(externalPostId)}`;
  const {response,data,networkError}=await requestRaw(fetcher,url,{headers:{authorization:`Bearer ${resolved.token}`,'x-restli-protocol-version':'2.0.0'}});
@@ -76,12 +76,33 @@ export async function getLinkedInPostMetrics({store,env,fetcher=fetch},externalP
  };
 }
 /**
+ * Phase MKT-2, Part F — organization follower count. LinkedIn's real endpoint for this is
+ * organizationalEntityFollowerStatistics with `q=organizationalEntity`, summed across every
+ * returned "day"-bucket-less lifetime element (it always returns exactly one lifetime
+ * element when the token has the right permission, but summing is still correct if it ever
+ * returns more than one). A permission-scoped 403 here is a real, common outcome — Community
+ * Management API access is a separate LinkedIn app review track from basic posting — reported
+ * honestly as NOT_AVAILABLE, never estimated.
+ */
+export async function getLinkedInFollowerCount({store,env,fetcher=fetch},tenantId=null) {
+ const resolved=await resolveLinkedInAccessToken({store,env,fetcher},tenantId);
+ if(!resolved||!resolved.organizationId)return {status:'INTEGRATION_REQUIRED'};
+ const url=`${API_BASE}/organizationalEntityFollowerStatistics?q=organizationalEntity&organizationalEntity=${encodeURIComponent('urn:li:organization:'+resolved.organizationId)}`;
+ const {response,data,networkError}=await requestRaw(fetcher,url,{headers:{authorization:`Bearer ${resolved.token}`,'x-restli-protocol-version':'2.0.0'}});
+ if(networkError)return {status:'NOT_AVAILABLE',reason:'NETWORK_OR_TIMEOUT'};
+ if(!response.ok)return {status:'NOT_AVAILABLE',reason:classifyLinkedInError(response.status,data).code};
+ const elements=data?.elements||[];
+ if(!elements.length)return {status:'NOT_AVAILABLE',reason:'NO_DATA_RETURNED'};
+ const total=elements.reduce((sum,el)=>sum+(el.followerCounts?.organicFollowerCount||0)+(el.followerCounts?.paidFollowerCount||0),0);
+ return {status:'OK',capturedAt:new Date().toISOString(),followers:total,organizationId:resolved.organizationId};
+}
+/**
  * Real, minimal connectivity check for the Integrations page. Distinguishes "connected but
  * no organization resolved" (identity works, publishing does not) from a full OK, never
  * claiming publishing capability that was never actually verified.
  */
-export async function testLinkedInConnection({store,env,fetcher=fetch}) {
- const resolved=await resolveLinkedInAccessToken({store,env,fetcher});
+export async function testLinkedInConnection({store,env,fetcher=fetch},tenantId=null) {
+ const resolved=await resolveLinkedInAccessToken({store,env,fetcher},tenantId);
  if(!resolved)return {result:'NOT_CONFIGURED',code:'LINKEDIN_NOT_CONFIGURED'};
  const {response,data,networkError}=await requestRaw(fetcher,`${API_BASE}/userinfo`,{headers:{authorization:`Bearer ${resolved.token}`}});
  if(networkError)return {result:'NETWORK_ERROR',code:'NETWORK_OR_TIMEOUT'};

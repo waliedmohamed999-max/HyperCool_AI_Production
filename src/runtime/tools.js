@@ -7,7 +7,7 @@ import {recordAudit} from '../audit.js';
 import {buildWeeklyReport,currentWeekStart} from '../reporting.js';
 import {createApproval} from './approvals.js';
 import {sendWhatsAppMessage,whatsappConfigured} from './whatsapp.js';
-import {publishToInstagram,publishToFacebook,alreadyPublished} from './meta-publishing.js';
+import {publishToInstagram,publishToFacebook,alreadyPublished,sendMetaMessage} from './meta-publishing.js';
 import {resolveMetaAccessToken} from './meta-oauth.js';
 import {sendMail,findRecentSentMessage,createCalendarEvent,getCalendarAvailability} from './microsoft-graph.js';
 import {resolveMicrosoftAccessToken} from './microsoft-oauth.js';
@@ -125,6 +125,11 @@ const TOOL_METADATA={
  // supervised-then-autonomous ladder the three publish tools already sit at (L2).
  whatsapp_send:{description:'Send a WhatsApp message to a customer. Free text only within 24h of their last message; a templateName is required outside that window.',inputSchema:obj({leadId:string,text:string,templateName:string,templateLanguage:string},['leadId']),minLevel:'L1',requiresApprovalBelowLevel:'L2',
   category:'Messaging',riskLevel:'MEDIUM',actionType:'EXTERNAL_SEND',integrationSlug:'whatsapp',requiresConnection:false,isReadOnly:false,capability:'messaging.send'},
+ // Phase MKT-2, Part I/J — real Facebook Messenger/Instagram DM reply, gated exactly like
+ // whatsapp_send (L1 usable, requires approval below L2) since it is the same class of
+ // action: an outbound message to a real customer on a real channel.
+ meta_message_send:{description:'Reply to a customer on Facebook Messenger or Instagram DM. leadId must have a real externalContactId captured from an inbound message on that channel.',inputSchema:obj({leadId:string,text:string},['leadId','text']),minLevel:'L1',requiresApprovalBelowLevel:'L2',
+  category:'Messaging',riskLevel:'MEDIUM',actionType:'EXTERNAL_SEND',integrationSlug:'meta',requiresConnection:false,isReadOnly:false,capability:'messaging.send'},
  meta_publish:{description:'Publish an approved content item to Instagram or Facebook (platform decided by the content item itself). Refuses anything not APPROVED, already published, or missing a required asset.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',allowedAgents:['publishing'],
   category:'Social',riskLevel:'HIGH',actionType:'EXTERNAL_PUBLISH',integrationSlug:'meta',requiresConnection:false,isReadOnly:false,capability:'publishing'},
  x_publish:{description:'Publish an approved content item to X. Refuses anything not APPROVED, already published, or unsupported for this platform.',inputSchema:obj({contentId:string},['contentId']),minLevel:'L2',allowedAgents:['publishing'],
@@ -360,6 +365,24 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch,runtimeRef=n
    const result=await sendWhatsAppMessage({store,env,fetcher},{to:lead.phone,text,templateName,templateLanguage},ctx.tenantId);
    if(result.status==='SENT'){
     recordChannelMessage(store,{leadId,channel:'WhatsApp',direction:'OUTBOUND',text:text||`[template:${templateName}]`,externalMessageId:result.externalMessageId,messageType:templateName?'template':'text'},ctx.actor,ctx.tenantId);
+   }
+   return result;
+  },
+  // Phase MKT-2, Part I/J — real Messenger/Instagram reply. Requires a real externalContactId
+  // captured off a genuine inbound webhook (see crm.js's findOrCreateLeadFromChannel) — there
+  // is no other way to obtain a PSID/IGSID, so a lead with none can never have been messaged
+  // through this channel and is correctly refused rather than guessing an id.
+  meta_message_send:async({leadId,text},ctx)=>{
+   if(!isEnabled(env,'ENABLE_EXTERNAL_MESSAGING'))return featureDisabled('ENABLE_EXTERNAL_MESSAGING');
+   const lead=getLead(db,leadId,ctx.tenantId);
+   if(lead.optOut)return {status:'BLOCKED',reason:'OPT_OUT'};
+   if(lead.humanHold)return {status:'BLOCKED',reason:'HUMAN_HOLD'};
+   if(!lead.externalContactId||!['Instagram','Facebook'].includes(lead.channelOrigin))return {status:'BLOCKED',reason:'NO_EXTERNAL_CONTACT_ID'};
+   const resolved=resolveMetaAccessToken({store,env},'page',ctx.tenantId);
+   if(!resolved)return blocked('meta','send_message');
+   const result=await sendMetaMessage({store,env,fetcher},{recipientId:lead.externalContactId,text},ctx.tenantId);
+   if(result.status==='SENT'){
+    recordChannelMessage(store,{leadId,channel:lead.channelOrigin,direction:'OUTBOUND',text,externalMessageId:result.externalMessageId,messageType:'text'},ctx.actor,ctx.tenantId);
    }
    return result;
   },

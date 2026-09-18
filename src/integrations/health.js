@@ -44,10 +44,10 @@ export async function testConnectionHealth(connection,{store,env,fetcher}) {
   if(provider==='anthropic')return normalize(await testAnthropicConnection({env,fetcher}));
   if(provider==='openai')return normalize(await testOpenAIConnection({env,fetcher}));
   if(provider==='whatsapp')return normalize(await testWhatsAppConnection({store,env,fetcher}));
-  if(provider==='meta')return normalize(resolveMetaAccessToken({store,env},'page')?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
+  if(provider==='meta')return normalize(resolveMetaAccessToken({store,env},'page',connection.tenantId)?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
   if(provider==='microsoft365')return normalize(await testMicrosoftConnection({store,env,fetcher}));
-  if(provider==='x')return normalize(await testXConnection({store,env,fetcher}));
-  if(provider==='linkedin')return normalize(await testLinkedInConnection({store,env,fetcher}));
+  if(provider==='x')return normalize(await testXConnection({store,env,fetcher},connection.tenantId));
+  if(provider==='linkedin')return normalize(await testLinkedInConnection({store,env,fetcher},connection.tenantId));
   // Universal Integration Platform (Phase 6D) — any connector NOT covered by the legacy,
   // per-provider checks above (a dynamic/GENERIC_REST connector published via the Integration
   // Builder, e.g. Acme ERP) reuses the EXACT SAME ConnectorRuntime health pipeline the Agent

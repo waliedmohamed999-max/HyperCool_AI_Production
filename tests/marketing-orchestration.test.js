@@ -128,6 +128,22 @@ test('Compliance/Creative runs are gated to owner/operator — a reviewer is ref
  } finally {await cleanup();}
 });
 
+// Part O — explicit cross-tenant check for the compliance/creative routes: these read/write
+// a content item by id with no other scoping in the URL, exactly the shape most likely to
+// leak across tenants if getCampaignContentItem's own tenant_id filter were ever missed.
+test('Part O: Tenant B cannot run compliance or generate a creative brief for Tenant A\'s content item',async()=>{
+ const {call,app,cleanup}=await harness(complianceFetcher('PASS'));
+ try {
+  const ownerA=await signupAndCreateWorkspace(call,app,{username:'orcho1a',email:'orcho1a@example.com',companyName:'Orch Sec A'});
+  const ownerB=await signupAndCreateWorkspace(call,app,{username:'orcho1b',email:'orcho1b@example.com',companyName:'Orch Sec B'});
+  const item=await call('/api/marketing/content',{channel:'Instagram',format:'post',body:'محتوى تينانت أ'},ownerA);
+  const crossCompliance=await call(`/api/marketing/content/${item.data.id}/run-compliance`,{},ownerB);
+  assert.equal(crossCompliance.status,404);
+  const crossCreative=await call(`/api/marketing/content/${item.data.id}/generate-creative`,{},ownerB);
+  assert.equal(crossCreative.status,404);
+ } finally {await cleanup();}
+});
+
 // --- Part E: safe CRM update application (pure-function unit tests — no HTTP needed) --------
 test('extractSafeCrmUpdates: only allowlisted fields pass through, stage is never auto-applied',()=>{
  const decision={
@@ -273,5 +289,31 @@ test('Campaign orchestration: tenant isolation — Tenant B cannot see or run Te
   assert.equal(crossRead.status,404);
   const crossRun=await call(`/api/marketing/campaigns/${campaignA.data.id}/orchestration/run`,{},ownerB);
   assert.equal(crossRun.status,404);
+ } finally {await cleanup();}
+});
+
+// Part M — Live Operations integration: real marketing activity (a running orchestration
+// workflow, its audit trail) already flows into the EXISTING /api/command/operations merge
+// (agent_runs + workflow_runs + audit_logs, src/application.js) with zero new code, since
+// that route already merges audit_logs generically by action rather than an allowlist. This
+// test proves that claim rather than just asserting it.
+test('Part M: a real orchestration run and its compliance/creative audit trail both surface in the EXISTING Live Operations feed, tenant-scoped',async()=>{
+ const {call,app,cleanup}=await harness(orchestrationFetcher());
+ try {
+  const ownerA=await signupAndCreateWorkspace(call,app,{username:'orch10a',email:'orch10a@example.com',companyName:'Ops Iso A'});
+  const ownerB=await signupAndCreateWorkspace(call,app,{username:'orch10b',email:'orch10b@example.com',companyName:'Ops Iso B'});
+  const campaign=await call('/api/marketing/campaigns',{name:'حملة تشغيلية',channels:['Instagram']},ownerA);
+  await call(`/api/marketing/campaigns/${campaign.data.id}/orchestration`,{},ownerA);
+  const run=await call(`/api/marketing/campaigns/${campaign.data.id}/orchestration/run`,{},ownerA);
+  assert.equal(run.status,201);
+  const ops=await call('/api/command/operations',null,ownerA,{method:'GET'});
+  const workflowOp=ops.data.items.find(op=>op.kind==='workflow_run' && op.id===run.data.id);
+  assert.ok(workflowOp,'expected the real orchestration run to appear in Live Operations');
+  const complianceAudit=ops.data.items.find(op=>op.kind==='audit' && op.action==='MARKETING_CAMPAIGN_ORCHESTRATION_CREATED');
+  assert.ok(complianceAudit,'expected the real orchestration-creation audit entry to appear in Live Operations');
+  // Tenant isolation: none of Tenant A's real marketing operations ever appear for Tenant B.
+  const opsB=await call('/api/command/operations',null,ownerB,{method:'GET'});
+  assert.equal(opsB.data.items.some(op=>op.id===run.data.id),false);
+  assert.equal(opsB.data.items.some(op=>op.action==='MARKETING_CAMPAIGN_ORCHESTRATION_CREATED'),false);
  } finally {await cleanup();}
 });
