@@ -170,7 +170,7 @@ test('HTTP: a Platform-Admin-authored GENERIC_REST OAUTH2 connector works throug
 
   const callback=await call(`/api/integrations/oauth/acme2_oauth/callback?code=fake-code&state=${state}`,null,owner,{method:'GET'});
   assert.equal(callback.status,302);
-  assert.equal(callback.location,'/#integrations');
+  assert.equal(callback.location,'/app#integrations'); // admin tool now lives at /app; the public marketing site is at /
 
   const connections=await call('/api/integrations/connections',null,owner,{method:'GET'});
   const conn=connections.data.find(c=>c.integrationDefinitionId==='acme2_oauth');

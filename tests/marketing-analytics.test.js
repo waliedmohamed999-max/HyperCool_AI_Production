@@ -136,7 +136,14 @@ test('Part F — X: syncing analytics after a real published tweet records real 
  } finally { await cleanup(); }
 });
 
-test('Part F — LinkedIn: a real published organization post syncs real share statistics and follower count',async()=>{
+test('Part F — LinkedIn: a real published organization post syncs real share statistics and follower count',async(t)=>{
+ // src/planning.js's real, pre-existing content-calendar rule restricts LinkedIn scheduling
+ // to Sunday/Tuesday/Thursday (Riyadh time) — this test exercises the REAL scheduling path
+ // (via /api/schedule + /api/schedule/prepare, same as the X/Meta variants of this test), so
+ // it is genuinely bound by that same rule on whatever day it happens to run. Skipping
+ // honestly on a disallowed day rather than fighting a real business rule with a fake clock.
+ const riyadhDay=new Date(Date.now()+10800000).getUTCDay();
+ if(![0,2,4].includes(riyadhDay)){t.skip('LinkedIn scheduling only allowed Sun/Tue/Thu (Riyadh time) — src/planning.js scheduleContent(); today is not one of those days.');return;}
  const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',INTEGRATION_ENCRYPTION_KEY:key32,LINKEDIN_CLIENT_ID:'client-1',LINKEDIN_CLIENT_SECRET:'secret-1',LINKEDIN_REDIRECT_URI:'https://hyper-cool.com/cb',ENABLE_L2_AUTONOMY:'true',PLATFORM_MAIL_TRANSPORT:'capture'};
  let ugcCalls=0;
  const fetcher=async(url,opts)=>{
