@@ -33,8 +33,12 @@ const REQUIRED_TOOLS={
 const OPTIONAL_TOOLS={
  frost:[],strategy:['get_competitor_data'],copy:[],creative:['canva_generateAsset'],compliance:[],
  publishing:['meta_publish','x_publish','linkedin_publish'],leads:['get_current_price','get_stock'],
- sales:['get_product','get_current_price','get_stock','whatsapp_send','microsoft_sendEmail','create_calendar_event','get_calendar_availability'],
- followup:['whatsapp_send','microsoft_sendEmail'],intelligence:[],performance:[],memory:[],frost_commander:[]
+ sales:['get_product','get_current_price','get_stock','whatsapp_send','whatsapp_campaign_send','microsoft_sendEmail','create_calendar_event','get_calendar_availability'],
+ followup:['whatsapp_send','whatsapp_campaign_send','microsoft_sendEmail'],intelligence:[],performance:[],memory:[],
+ // frost_commander gets whatsapp_campaign_send directly (not only via delegate_to_agent, which
+ // is capped to performance/intelligence/leads/strategy — see tools.js) so a human can ask
+ // Frost itself to run/control a WhatsApp campaign, not just delegate to sales/followup.
+ frost_commander:['whatsapp_campaign_send']
 };
 export function requiredToolsFor(agentId) { return REQUIRED_TOOLS[agentId]||[]; }
 export function optionalToolsFor(agentId) { return OPTIONAL_TOOLS[agentId]||[]; }

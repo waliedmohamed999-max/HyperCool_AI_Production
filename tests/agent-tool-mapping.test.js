@@ -64,10 +64,10 @@ const salesDecision=(over={})=>({status:'OK',action:'REPLY',rationale:'ok',verif
 
 // --- ToolDefinition ----------------------------------------------------------------------
 
-test('ToolDefinition: seeded exclusively from the real Tool Registry — 50 tools, Canva/salla_syncOrders honestly NOT_IMPLEMENTED',()=>{
+test('ToolDefinition: seeded exclusively from the real Tool Registry — 51 tools, Canva/salla_syncOrders honestly NOT_IMPLEMENTED',()=>{
  const {store}=fixture();try{
   const tools=listToolDefinitions(store.db);
-  assert.equal(tools.length,50); // ...; Phase 7B added 5 more; Phase 7C added 6 Workflow Engine chat tools (create_workflow_draft, list_workflows, explain_workflow_failure, activate_workflow, run_workflow_now, pause_workflow_now); Phase MKT-2 Part I/J added meta_message_send
+  assert.equal(tools.length,51); // ...; Phase 7B added 5 more; Phase 7C added 6 Workflow Engine chat tools (create_workflow_draft, list_workflows, explain_workflow_failure, activate_workflow, run_workflow_now, pause_workflow_now); Phase MKT-2 Part I/J added meta_message_send; WhatsApp Hub added whatsapp_campaign_send
   const canva=getToolDefinition(store.db,'canva_generateAsset');
   assert.equal(canva.isAvailable,false);
   const salla=getToolDefinition(store.db,'salla_syncOrders');

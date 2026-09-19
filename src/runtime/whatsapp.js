@@ -2,6 +2,8 @@ import {randomUUID} from 'node:crypto';
 import {ConnectorError} from '../connectors.js';
 import {resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from './meta-oauth.js';
 import {resolveActiveTenantId} from '../tenancy.js';
+import {getLead,listLeads,stages,recordChannelMessage} from '../crm.js';
+import {recordAudit} from '../audit.js';
 
 const GRAPH_VERSION='v21.0';
 const GRAPH_BASE='https://graph.facebook.com/'+GRAPH_VERSION;
@@ -117,4 +119,88 @@ export async function syncWhatsAppTemplates({store,env,fetcher=fetch},tenantId=n
   synced++;
  }
  return {synced,syncedAt:now};
+}
+
+// Campaign blast — the one deliberately bounded exception to "one recipient per call"
+// (whatsapp_send/manualWhatsAppSend above). No queue/retry engine is introduced: this stays a
+// plain, capped, synchronous loop reusing sendWhatsAppMessage() per recipient, shared by both
+// the agent tool (runtime/tools.js) and the human REST route (application.js) so the two paths
+// can never drift apart on eligibility rules.
+export const CAMPAIGN_AUDIENCE_CAP=50;
+function campaignEligibility(lead) {
+ if(lead.optOut)return 'OPT_OUT';
+ if(lead.humanHold)return 'HUMAN_HOLD';
+ if(!lead.phone)return 'NO_PHONE';
+ return null;
+}
+function withinCustomerServiceWindow(lead) {
+ return !!lead.lastInboundAt && Date.now()-Date.parse(lead.lastInboundAt)<=86400000;
+}
+const sleep=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));
+/**
+ * Resolves a bounded recipient list from either an explicit leadIds array or a CRM stage
+ * filter. Never truncates a too-large result — an oversized audience is reported as an error
+ * so the caller can narrow it, rather than silently sending to only some of the intended
+ * recipients.
+ */
+export function resolveCampaignAudience(db,tenantId,{leadIds,stageFilter}={}) {
+ if(leadIds && stageFilter)return {error:'AUDIENCE_SELECTION_AMBIGUOUS'};
+ if(leadIds) {
+  if(!Array.isArray(leadIds)||leadIds.length===0)return {error:'AUDIENCE_SELECTION_REQUIRED'};
+  if(leadIds.length>CAMPAIGN_AUDIENCE_CAP)return {error:'AUDIENCE_TOO_LARGE',resolvedCount:leadIds.length,cap:CAMPAIGN_AUDIENCE_CAP};
+  return {leadIds};
+ }
+ if(stageFilter) {
+  if(!stages.includes(stageFilter))return {error:'INVALID_STAGE'};
+  const resolved=listLeads(db,tenantId).filter(lead=>lead.stage===stageFilter&&lead.phone&&lead.consent?.WhatsApp&&!lead.optOut).map(lead=>lead.id);
+  if(resolved.length>CAMPAIGN_AUDIENCE_CAP)return {error:'AUDIENCE_TOO_LARGE',resolvedCount:resolved.length,cap:CAMPAIGN_AUDIENCE_CAP};
+  if(resolved.length===0)return {error:'AUDIENCE_EMPTY'};
+  return {leadIds:resolved};
+ }
+ return {error:'AUDIENCE_SELECTION_REQUIRED'};
+}
+/**
+ * Send (or, with dryRun, preview) a WhatsApp campaign blast to a bounded audience. Mirrors
+ * whatsapp_send's own per-recipient eligibility checks exactly (opt-out/hold/phone/24h-window)
+ * so a lead that couldn't be messaged individually can't be messaged through a campaign either.
+ * Every real send is recorded via recordChannelMessage + recordAudit, per recipient — never a
+ * single aggregate "success" that hides individual failures.
+ */
+export async function sendWhatsAppCampaign({store,env,fetcher=fetch},{leadIds,stageFilter,text,templateName,templateLanguage,dryRun,campaignId}={},actor,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
+ const audience=resolveCampaignAudience(store.db,resolvedTenantId,{leadIds,stageFilter});
+ if(audience.error)return {status:'BLOCKED',reason:audience.error,resolvedCount:audience.resolvedCount,cap:audience.cap};
+
+ if(dryRun) {
+  const eligible=[],blockedList=[];
+  for(const leadId of audience.leadIds) {
+   let lead;
+   try {lead=getLead(store.db,leadId,resolvedTenantId);} catch {blockedList.push({leadId,reason:'LEAD_NOT_FOUND'});continue;}
+   const reason=campaignEligibility(lead)||(!templateName&&!withinCustomerServiceWindow(lead)?'TEMPLATE_REQUIRED_OUTSIDE_WINDOW':null);
+   if(reason)blockedList.push({leadId,reason});else eligible.push({leadId});
+  }
+  return {status:'PREVIEW',totalResolved:audience.leadIds.length,eligible,blocked:blockedList};
+ }
+
+ if(!whatsappConfigured({store,env},resolvedTenantId))return {status:'INTEGRATION_REQUIRED',integration:'whatsapp'};
+ const results=[];
+ for(let i=0;i<audience.leadIds.length;i++) {
+  const leadId=audience.leadIds[i];
+  let lead;
+  try {lead=getLead(store.db,leadId,resolvedTenantId);} catch {results.push({leadId,status:'FAILED',reason:'LEAD_NOT_FOUND'});continue;}
+  const skipReason=campaignEligibility(lead)||(!templateName&&!withinCustomerServiceWindow(lead)?'TEMPLATE_REQUIRED_OUTSIDE_WINDOW':null);
+  if(skipReason) {results.push({leadId,status:'SKIPPED',reason:skipReason});continue;}
+  const sendResult=await sendWhatsAppMessage({store,env,fetcher},{to:lead.phone,text,templateName,templateLanguage},resolvedTenantId);
+  const now=new Date().toISOString();
+  if(sendResult.status==='SENT') {
+   recordChannelMessage(store,{leadId,channel:'WhatsApp',direction:'OUTBOUND',text:text||`[template:${templateName}]`,externalMessageId:sendResult.externalMessageId,messageType:templateName?'template':'text'},actor,resolvedTenantId);
+   recordAudit(store.db,{id:randomUUID(),action:'WHATSAPP_CAMPAIGN_MESSAGE_SENT',itemId:leadId,actorId:actor.id,actorName:actor.name,actorRole:actor.role,campaignId:campaignId||null,at:now},resolvedTenantId);
+   results.push({leadId,status:'SENT'});
+  } else {
+   recordAudit(store.db,{id:randomUUID(),action:'WHATSAPP_CAMPAIGN_MESSAGE_FAILED',itemId:leadId,actorId:actor.id,actorName:actor.name,actorRole:actor.role,campaignId:campaignId||null,errorClass:sendResult.errorClass||null,at:now},resolvedTenantId);
+   results.push({leadId,status:'FAILED',reason:sendResult.errorClass||'OTHER'});
+  }
+  if(i<audience.leadIds.length-1)await sleep(300);
+ }
+ return {status:'OK',sent:results.filter(r=>r.status==='SENT').length,failed:results.filter(r=>r.status==='FAILED').length,skipped:results.filter(r=>r.status==='SKIPPED').length,results};
 }

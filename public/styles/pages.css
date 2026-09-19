@@ -263,7 +263,7 @@ body.signed-out .fab-shortcut{display:none}
 #cmdc-search-results[hidden]{display:none}
 .cmdc-search-hit{display:block;width:100%;text-align:start;padding:8px 10px;font-size:12px;border:0;border-bottom:1px solid var(--border);background:none;cursor:pointer}
 .cmdc-search-hit:last-child{border-bottom:0}
-.cmdc-chip{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface);cursor:pointer;margin-inline-end:6px;margin-bottom:6px}
+.cmdc-chip{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--ink);cursor:pointer;margin-inline-end:6px;margin-bottom:6px}
 .cmdc-chip:hover{background:var(--surface-2)}
 .cmdc-attach-row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}
 /* HyperCool Frost UI — Part UI-2, item 30/31: the native <input type=file> stays fully in the

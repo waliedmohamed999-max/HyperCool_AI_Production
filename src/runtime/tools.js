@@ -6,7 +6,7 @@ import {resolveActiveTenantId} from '../tenancy.js';
 import {recordAudit} from '../audit.js';
 import {buildWeeklyReport,currentWeekStart} from '../reporting.js';
 import {createApproval} from './approvals.js';
-import {sendWhatsAppMessage,whatsappConfigured} from './whatsapp.js';
+import {sendWhatsAppMessage,whatsappConfigured,sendWhatsAppCampaign} from './whatsapp.js';
 import {publishToInstagram,publishToFacebook,alreadyPublished,sendMetaMessage} from './meta-publishing.js';
 import {resolveMetaAccessToken} from './meta-oauth.js';
 import {sendMail,findRecentSentMessage,createCalendarEvent,getCalendarAvailability} from './microsoft-graph.js';
@@ -125,6 +125,14 @@ const TOOL_METADATA={
  // supervised-then-autonomous ladder the three publish tools already sit at (L2).
  whatsapp_send:{description:'Send a WhatsApp message to a customer. Free text only within 24h of their last message; a templateName is required outside that window.',inputSchema:obj({leadId:string,text:string,templateName:string,templateLanguage:string},['leadId']),minLevel:'L1',requiresApprovalBelowLevel:'L2',
   category:'Messaging',riskLevel:'MEDIUM',actionType:'EXTERNAL_SEND',integrationSlug:'whatsapp',requiresConnection:false,isReadOnly:false,capability:'messaging.send'},
+ // Campaign blast — deliberately bounded (max 50 recipients, see runtime/whatsapp.js's
+ // CAMPAIGN_AUDIENCE_CAP) rather than a real bulk/queue engine, matching this codebase's
+ // existing aversion to inventing infrastructure it doesn't need yet (see
+ // prepare_bulk_followup_plan above for the same discipline applied to follow-ups). dryRun
+ // previews per-recipient eligibility with zero sends, exactly like a real preview must.
+ whatsapp_campaign_send:{description:'Send a WhatsApp message to a bounded list of leads (max 50) as a campaign blast — either an explicit leadIds array or a CRM stageFilter. dryRun previews resolved audience eligibility without sending anything.',
+  inputSchema:obj({campaignId:string,leadIds:{type:'array',items:string,maxItems:50},stageFilter:string,text:string,templateName:string,templateLanguage:string,dryRun:{type:'boolean'}},[]),minLevel:'L1',requiresApprovalBelowLevel:'L2',
+  category:'Messaging',riskLevel:'MEDIUM',actionType:'EXTERNAL_SEND',integrationSlug:'whatsapp',requiresConnection:false,isReadOnly:false,capability:'messaging.campaign_send'},
  // Phase MKT-2, Part I/J — real Facebook Messenger/Instagram DM reply, gated exactly like
  // whatsapp_send (L1 usable, requires approval below L2) since it is the same class of
  // action: an outbound message to a real customer on a real channel.
@@ -367,6 +375,10 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch,runtimeRef=n
     recordChannelMessage(store,{leadId,channel:'WhatsApp',direction:'OUTBOUND',text:text||`[template:${templateName}]`,externalMessageId:result.externalMessageId,messageType:templateName?'template':'text'},ctx.actor,ctx.tenantId);
    }
    return result;
+  },
+  whatsapp_campaign_send:async(input,ctx)=>{
+   if(!isEnabled(env,'ENABLE_EXTERNAL_MESSAGING'))return featureDisabled('ENABLE_EXTERNAL_MESSAGING');
+   return sendWhatsAppCampaign({store,env,fetcher},input,ctx.actor,ctx.tenantId);
   },
   // Phase MKT-2, Part I/J — real Messenger/Instagram reply. Requires a real externalContactId
   // captured off a genuine inbound webhook (see crm.js's findOrCreateLeadFromChannel) — there

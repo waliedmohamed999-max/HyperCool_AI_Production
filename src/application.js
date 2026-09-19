@@ -123,7 +123,7 @@ import {testConnectionHealth} from './integrations/health.js';
 import {verifySallaWebhook,processSallaWebhook} from './runtime/salla-webhooks.js';
 import {handleVerificationChallenge,verifyMetaSignature,normalizeWhatsAppWebhook,normalizeMetaMessagingWebhook,normalizeMetaCommentWebhook} from './runtime/meta-webhooks.js';
 import {metaOAuthConfigured,createMetaAuthorizeUrl,consumeMetaState,exchangeCodeAndResolveAssets,saveMetaConnection,metaOAuthStatus,disconnectMeta,resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from './runtime/meta-oauth.js';
-import {sendWhatsAppMessage,testWhatsAppConnection,syncWhatsAppTemplates,installWhatsAppTemplates,listWhatsAppTemplates,whatsappConfigured} from './runtime/whatsapp.js';
+import {sendWhatsAppMessage,testWhatsAppConnection,syncWhatsAppTemplates,installWhatsAppTemplates,listWhatsAppTemplates,whatsappConfigured,sendWhatsAppCampaign} from './runtime/whatsapp.js';
 import {microsoftOAuthConfigured,createMicrosoftAuthorizeUrl,consumeMicrosoftState,exchangeCodeForTokens as exchangeMicrosoftCodeForTokens,resolveConnectedProfile,saveMicrosoftConnection,microsoftOAuthStatus,disconnectMicrosoft,resolveMicrosoftAccessToken} from './runtime/microsoft-oauth.js';
 import {testMicrosoftConnection,sendMail,getMessage,createMailSubscription,deleteMailSubscription} from './runtime/microsoft-graph.js';
 import {handleValidationHandshake,processMicrosoftNotifications} from './runtime/microsoft-webhooks.js';
@@ -1825,6 +1825,19 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       const campaignArchive=url.pathname.match(/^\/api\/marketing\/campaigns\/([\w-]+)\/archive$/);
       if(req.method==='POST' && campaignArchive) {authorize(session,['owner','operator']);return send(200,archiveCampaign(store.db,campaignArchive[1],session.user,session.tenantId));}
+      // WhatsApp campaign blast — the human-operated path to the same bounded, capped send
+      // logic the whatsapp_campaign_send agent tool uses (runtime/whatsapp.js's
+      // sendWhatsAppCampaign), so an operator and Frost can never diverge on eligibility rules.
+      // getCampaign() below both validates tenant ownership of campaignId and 404s a foreign one.
+      const campaignWhatsappBlast=url.pathname.match(/^\/api\/marketing\/campaigns\/([\w-]+)\/whatsapp-blast$/);
+      if(req.method==='POST' && campaignWhatsappBlast) {
+        authorize(session,['owner','operator']);
+        const campaignId=campaignWhatsappBlast[1];
+        getCampaign(store.db,campaignId,session.tenantId);
+        const input=await body(req);
+        const result=await sendWhatsAppCampaign({store,env,fetcher},{...input,campaignId},session.user,session.tenantId);
+        return send(200,result);
+      }
       // Real multi-agent delegation (spec Part 7): a genuine agentRuntime.run('intelligence'/
       // 'strategy', …) call — never a canned template. If AI is not configured or the run
       // fails, the campaign's strategy/intelligence simply stays null (shown honestly), not a
@@ -2049,9 +2062,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner']);
         return send(200,listWebhookEvents(store.db,{source:'salla',limit:Number(url.searchParams.get('limit'))||50},session.tenantId));
       }
-      // Meta OAuth (owner only, same bar as Salla above).
+      // Meta OAuth status is read-only (never returns tokens — see metaOAuthStatus) so it's
+      // visible to operator too, same bar as the WhatsApp template/manual-send routes below;
+      // only start/callback/disconnect stay owner-only.
       if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/status') {
-        authorize(session,['owner']);
+        authorize(session,['owner','operator']);
         return send(200,metaOAuthStatus(store.db,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/meta/oauth/start') {
@@ -2873,8 +2888,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // to point at '/#...' now points at '/app#...' (grepped for every real occurrence —
       // 12 call sites — rather than guessed).
       const files={'/favicon.svg':'favicon.svg','/':'home.html','/styles.css':'styles.css','/agent-network.js':'agent-network.js','/assets/screenshots/hero-marketing-overview.png':'assets/screenshots/hero-marketing-overview.png','/assets/screenshots/feature-command-center.png':'assets/screenshots/feature-command-center.png','/assets/screenshots/feature-crm.png':'assets/screenshots/feature-crm.png','/app':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js','pages/command-center.js','pages/workflows.js','pages/marketing.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter','workflows','marketing'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js','pages/command-center.js','pages/workflows.js','pages/marketing.js','pages/whatsapp.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter','workflows','marketing','whatsapp'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       // Website AI Chat Widget embed script (spec Part 87) — served publicly, unauthenticated,
       // exactly like /app.js already is; the ONE file a tenant embeds on their OWN external
       // website. Carries no secret — only the public, non-secret widget id the tenant pastes

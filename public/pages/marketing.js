@@ -153,7 +153,10 @@ function renderOverviewTab(overview,analyticsSummary) {
 // -----------------------------------------------------------------------------------------
 // Campaigns
 // -----------------------------------------------------------------------------------------
-function campaignFormFields(node,campaign) {
+// `channels` defaults to the shared metaCache (populated by this page's own render) but can be
+// overridden by a caller that hasn't warmed that cache — e.g. the WhatsApp page reusing this
+// exact form pre-filtered to a single channel without depending on Marketing having rendered.
+export function campaignFormFields(node,campaign,channels=metaCache.contentChannels) {
  const d=campaign||{};
  node.innerHTML=`
   <label>${escape(t('marketing.fieldName'))}<input name="name" required maxlength="200" value="${escape(d.name||'')}"></label>
@@ -165,7 +168,7 @@ function campaignFormFields(node,campaign) {
   <label>${escape(t('marketing.fieldAudience'))}<textarea name="audience" maxlength="500">${escape(d.audience||'')}</textarea></label>
   <label>${escape(t('marketing.fieldOffer'))}<textarea name="offer" maxlength="500">${escape(d.offer||'')}</textarea></label>
   <fieldset><legend>${escape(t('marketing.fieldChannels'))}</legend>
-   ${metaCache.contentChannels.map(c=>`<label class="check"><input type="checkbox" name="channel" value="${c}" ${(d.channels||[]).includes(c)?'checked':''}> ${escape(c)}</label>`).join('')}
+   ${channels.map(c=>`<label class="check"><input type="checkbox" name="channel" value="${c}" ${(d.channels||[]).includes(c)?'checked':''}> ${escape(c)}</label>`).join('')}
   </fieldset>
   <div class="row">
    <label>${escape(t('marketing.fieldTone'))}<input name="tone" maxlength="100" value="${escape(d.tone||'')}"></label>

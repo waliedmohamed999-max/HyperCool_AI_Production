@@ -23,6 +23,7 @@ import {installPlatformPage,renderPlatformPage} from './pages/platform.js';
 import {installCommandCenter,renderCommandCenter} from './pages/command-center.js';
 import {installWorkflowsPage,renderWorkflowsPage} from './pages/workflows.js';
 import {installMarketingPage,renderMarketingPage} from './pages/marketing.js';
+import {installWhatsAppPage,renderWhatsAppPage} from './pages/whatsapp.js';
 import {isInviteRoute,renderInvitePage} from './pages/invite.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
@@ -54,6 +55,7 @@ installPlatformPage();
 installCommandCenter();
 installWorkflowsPage();
 installMarketingPage();
+installWhatsAppPage();
 installCRMInteractions();
 installContentInteractions();
 installMemoryInteractions();
@@ -91,6 +93,7 @@ function refetchPageIfNeeded(page){
   else if(page==='command-center')renderCommandCenter({api,auth}).catch(error=>message(error.message,'error'));
   else if(page==='workflows')renderWorkflowsPage({api,auth}).catch(error=>message(error.message,'error'));
   else if(page==='marketing')renderMarketingPage({api,auth}).catch(error=>message(error.message,'error'));
+  else if(page==='whatsapp')renderWhatsAppPage({api,auth}).catch(error=>message(error.message,'error'));
 }
 navLinks.forEach(a=>a.addEventListener('click',event=>{
   const page=a.getAttribute('href').slice(1);
@@ -251,6 +254,7 @@ async function render(){
   await renderCommandCenter({api,auth});
   await renderWorkflowsPage({api,auth});
   await renderMarketingPage({api,auth});
+  await renderWhatsAppPage({api,auth});
   await renderOnboardingPage({api,auth});
   $('#items').querySelectorAll(':scope > article').forEach((card,index)=>addContentActions(card,state.content[index],auth,escape));
   await renderPlanning({api,auth,state,escape});
