@@ -81,7 +81,7 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
 body {
   margin: 0;
   background: var(--color-canvas);
@@ -91,6 +91,11 @@ body {
   font-size: var(--text-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  /* Several decorative glows/floating cards intentionally bleed a few px past their own
+     section on purpose (soft background blur, cards overlapping a screenshot's edge) —
+     harmless visually, but without this they register as real scrollable content and add
+     a horizontal scrollbar. This clips only the overflow, not the visible rendering. */
+  overflow-x: hidden;
 }
 img { max-width: 100%; display: block; }
 a { color: inherit; text-decoration: none; }
@@ -177,7 +182,7 @@ h1, h2, h3 {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;
   background: var(--color-canvas);
   border-radius: var(--radius-large);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 36px 64px -28px rgba(65,40,120,.28), 0 12px 24px -12px rgba(65,40,120,.12), inset 0 1px 0 rgba(255,255,255,.7);
   border: 1px solid var(--color-mist);
   padding: 40px 24px;
   margin: 0 auto;
@@ -495,8 +500,20 @@ h1, h2, h3 {
 .ann-workflow-step.is-approval .ann-workflow-label { color: #be123c; }
 .ann-workflow-arrow { color: var(--color-smoke); font-size: 22px; }
 
-.ann-cta { text-align: center; padding-top: 36px; border-top: 1px solid var(--color-mist); }
-.ann-cta h3 { font-size: var(--text-heading-sm); color: var(--color-deep-iris); margin: 20px 0 0; }
+/* A soft gradient fade instead of a flat 1px rule reads as an intentional close to the Frost
+   scene rather than an abrupt cutoff, and the radial glow behind the headline gives this
+   closing moment a touch more visual weight than the sections above it. */
+.ann-cta { text-align: center; padding-top: 52px; position: relative; }
+.ann-cta::before {
+  content: ''; position: absolute; top: 0; left: 8%; right: 8%; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-mist) 25%, var(--color-mist) 75%, transparent);
+}
+.ann-cta::after {
+  content: ''; position: absolute; top: -40px; left: 50%; transform: translateX(-50%); z-index: -1;
+  width: 520px; height: 260px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(ellipse, rgba(125,67,255,.12), transparent 70%);
+}
+.ann-cta h3 { font-size: var(--text-heading-sm); color: var(--color-deep-iris); margin: 24px 0 0; }
 .ann-cta .btn svg { width: 14px; height: 14px; }
 
 .ann-noscript-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -608,6 +625,367 @@ footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-directi
 .subhead-32 { font-size: 32px; margin: 16px 0; }
 .footer-brand-copy { margin-top: 16px; max-width: 320px; }
 .caption-note { color: var(--color-ash); font-size: 13px; margin-top: 12px; }
+
+/* Wider content container reserved for these three storytelling sections — the site's
+   normal .wrap (1200px) reads too narrow for large mockups/visual composition at these
+   sections specifically; every other section keeps .wrap untouched. */
+.wrap-wide { max-width: 1440px; margin-inline: auto; padding-inline: 24px; }
+.subhead-48 { font-size: 50px; line-height: 1.2; margin: 18px 0; }
+.sales-lead { font-size: 18.5px; line-height: 1.8; color: var(--color-slate); margin: 16px 0 0; max-width: 94%; }
+/* A layered, softer "premium" shadow for the primary visual in each section (dashboard mock,
+   hero screenshots, status card) — a wider ambient glow underneath the existing tight shadow,
+   giving real elevation instead of a flat drop-shadow. Secondary elements (feature cards,
+   chips) keep the plainer --shadow-sm/--shadow-lg. */
+.shadow-elevated { box-shadow: 0 40px 70px -32px rgba(65,40,120,.28), 0 14px 28px -12px rgba(65,40,120,.14), var(--shadow-sm); }
+
+/* =====================================================================================
+   Transformation section — "From Chaos to Command": one continuous visual journey instead
+   of two cards side by side. Physical LEFT = fragmented work (real mini tool islands, warm
+   pink tint). Physical CENTER = a vertical spine with three real stations the work passes
+   through. Physical RIGHT = one large Command Center, the section's visual hero. DOM order
+   is command → spine → islands (first child lands physically RIGHT in this RTL page).
+   ===================================================================================== */
+.compare-head h2 { font-size: 50px; }
+.compare-head p { font-size: 18.5px; }
+
+.tf-stage { position: relative; display: grid; grid-template-columns: 1.35fr 96px 0.85fr; gap: 28px; align-items: stretch; }
+.tf-stage::before {
+  content: ''; position: absolute; inset: -32px -16px; z-index: 0; border-radius: 40px; pointer-events: none;
+  background: linear-gradient(90deg, rgba(239,68,68,.07), transparent 42%, transparent 58%, rgba(124,58,237,.06));
+}
+.tf-command, .tf-spine, .tf-islands { position: relative; z-index: 1; }
+
+/* --- RIGHT: Command Center — the dominant visual element in the section. --- */
+.tf-command-frame {
+  background: var(--color-paper); border: 1px solid var(--color-mist); border-radius: 26px; padding: 30px;
+  box-shadow: 0 40px 72px -30px rgba(65,40,120,.3), inset 0 1px 0 rgba(255,255,255,.6);
+  display: flex; flex-direction: column; gap: 18px;
+}
+.cdb-topbar { display: flex; align-items: center; gap: 6px; }
+.cdb-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--color-smoke); }
+.cdb-topbar strong { margin-inline-start: 10px; font-size: 15.5px; font-weight: 600; color: var(--color-deep-iris); }
+.tf-command-live {
+  margin-inline-start: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+  color: #15803d; background: #dcfce7; padding: 5px 12px; border-radius: var(--radius-pill);
+}
+.tf-command-live .status-dot { margin-inline-end: 0; }
+
+.tf-command-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.tf-command-stats > div { background: var(--color-canvas); border: 1px solid var(--color-mist); border-radius: 14px; padding: 16px 10px; text-align: center; box-shadow: 0 4px 10px -6px rgba(65,40,120,.1); }
+.tf-command-stats strong { display: block; font-size: 24px; font-weight: 700; color: var(--color-deep-iris); }
+.tf-command-stats span { display: block; font-size: 11px; color: var(--color-slate); margin-top: 3px; }
+
+.tf-command-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cdb-list { background: var(--color-canvas); border: 1px solid var(--color-mist); border-radius: 14px; padding: 15px 17px; display: flex; flex-direction: column; gap: 11px; }
+.cdb-list-head { font-size: 12px; font-weight: 600; color: var(--color-slate); text-transform: uppercase; letter-spacing: .02em; }
+.cdb-list-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-deep-iris); }
+.cdb-list-row .status-dot { margin-inline-start: auto; margin-inline-end: 0; flex-shrink: 0; }
+.cdb-chip { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: var(--radius-pill); flex-shrink: 0; }
+.cdb-chip-approval { background: #dbeafe; color: #1d4ed8; }
+.cdb-chip-design { background: #fce7f3; color: #be185d; }
+.cdb-chip-pending { background: #fef3c7; color: #b45309; }
+
+.tf-command-publish {
+  display: flex; align-items: center; gap: 14px; background: linear-gradient(90deg, #ede9fe, #f3e8ff);
+  border-radius: 16px; padding: 16px 20px; box-shadow: 0 10px 22px -14px rgba(124,58,237,.3);
+}
+.tf-command-publish-icon {
+  width: 46px; height: 46px; border-radius: 13px; background: var(--color-deep-iris); color: #fff;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.tf-command-publish-icon svg { width: 21px; height: 21px; }
+.tf-command-publish strong { display: block; font-size: 15px; color: var(--color-deep-iris); }
+.tf-command-publish span { font-size: 12.5px; color: var(--color-slate); }
+
+/* All four badges anchor at the frame's actual outer corners (not intersecting percentages
+   part-way down its height) — with a content-dense frame this tall, anything positioned
+   "26% from top" lands inside the stats/lists content instead of clearing it. */
+.tf-float { position: absolute; }
+.tf-float-1 { top: -22px; inset-inline-start: -28px; }
+.tf-float-2 { top: -22px; inset-inline-end: -28px; }
+.tf-float-3 { bottom: -22px; inset-inline-start: -28px; }
+.tf-float-ready { bottom: -22px; inset-inline-end: -28px; background: #dcfce7; border-color: #bbf7d0; }
+.tf-float-ready span:last-child { font-size: 13.5px; font-weight: 600; color: #15803d; }
+.tf-float-ready .float-icon { background: transparent; }
+
+/* --- CENTER: the transformation spine — three real stations the work passes through,
+   colored from warm pink (chaos) at top to violet (control) at bottom. --- */
+.tf-spine { display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding-block: 16px; }
+.tf-spine-line {
+  position: absolute; top: 16px; bottom: 16px; left: 50%; width: 3px; transform: translateX(-50%);
+  border-radius: 2px; background: linear-gradient(180deg, #f87171, #f9a8b4 38%, var(--color-lavender-glow) 70%, #7d43ff); opacity: .55; z-index: 0;
+}
+.tf-spine-particle {
+  position: absolute; top: 0; left: 50%; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%, 0);
+  background: #fff; box-shadow: 0 0 8px 2px rgba(124,58,237,.55); opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tf-spine-particle { animation: tf-spine-flow 4.5s linear infinite; }
+  .tf-spine-particle-2 { animation-delay: 2.25s; }
+  @keyframes tf-spine-flow { 0% { top: 0; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+}
+.tf-station { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.tf-station-icon {
+  width: 58px; height: 58px; border-radius: 50%; background: var(--color-canvas); border: 1px solid var(--color-mist);
+  box-shadow: 0 14px 26px -14px rgba(65,40,120,.32), var(--shadow-sm); color: var(--color-royal-amethyst);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.tf-station-icon svg { width: 25px; height: 25px; }
+.tf-station-label { font-size: 12.5px; font-weight: 600; color: var(--color-deep-iris); max-width: 92px; line-height: 1.35; }
+.tf-station-approval .tf-station-icon { background: #fff1f2; border-color: #fda4af; color: #be123c; box-shadow: 0 0 0 5px rgba(253,164,175,.25), 0 14px 26px -14px rgba(190,18,60,.35); }
+.tf-station-approval .tf-station-label { color: #be123c; }
+@media (prefers-reduced-motion: no-preference) {
+  .tf-station-approval .tf-station-icon { animation: tf-approval-pulse 2.6s ease-in-out infinite; }
+  @keyframes tf-approval-pulse {
+    0%, 100% { box-shadow: 0 0 0 5px rgba(253,164,175,.25), 0 14px 26px -14px rgba(190,18,60,.35); }
+    50% { box-shadow: 0 0 0 9px rgba(253,164,175,.16), 0 14px 26px -14px rgba(190,18,60,.35); }
+  }
+}
+
+/* --- LEFT: fragmented work — real mini tool islands, each a small honest UI fragment
+   (not just an icon), organized into a clean two-column grid — structured, not scattered. --- */
+.tf-islands { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-content: start; }
+.tf-island-wide { grid-column: 1 / -1; }
+.tf-island-shift { margin-top: 22px; }
+.tf-island {
+  background: var(--color-canvas); border: 1px solid var(--color-mist); border-radius: 18px; padding: 16px;
+  box-shadow: 0 14px 28px -18px rgba(65,40,120,.22), var(--shadow-sm); display: flex; flex-direction: column; gap: 10px;
+}
+.tf-isl-head { display: flex; align-items: center; gap: 8px; }
+.tf-isl-icon {
+  width: 32px; height: 32px; border-radius: 9px; background: color-mix(in srgb, #ef4444 8%, var(--color-paper));
+  color: var(--color-royal-amethyst); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.tf-isl-icon svg { width: 16px; height: 16px; }
+.tf-isl-head strong { font-size: 13.5px; font-weight: 700; color: var(--color-deep-iris); }
+.tf-isl-dot { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; margin-inline-start: auto; flex-shrink: 0; }
+.tf-isl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--color-slate); background: var(--color-paper); border-radius: 8px; padding: 7px 10px; }
+.tf-isl-value { font-weight: 600; color: var(--color-deep-iris); white-space: nowrap; }
+.tf-isl-tag { font-size: 10px; font-weight: 600; padding: 2px 9px; border-radius: var(--radius-pill); background: var(--color-mist-violet); color: var(--color-royal-amethyst); flex-shrink: 0; }
+.tf-isl-tag-late { background: #fee2e2; color: #b91c1c; }
+.tf-isl-chart { display: flex; align-items: flex-end; gap: 5px; height: 34px; background: var(--color-paper); border-radius: 8px; padding: 6px 10px; }
+.tf-isl-chart span { flex: 1; border-radius: 2px 2px 0 0; background: linear-gradient(180deg, var(--color-lavender-glow), #a78bfa); }
+.tf-isl-chart span:nth-child(1) { height: 40%; }
+.tf-isl-chart span:nth-child(2) { height: 78%; background: linear-gradient(180deg, #ef4444, #f87171); }
+.tf-isl-chart span:nth-child(3) { height: 55%; }
+.tf-isl-chart span:nth-child(4) { height: 92%; background: linear-gradient(180deg, #ef4444, #fca5a5); }
+.tf-isl-warn { font-size: 11px; color: #b91c1c; font-weight: 600; }
+
+.compare-trustbar {
+  display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 44px; text-align: center;
+  color: var(--color-deep-iris); font-weight: 500; font-size: 16px;
+}
+.compare-trustbar svg { width: 20px; height: 20px; color: var(--color-royal-amethyst); flex-shrink: 0; }
+
+@media (max-width: 1180px) {
+  .compare-head h2, .flow-section .section-head h2 { font-size: 40px; }
+  .subhead-48 { font-size: 38px; }
+  .tf-stage { grid-template-columns: 1.2fr 80px 0.9fr; gap: 20px; }
+  .tf-command-stats { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 900px) {
+  /* The journey stays a single vertical story, top to bottom: fragmented islands, then the
+     three spine stations IN ORDER (data → agents → approval — this is a sequence, not a
+     side-by-side row, so it keeps its column direction here too), then the command center as
+     the final, largest destination. */
+  .tf-stage { display: flex; flex-direction: column; gap: 36px; }
+  .tf-stage::before { display: none; }
+  .tf-command { order: 3; }
+  .tf-spine { order: 2; flex-direction: column; gap: 28px; min-height: 0; padding-block: 8px; }
+  .tf-islands { order: 1; }
+  /* .tf-command selector prefix (not just the bare class) is required: the shared .float-card
+     base rule (also position:absolute, equal specificity) is defined later in this file, so a
+     bare-class override here would lose the cascade regardless of being inside this media query. */
+  .tf-command .tf-float-1, .tf-command .tf-float-2, .tf-command .tf-float-3, .tf-command .tf-float-ready {
+    position: static; margin: 10px auto 0; max-width: none; display: inline-flex;
+  }
+}
+@media (max-width: 700px) {
+  .tf-command-stats { grid-template-columns: 1fr 1fr; }
+  .tf-command-lists { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .tf-islands { grid-template-columns: 1fr; }
+  .tf-island-shift { margin-top: 0; }
+}
+
+/* =====================================================================================
+   Shared floating annotation card — large, prominent labels used by the workflow and
+   sales showcases to annotate a real product screenshot without covering it.
+   ===================================================================================== */
+.float-card {
+  position: absolute; display: flex; align-items: center; gap: 12px; background: var(--color-canvas);
+  border: 1px solid var(--color-mist); border-radius: 20px; padding: 14px 20px 14px 14px;
+  box-shadow: var(--shadow-lg); max-width: 260px; z-index: 3;
+}
+.float-card strong { display: block; font-size: 14.5px; color: var(--color-deep-iris); }
+.float-card span { display: block; font-size: 12.5px; color: var(--color-slate); margin-top: 2px; }
+.float-icon {
+  width: 42px; height: 42px; border-radius: 14px; background: var(--color-mist-violet); color: var(--color-royal-amethyst);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.float-icon svg { width: 21px; height: 21px; }
+.float-icon-green { background: #dcfce7; color: #15803d; }
+.float-icon-amber { background: #fef3c7; color: #b45309; }
+.float-icon-rose { background: #ffe4e6; color: #be123c; }
+
+/* =====================================================================================
+   Workflow section — a large horizontal stepper of substantial pill-cards (not tiny
+   chips) plus a two-column layout: a premium status card beside a hero-sized screenshot.
+   ===================================================================================== */
+.flow-stepper {
+  list-style: none; margin: 0 auto 30px; padding: 0; display: flex; align-items: center; justify-content: center;
+  flex-wrap: wrap; gap: 10px; max-width: 1400px; position: relative;
+}
+/* A continuous connector behind the pills — visible only in the gaps where the arrows sit,
+   reading as one operational line running through the process rather than isolated pills. */
+.flow-stepper::before {
+  content: ''; position: absolute; top: 37px; left: 70px; right: 70px; height: 3px; z-index: 0; border-radius: 2px;
+  background: linear-gradient(90deg, var(--color-mist) 0%, var(--color-lavender-glow) 32%, #7d43ff 55%, #fda4af 78%, var(--color-mist) 100%);
+  opacity: .55;
+}
+.flow-step {
+  display: flex; align-items: center; gap: 13px; background: var(--color-canvas); border: 1px solid var(--color-mist);
+  border-radius: 24px; padding: 13px 24px 13px 13px; min-height: 80px; box-shadow: 0 14px 28px -18px rgba(65,40,120,.22), var(--shadow-sm);
+  white-space: nowrap; position: relative; z-index: 1;
+}
+.flow-step-icon {
+  width: 46px; height: 46px; border-radius: 50%; background: var(--color-mist-violet); color: var(--color-royal-amethyst);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative;
+}
+.flow-step-icon svg { width: 22px; height: 22px; }
+.flow-step-body { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.flow-step-body strong { font-size: 16px; font-weight: 700; color: var(--color-deep-iris); line-height: 1.2; }
+.flow-step-state { font-size: 11px; font-weight: 600; color: var(--color-ash); }
+.flow-step-done .flow-step-state { color: #15803d; }
+.flow-step-check {
+  position: absolute; bottom: -2px; inset-inline-end: -2px; width: 17px; height: 17px; border-radius: 50%;
+  background: #22c55e; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 10px;
+  font-weight: 700; border: 2px solid var(--color-canvas); box-shadow: 0 2px 6px rgba(21,128,61,.4);
+}
+/* The approval gate is the one step the whole story hinges on, so it gets a visible halo
+   (not just a color swap) to read as the moment everything pauses for a human — clearly more
+   prominent than the routine "done" steps on either side of it. */
+.flow-step-approval {
+  background: #fff1f2; border-color: #fda4af; color: #be123c; transform: scale(1.04);
+  box-shadow: 0 0 0 5px rgba(253,164,175,.28), 0 20px 38px -16px rgba(190,18,60,.35), var(--shadow-sm);
+}
+.flow-step-approval .flow-step-icon { background: #ffe4e6; color: #be123c; }
+.flow-step-approval .flow-step-state { color: #be123c; }
+.flow-step-done .flow-step-body strong { color: var(--color-plum-velvet); }
+.flow-step-locked { background: var(--color-paper); border-style: dashed; opacity: .85; }
+.flow-step-locked .flow-step-icon { background: var(--color-mist); color: var(--color-slate); }
+.flow-step-locked .flow-step-body strong { color: var(--color-slate); }
+.flow-step-locked .flow-step-state { color: var(--color-ash); }
+.flow-arrow { display: flex; align-items: center; color: var(--color-smoke); position: relative; z-index: 1; }
+.flow-arrow svg { width: 22px; height: 22px; }
+.flow-note { max-width: 820px; margin: 0 auto 26px; text-align: center; color: var(--color-slate); font-size: 17px; line-height: 1.8; }
+.flow-badges { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 40px; flex-wrap: wrap; }
+.flow-badges .pill { padding: 8px 16px; font-size: 13.5px; }
+.flow-badges .pill svg { width: 13px; height: 13px; }
+
+/* A short curved connector dropping from the stepper's approval gate down into the status
+   card's own "موافقة بشرية" row — ties the two halves of the section into one continuous
+   process instead of two unrelated blocks stacked on top of each other. */
+.flow-connector { display: flex; justify-content: center; margin: -8px 0 12px; position: relative; z-index: 0; }
+.flow-connector svg { width: 30px; height: 44px; color: #f9a8b4; opacity: .8; filter: drop-shadow(0 4px 8px rgba(190,18,60,.15)); }
+
+.flow-layout { display: grid; grid-template-columns: 0.78fr 1.22fr; gap: 36px; align-items: stretch; margin-bottom: 40px; }
+.flow-status-card {
+  background: var(--color-canvas); border: 1px solid var(--color-mist); border-radius: 24px;
+  padding: 32px; box-shadow: 0 34px 64px -30px rgba(65,40,120,.26), var(--shadow-sm); display: flex; flex-direction: column;
+}
+.flow-status-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.flow-status-head h3 { font-size: 23px; margin: 0; }
+.flow-status-head-icon {
+  width: 40px; height: 40px; border-radius: 12px; background: var(--color-mist-violet); color: var(--color-royal-amethyst);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.flow-status-head-icon svg { width: 20px; height: 20px; }
+.flow-status-rows { display: flex; flex-direction: column; flex: 1; }
+.flow-status-row { display: flex; align-items: center; justify-content: space-between; padding: 19px 4px; border-bottom: 1px solid var(--color-mist); font-size: 16px; font-weight: 500; color: var(--color-deep-iris); }
+.flow-status-row:last-child { border-bottom: none; }
+.flow-status-row.is-pending { background: linear-gradient(90deg, transparent, rgba(254,243,199,.4)); margin-inline: -8px; padding-inline: 8px; border-radius: 12px; }
+.status-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; padding: 7px 16px; border-radius: var(--radius-pill); }
+.status-pill::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.status-pill-ok { background: #dcfce7; color: #15803d; }
+.status-pill-pass { background: #cffafe; color: #0e7490; box-shadow: 0 0 0 1px #a5f3fc inset; }
+.status-pill-pending { background: #fef3c7; color: #b45309; box-shadow: 0 0 0 1px #fde68a inset; }
+
+.flow-visual { position: relative; display: flex; align-items: center; }
+.flow-visual-glow { position: absolute; inset: -12% -9%; z-index: 0; border-radius: 42%; background: radial-gradient(ellipse at 55% 42%, rgba(125,67,255,.2), transparent 68%); filter: blur(4px); }
+.flow-visual img { position: relative; z-index: 1; width: 100%; border-radius: 24px; box-shadow: 0 34px 64px -30px rgba(65,40,120,.3), 0 12px 24px -12px rgba(65,40,120,.15); border: 1px solid var(--color-mist); }
+.flow-float-top { top: -20px; inset-inline-start: -24px; }
+.flow-float-bottom { bottom: -20px; inset-inline-end: -24px; }
+
+@media (max-width: 1180px) {
+  .flow-step { min-width: 0; padding: 12px 20px 12px 12px; }
+  .flow-step-icon { width: 40px; height: 40px; }
+  .flow-step-body strong { font-size: 14.5px; }
+  .flow-stepper::before { left: 50px; right: 50px; }
+}
+@media (max-width: 900px) {
+  .flow-layout { grid-template-columns: 1fr; }
+  .flow-visual { order: -1; margin-bottom: 12px; }
+  .flow-float-top, .flow-float-bottom { position: static; margin: 10px auto 0; max-width: none; }
+  .flow-visual-glow { display: none; }
+  .flow-stepper::before { display: none; }
+  .flow-connector { display: none; }
+}
+@media (max-width: 600px) {
+  .flow-stepper { gap: 8px; }
+  .flow-step { padding: 10px 16px 10px 10px; min-height: 0; }
+  .flow-step-body strong { font-size: 13.5px; }
+  .flow-step-state { font-size: 10px; }
+  .flow-step-icon { width: 32px; height: 32px; }
+  .flow-step-icon svg { width: 16px; height: 16px; }
+  .flow-step-check { width: 14px; height: 14px; font-size: 8px; }
+  .flow-arrow { display: none; }
+}
+
+/* =====================================================================================
+   Sales / CRM showcase — a full 50/50 hero composition: a large annotated screenshot
+   with real depth (glow + connector lines + overlapping floating cards) beside sizeable
+   feature cards, replacing the previous plain screenshot+text pair.
+   ===================================================================================== */
+.sales-layout { display: grid; grid-template-columns: 0.82fr 1.18fr; gap: 56px; align-items: center; min-height: 660px; }
+.sales-features { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+.sales-feature-card {
+  background: var(--color-canvas); border: 1px solid var(--color-mist); border-radius: 20px;
+  padding: 22px; min-height: 156px; display: flex; flex-direction: column; gap: 12px;
+  box-shadow: 0 14px 30px -20px rgba(65,40,120,.2), var(--shadow-sm);
+}
+.sales-feature-card .float-icon { margin-bottom: 2px; }
+.sales-feature-card strong { font-size: 17.5px; color: var(--color-deep-iris); }
+.sales-feature-card span { font-size: 14px; color: var(--color-slate); line-height: 1.65; }
+
+.sales-visual { position: relative; }
+.sales-visual-glow { position: absolute; inset: -16% -12%; z-index: 0; border-radius: 42%; background: radial-gradient(ellipse at 58% 38%, rgba(125,67,255,.22), transparent 68%); filter: blur(4px); }
+.sales-connector { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.sales-connector path { fill: none; stroke: var(--color-lavender-glow); stroke-width: 1.8; stroke-dasharray: 2 6; stroke-linecap: round; stroke-opacity: .65; }
+.sales-connector circle { fill: var(--color-lavender-glow); opacity: .6; }
+.sales-visual img { position: relative; z-index: 1; width: 100%; border-radius: 20px; box-shadow: 0 36px 64px -28px rgba(65,40,120,.32), 0 12px 24px -12px rgba(65,40,120,.16); border: 1px solid var(--color-mist); }
+.sales-float-inbox { top: -20px; inset-inline-start: -22px; }
+.sales-float-pipeline { top: 22%; inset-inline-end: -26px; }
+.sales-float-followup { bottom: -30px; inset-inline-start: 4%; }
+.sales-float-insights { bottom: -38px; inset-inline-end: 14%; }
+.sales-caption { position: absolute; bottom: -64px; inset-inline-end: 4px; font-size: 14px; color: var(--color-royal-amethyst); font-weight: 600; z-index: 2; }
+
+@media (max-width: 1180px) {
+  .sales-layout { gap: 40px; min-height: 0; }
+  .sales-features { gap: 14px; }
+  .sales-feature-card { min-height: 0; padding: 18px; }
+}
+@media (max-width: 900px) {
+  .sales-layout { grid-template-columns: 1fr; gap: 72px; }
+  .sales-visual { order: -1; margin-bottom: 8px; }
+  .sales-visual-glow, .sales-connector { display: none; }
+  .sales-float-inbox, .sales-float-pipeline, .sales-float-followup, .sales-float-insights { position: static; margin: 10px auto 0; max-width: none; }
+  .sales-caption { position: static; display: block; margin-top: 14px; text-align: center; }
+}
+@media (max-width: 600px) {
+  .sales-features { grid-template-columns: 1fr; }
+}
 
 /* Pricing (mirrors src/plans.js exactly — same 4 tiers, same prices, same feature split). */
 .pricing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; }

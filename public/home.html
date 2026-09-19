@@ -127,23 +127,106 @@
   </div>
 </section>
 
-<section class="section">
-  <div class="wrap">
-    <div class="problem-solution">
-      <div>
-        <span class="pill">المشكلة</span>
-        <h2 class="subhead-32">عشر أدوات منفصلة، بيانات متضاربة، ونشر بلا رقابة</h2>
-        <div class="problem-list">
-          <div class="problem-item"><span class="x">✕</span><span>تسويق في أداة، عملاء في أداة ثانية، ومحتوى في ملف ثالث.</span></div>
-          <div class="problem-item"><span class="x">✕</span><span>محتوى يُنشر أحيانًا بلا فحص امتثال حقيقي أو مراجعة بشرية موثّقة.</span></div>
-          <div class="problem-item"><span class="x">✕</span><span>تحليلات مُقدَّرة أو غير واضح مصدرها، بدل رقم حقيقي أو "غير متاح" بصراحة.</span></div>
+<section class="section transform-section">
+  <div class="wrap-wide">
+    <div class="section-head compare-head">
+      <span class="pill">من التشتت إلى السيطرة</span>
+      <h2>من خمس أدوات متفرقة إلى غرفة قيادة واحدة</h2>
+      <p>HyperCool يوحّد بياناتك، ينسّق وكلاءك، ويوقف أي خطوة حساسة حتى اعتمادك.</p>
+    </div>
+
+    <!-- DOM order is RIGHT→LEFT on purpose: in this RTL page the first child of a grid row
+         lands physically on the right, so command-center (first) reads right, islands (last)
+         read left — matching "fragmented left, command right" without fighting RTL. -->
+    <div class="tf-stage">
+      <div class="tf-command">
+        <div class="tf-command-frame">
+          <div class="cdb-topbar">
+            <span class="cdb-dot"></span><span class="cdb-dot"></span><span class="cdb-dot"></span>
+            <strong>غرفة القيادة</strong>
+            <span class="tf-command-live"><span class="status-dot ok"></span>مباشر</span>
+          </div>
+
+          <div class="tf-command-stats">
+            <div><strong>3</strong><span>حملات نشطة</span></div>
+            <div><strong>16</strong><span>مهام قيد التنفيذ</span></div>
+            <div><strong>2</strong><span>بانتظار موافقتك</span></div>
+            <div><strong>12/12</strong><span>وكيل متصل</span></div>
+          </div>
+
+          <div class="tf-command-lists">
+            <div class="cdb-list">
+              <span class="cdb-list-head">آخر الموافقات</span>
+              <div class="cdb-list-row"><span class="cdb-chip cdb-chip-approval">امتثال</span>إعلان "عرض صيفي مميز"<span class="status-dot ok"></span></div>
+              <div class="cdb-list-row"><span class="cdb-chip cdb-chip-design">تصميم</span>تصميم حملة الافتتاح<span class="status-dot ok"></span></div>
+            </div>
+            <div class="cdb-list">
+              <span class="cdb-list-head">النشاط الأخير</span>
+              <div class="cdb-list-row"><span class="cdb-chip cdb-chip-pending">بانتظار</span>موافقة نشر واتساب<span class="status-dot pending"></span></div>
+              <div class="cdb-list-row"><span class="cdb-chip cdb-chip-approval">تحليلات</span>مصدر بيانات موحّد ✓<span class="status-dot ok"></span></div>
+            </div>
+          </div>
+
+          <div class="tf-command-publish">
+            <span class="tf-command-publish-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 3 10.5l7 2.5 2 7L21 3Z"/></svg></span>
+            <div><strong>حالة النشر: جاهزة</strong><span>بانتظار اعتمادك قبل الإرسال الفعلي</span></div>
+          </div>
+        </div>
+
+        <div class="float-card tf-float tf-float-1"><span class="float-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1"/><circle cx="10" cy="7" r="4"/></svg></span><span>كل فرقك في مكان واحد</span></div>
+        <div class="float-card tf-float tf-float-2"><span class="float-icon float-icon-rose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></svg></span><span>موافقة بشرية قبل النشر</span></div>
+        <div class="float-card tf-float tf-float-3"><span class="float-icon float-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span><span>مصدر بيانات واحد موثوق</span></div>
+        <div class="float-card tf-float tf-float-ready"><span class="float-icon float-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span>جاهز للنشر بعد موافقتك</span></div>
+      </div>
+
+      <div class="tf-spine">
+        <span class="tf-spine-line" aria-hidden="true"><span class="tf-spine-particle"></span><span class="tf-spine-particle tf-spine-particle-2"></span></span>
+        <div class="tf-station">
+          <span class="tf-station-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg></span>
+          <span class="tf-station-label">توحيد البيانات</span>
+        </div>
+        <div class="tf-station">
+          <span class="tf-station-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.3"/><circle cx="5" cy="19" r="2.3"/><circle cx="19" cy="19" r="2.3"/><path d="M12 7.3v3.2M12 10.5 6.3 17M12 10.5l5.7 6.5"/></svg></span>
+          <span class="tf-station-label">تنسيق الوكلاء</span>
+        </div>
+        <div class="tf-station tf-station-approval">
+          <span class="tf-station-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></svg></span>
+          <span class="tf-station-label">الموافقة البشرية</span>
         </div>
       </div>
-      <div>
-        <span class="pill">الحل</span>
-        <h2 class="subhead-32">مركز تشغيل واحد، بموافقة بشرية دائمة</h2>
-        <p class="text-slate">HyperCool يجمع كل قسم من عملك على نفس البيانات الحقيقية، ولا يسمح لأي وكيل بالنشر أو الإرسال الخارجي دون اعتماد صريح من فريقك.</p>
+
+      <div class="tf-islands">
+        <div class="tf-island">
+          <div class="tf-isl-head"><span class="tf-isl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/></svg></span><strong>التسويق</strong><span class="tf-isl-dot"></span></div>
+          <div class="tf-isl-row"><span>حملة الصيف</span><span class="tf-isl-value">12,000 ريال</span></div>
+          <span class="tf-isl-warn">⚠ ميزانية غير محدّثة</span>
+        </div>
+        <div class="tf-island tf-island-shift">
+          <div class="tf-isl-head"><span class="tf-isl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1"/><circle cx="10" cy="7" r="4"/></svg></span><strong>العملاء</strong><span class="tf-isl-dot"></span></div>
+          <div class="tf-isl-row"><span>صندوق الوارد</span><span class="tf-isl-value">24 محادثة</span></div>
+          <span class="tf-isl-warn">⚠ رسالة بلا رد منذ يومين</span>
+        </div>
+        <div class="tf-island">
+          <div class="tf-isl-head"><span class="tf-isl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l3 3v15H6z"/><path d="M9 12h6M9 16h6"/></svg></span><strong>المحتوى</strong><span class="tf-isl-dot"></span></div>
+          <div class="tf-isl-row"><span>مسودة: عرض نهاية الأسبوع</span><span class="tf-isl-tag">v3</span></div>
+          <span class="tf-isl-warn">⚠ بلا موافقة موثّقة</span>
+        </div>
+        <div class="tf-island tf-island-shift">
+          <div class="tf-isl-head"><span class="tf-isl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V12M12 20V6M19 20v-8"/><path d="M2 20h20"/></svg></span><strong>التحليلات</strong><span class="tf-isl-dot"></span></div>
+          <div class="tf-isl-chart" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+          <span class="tf-isl-warn">⚠ رقمان مختلفان لنفس المؤشر</span>
+        </div>
+        <div class="tf-island tf-island-wide">
+          <div class="tf-isl-head"><span class="tf-isl-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M3 12h3M18 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/><circle cx="12" cy="12" r="3.5"/></svg></span><strong>العمليات</strong><span class="tf-isl-dot"></span></div>
+          <div class="tf-isl-row"><span>تسليم للفريق التالي</span><span class="tf-isl-tag tf-isl-tag-late">متأخر</span></div>
+          <span class="tf-isl-warn">⚠ بلا متابعة تلقائية</span>
+        </div>
       </div>
+    </div>
+
+    <div class="compare-trustbar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></svg>
+      فرقك، بياناتك، محتواك .. تحت سيطرتك دائمًا
     </div>
   </div>
 </section>
@@ -190,44 +273,154 @@
   </div>
 </section>
 
-<section class="section tint" id="how-it-works">
-  <div class="wrap">
+<section class="section tint flow-section" id="how-it-works">
+  <div class="wrap-wide">
     <div class="section-head">
       <span class="pill">من الفكرة إلى النتيجة</span>
       <h2>كيف يعمل التنسيق الآلي للحملة</h2>
       <p>مسار كامل، خطوة بخطوة، ولا ينشر أي شيء خارجيًا إلا بعد موافقتك.</p>
     </div>
-    <div class="showcase">
-      <div>
-        <h3 class="showcase-title">رصد السوق ← استراتيجية ← كتابة ← تصميم ← امتثال ← موافقتك ← نشر</h3>
-        <p class="showcase-copy">كل خطوة تشغيلة وكيل حقيقية موثّقة بالكامل — لا خطوة وهمية، ولا نتيجة مُخترعة. تتوقف الحملة تلقائيًا عند خطوة الموافقة البشرية وتنتظرك.</p>
-        <div class="table-card">
-          <table>
-            <thead><tr><th>الخطوة</th><th>الحالة</th></tr></thead>
-            <tbody>
-              <tr><td>رصد السوق والمنافسين</td><td><span class="status-dot ok"></span>مكتملة</td></tr>
-              <tr><td>استراتيجية المحتوى</td><td><span class="status-dot ok"></span>مكتملة</td></tr>
-              <tr><td>الكتابة والتصميم</td><td><span class="status-dot ok"></span>مكتملة</td></tr>
-              <tr><td>فحص الامتثال</td><td><span class="status-dot ok"></span>PASS</td></tr>
-              <tr><td>موافقة بشرية</td><td><span class="status-dot pending"></span>بانتظارك</td></tr>
-            </tbody>
-          </table>
+
+    <ol class="flow-stepper">
+      <li class="flow-step flow-step-done">
+        <span class="flow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19l5-6 4 3 7-9"/><path d="M15 7h5v5"/></svg><span class="flow-step-check" aria-hidden="true">✓</span></span>
+        <span class="flow-step-body"><strong>رصد السوق</strong><span class="flow-step-state">مكتمل</span></span>
+      </li>
+      <li class="flow-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></li>
+      <li class="flow-step flow-step-done">
+        <span class="flow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/></svg><span class="flow-step-check" aria-hidden="true">✓</span></span>
+        <span class="flow-step-body"><strong>استراتيجية</strong><span class="flow-step-state">مكتمل</span></span>
+      </li>
+      <li class="flow-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></li>
+      <li class="flow-step flow-step-done">
+        <span class="flow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l3 3v15H6z"/><path d="M9 12h6M9 16h6"/></svg><span class="flow-step-check" aria-hidden="true">✓</span></span>
+        <span class="flow-step-body"><strong>كتابة</strong><span class="flow-step-state">مكتمل</span></span>
+      </li>
+      <li class="flow-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></li>
+      <li class="flow-step flow-step-done">
+        <span class="flow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="M21 16l-5-5-4 4-2-2-4 4"/></svg><span class="flow-step-check" aria-hidden="true">✓</span></span>
+        <span class="flow-step-body"><strong>تصميم</strong><span class="flow-step-state">مكتمل</span></span>
+      </li>
+      <li class="flow-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></li>
+      <li class="flow-step flow-step-done">
+        <span class="flow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></svg><span class="flow-step-check" aria-hidden="true">✓</span></span>
+        <span class="flow-step-body"><strong>امتثال</strong><span class="flow-step-state">مكتمل</span></span>
+      </li>
+      <li class="flow-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></li>
+      <li class="flow-step flow-step-approval">
+        <span class="flow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 21c0-3.5 3-6 7-6s7 2.5 7 6"/></svg></span>
+        <span class="flow-step-body"><strong>موافقتك</strong><span class="flow-step-state">بانتظار الموافقة</span></span>
+      </li>
+      <li class="flow-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></li>
+      <li class="flow-step flow-step-locked">
+        <span class="flow-step-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 3 10.5l7 2.5 2 7L21 3Z"/><path d="M12.5 13.5 21 3"/></svg></span>
+        <span class="flow-step-body"><strong>نشر</strong><span class="flow-step-state">محظور حتى الاعتماد</span></span>
+      </li>
+    </ol>
+
+    <p class="flow-note">كل خطوة يشغّلها وكيل حقيقي موثّق بالكامل — لا خطوة وهمية، ولا نتيجة مفترضة. تتوقف الحملة تلقائيًا عند خطوة الموافقة البشرية وتنتظرك.</p>
+
+    <div class="flow-badges">
+      <span class="pill"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="12" height="12"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z"/></svg>تنسيق ذكي من الفكرة إلى النشر</span>
+      <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="12" height="12"><path d="M20 6 9 17l-5-5"/></svg>وكلاء حقيقيون يعملون لأجلك</span>
+    </div>
+
+    <div class="flow-connector" aria-hidden="true">
+      <svg viewBox="0 0 28 40" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v30" stroke-dasharray="3 5"/><path d="M7 26l7 8 7-8"/></svg>
+    </div>
+
+    <div class="flow-layout">
+      <div class="flow-status-card">
+        <div class="flow-status-head"><h3>حالة سير العمل الحالية</h3><span class="flow-status-head-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20V12M12 20V6M19 20v-8"/><path d="M2 20h20"/></svg></span></div>
+        <div class="flow-status-rows">
+          <div class="flow-status-row"><span>رصد السوق والمنافسين</span><span class="status-pill status-pill-ok">مكتملة</span></div>
+          <div class="flow-status-row"><span>استراتيجية المحتوى</span><span class="status-pill status-pill-ok">مكتملة</span></div>
+          <div class="flow-status-row"><span>الكتابة والتصميم</span><span class="status-pill status-pill-ok">مكتملة</span></div>
+          <div class="flow-status-row"><span>فحص الامتثال</span><span class="status-pill status-pill-pass">PASS</span></div>
+          <div class="flow-status-row is-pending"><span>موافقة بشرية</span><span class="status-pill status-pill-pending">بانتظارك</span></div>
         </div>
         <p class="caption-note">* بيانات توضيحية لشرح سير العمل، وليست بيانات عميل حقيقي.</p>
       </div>
-      <img src="/assets/screenshots/feature-command-center.png" alt="لقطة حقيقية من غرفة القيادة في HyperCool" loading="lazy">
+
+      <div class="flow-visual">
+        <div class="flow-visual-glow" aria-hidden="true"></div>
+        <img src="/assets/screenshots/feature-command-center.png" alt="لقطة حقيقية من غرفة القيادة في HyperCool" loading="lazy">
+        <div class="float-card flow-float-top">
+          <span class="float-icon"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z"/></svg></span>
+          <div><strong>تنسيق ذكي</strong><span>من الفكرة إلى النشر</span></div>
+        </div>
+        <div class="float-card flow-float-bottom">
+          <span class="float-icon float-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1"/><circle cx="10" cy="7" r="4"/></svg></span>
+          <div><strong>وكلاء حقيقيون</strong><span>يعملون لأجلك</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="compare-trustbar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"/><path d="M9 12l2 2 4-4"/></svg>
+      أمان، شفافية، وتحكم كامل في كل خطوة
     </div>
   </div>
 </section>
 
-<section class="section">
-  <div class="wrap">
-    <div class="showcase reverse">
-      <img src="/assets/screenshots/feature-crm.png" alt="لقطة حقيقية من صفحة العملاء والمبيعات في HyperCool" loading="lazy">
-      <div>
+<section class="section sales-section" id="sales">
+  <div class="wrap-wide">
+    <div class="sales-layout">
+      <div class="sales-copy">
         <span class="pill">العملاء والمبيعات</span>
-        <h2 class="subhead-32">من أول رسالة إلى إغلاق الصفقة، بمساحة واحدة</h2>
-        <p class="text-slate">صندوق محادثات موحّد من واتساب والموقع ومنصات التواصل، لوحة Pipeline بالسحب والإفلات، ومركز متابعة يذكّرك بما يحتاج إجراءً الآن — بلا جداول بيانات منفصلة وبلا نسخ يدوي للبيانات.</p>
+        <h2 class="subhead-48">من أول رسالة إلى إغلاق الصفقة، بمساحة واحدة</h2>
+        <p class="sales-lead">صندوق محادثات موحّد من واتساب والموقع ومنصات التواصل، لوحة Pipeline بالسحب والإفلات، ومركز متابعة يذكّرك بما يحتاج إجراءً الآن — بلا جداول بيانات منفصلة وبلا نسخ يدوي للبيانات.</p>
+
+        <div class="sales-features">
+          <div class="sales-feature-card">
+            <span class="float-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c-1.6 0-3.1-.4-4.4-1.2L3 21l1.3-4.4A8.9 8.9 0 1 1 12 21Z"/></svg></span>
+            <strong>Inbox موحد</strong><span>كل المحادثات في مكان واحد</span>
+          </div>
+          <div class="sales-feature-card">
+            <span class="float-icon float-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V12M12 20V6M19 20v-8"/><path d="M2 20h20"/></svg></span>
+            <strong>Pipeline حي</strong><span>بالسحب والإفلات</span>
+          </div>
+          <div class="sales-feature-card">
+            <span class="float-icon float-icon-rose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+            <strong>متابعة تلقائية</strong><span>لا يفوتك أي إجراء</span>
+          </div>
+          <div class="sales-feature-card">
+            <span class="float-icon float-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19l5-6 4 3 7-9"/><path d="M15 7h5v5"/></svg></span>
+            <strong>صفقات أوضح</strong><span>رؤية شاملة للمراحل</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sales-visual">
+        <div class="sales-visual-glow" aria-hidden="true"></div>
+        <svg class="sales-connector" viewBox="0 0 500 420" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M90,50 Q180,90 220,150" />
+          <path d="M420,110 Q370,170 320,210" />
+          <path d="M80,360 Q180,320 230,280" />
+          <path d="M380,380 Q320,340 280,290" />
+          <circle cx="220" cy="150" r="3.5" />
+          <circle cx="320" cy="210" r="3.5" />
+          <circle cx="230" cy="280" r="3.5" />
+          <circle cx="280" cy="290" r="3.5" />
+        </svg>
+        <img src="/assets/screenshots/feature-crm.png" alt="لقطة حقيقية من صفحة العملاء والمبيعات في HyperCool" loading="lazy">
+        <div class="float-card sales-float-inbox">
+          <span class="float-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c-1.6 0-3.1-.4-4.4-1.2L3 21l1.3-4.4A8.9 8.9 0 1 1 12 21Z"/></svg></span>
+          <div><strong>صندوق محادثات موحد</strong><span>واتساب والموقع ومنصات التواصل</span></div>
+        </div>
+        <div class="float-card sales-float-pipeline">
+          <span class="float-icon float-icon-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V12M12 20V6M19 20v-8"/><path d="M2 20h20"/></svg></span>
+          <div><strong>Pipeline</strong><span>بالسحب والإفلات</span></div>
+        </div>
+        <div class="float-card sales-float-followup">
+          <span class="float-icon float-icon-rose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+          <div><strong>متابعة تلقائية</strong><span>يتذكّر بما يحتاج إجراء الآن</span></div>
+        </div>
+        <div class="float-card sales-float-insights">
+          <span class="float-icon float-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19l5-6 4 3 7-9"/><path d="M15 7h5v5"/></svg></span>
+          <div><strong>صفقات أوضح</strong><span>من أول تواصل إلى الإغلاق</span></div>
+        </div>
+        <span class="sales-caption">كل مبيعاتك في مكان واحد ↖</span>
       </div>
     </div>
   </div>
