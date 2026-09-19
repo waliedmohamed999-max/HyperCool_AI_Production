@@ -496,6 +496,7 @@
   // --- Live automation demo (scripted mock, replayable) ---------------------------------------
   // A compact breadcrumb of chips (Frost -> agent -> agent -> agent), not a second workflow —
   // it exists only to support the main workflow card above with one concrete, real example.
+  var DEMO_ARROW = '<span class="ann-demo-chip-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></span>';
   function renderDemoSteps(activeIndex, doneUpTo) {
     var list = document.getElementById('ann-demo-steps');
     if (!list) return;
@@ -504,9 +505,12 @@
       var isLastWaiting = index === DEMO_STEPS.length - 1 && state === 'done';
       var statusText = isLastWaiting ? 'بانتظار الموافقة' : state === 'done' ? 'تم' : state === 'active' ? 'جارٍ الآن' : '';
       var cls = isLastWaiting ? 'is-waiting' : state === 'done' ? 'is-done' : state === 'active' ? 'is-active' : '';
-      return '<li class="ann-demo-chip ' + cls + '"><span class="ann-demo-chip-dot" aria-hidden="true"></span>' +
+      return '<li class="ann-demo-chip ' + cls + '" data-agent="' + step.id + '">' +
+        '<span class="ann-demo-chip-icon" aria-hidden="true">' + svgIcon(step.id) + '</span>' +
+        '<span class="ann-demo-chip-dot" aria-hidden="true"></span>' +
         '<strong>' + escapeHtml(step.label) + '</strong>' +
-        (statusText ? '<span class="ann-demo-chip-status">' + statusText + '</span>' : '') + '</li>';
+        (statusText ? '<span class="ann-demo-chip-status">' + statusText + '</span>' : '') + '</li>' +
+        (index < DEMO_STEPS.length - 1 ? DEMO_ARROW : '');
     }).join('');
   }
 
