@@ -79,6 +79,12 @@ test('delegate_to_agent runs a real nested agent via the SAME runtime, sets pare
   assert.equal(children[0].trigger_type,'DELEGATED');
   assert.match(assistantMessage.meta.steps[0].label,/وكيل الأداء/);
   assert.equal(assistantMessage.meta.steps[0].delegatedAgent,'performance');
+  // Contract the Command Center "who Frost is working with" diagram depends on
+  // (public/pages/command-center.js's renderFrostActivity): the assistant message's own runId
+  // must be the real top-level run, and its step's delegatedStatus must be a real terminal
+  // status usable for the diagram's first paint with zero extra fetch.
+  assert.equal(assistantMessage.runId,run.id);
+  assert.equal(assistantMessage.meta.steps[0].delegatedStatus,'COMPLETED');
  }finally{store.close();}
 });
 

@@ -2906,7 +2906,14 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         // (script-src/style-src stay 'self'-only, so this never opens any script/style vector —
         // data: URIs are permitted for images only).
         const headers={'Content-Type':type,'Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"};
-        if(file.endsWith('.woff2')||file.endsWith('.png'))headers['Cache-Control']='public, max-age=31536000, immutable';
+        // Fonts/icons are truly immutable (their filename never changes) so a long cache is
+        // safe; every other static asset (js/css/json/html) has no content hash in its URL, so
+        // without an explicit no-cache a browser's own heuristic caching can keep serving a
+        // pre-deploy copy of app.js/i18n.js/navigation.json for a while after a real deploy —
+        // exactly the "shows raw i18n keys, blank page" symptom seen live after shipping the
+        // WhatsApp Hub page. no-cache still lets the browser keep a copy, it just always
+        // revalidates with the server first, so every deploy is visible on next load.
+        headers['Cache-Control']=(file.endsWith('.woff2')||file.endsWith('.png'))?'public, max-age=31536000, immutable':'no-cache';
         res.writeHead(200,headers);
         return res.end(contents);
       }

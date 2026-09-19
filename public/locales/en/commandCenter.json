@@ -110,6 +110,12 @@
   "agentsReady": "Agents ready",
   "openFullMap": "Open full map",
   "runExecutiveReview": "Run Executive Review",
+  "frostActivityTitle": "Who Frost Is Working With",
+  "frostActivityIdleCaption": "No task has been delegated yet in this session",
+  "frostActivityLastRunCaption": "Last delegation: {when}",
+  "frostActivityController": "The Smart Controller",
+  "frostActivityReady": "Ready",
+  "frostActivityIdleNode": "Standing by",
   "searchPlaceholder": "Search past conversations and commands...",
   "noSearchResults": "No matching results",
   "quickCommand": {

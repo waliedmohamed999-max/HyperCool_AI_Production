@@ -195,6 +195,41 @@ body.signed-out .fab-shortcut{display:none}
    prefers-reduced-motion via base.css's global override. */
 .cmdc-frost-signature{width:10px;height:10px;border-radius:50%;background:var(--accent);flex-shrink:0;box-shadow:0 0 0 4px var(--accent-soft);animation:frost-pulse 2.4s ease-in-out infinite}
 @keyframes frost-pulse{0%,100%{box-shadow:0 0 0 4px var(--accent-soft)}50%{box-shadow:0 0 0 7px var(--accent-soft)}}
+/* Live Frost delegation diagram — Frost center + the 4 real agents it can actually delegate to
+   from Command Center (delegate_to_agent's own enum in runtime/tools.js). Node positions are
+   plain physical top/left percentages (not logical inset-inline-*) on purpose: the connecting
+   <svg> path/dot coordinates are drawn in the same fixed 0-100 space and would visually detach
+   from a node that got RTL-mirrored by logical properties — a static graph layout doesn't need
+   to flip with text direction anyway, unlike prose. Curves/positions are fixed, author-computed
+   constants (no getBoundingClientRect/resize-listener engine, unlike the public marketing
+   page's decorative equivalent) — deliberately simpler since only 5 known nodes ever exist here. */
+.cmdc-fm-caption{color:var(--ink-muted);font-size:12px}
+.cmdc-fm-stage{position:relative;height:300px;margin-top:8px;border-radius:16px;overflow:hidden;background:radial-gradient(ellipse at 50% 50%,color-mix(in srgb,var(--accent) 10%,transparent),transparent 70%),var(--surface-2)}
+.cmdc-fm-lines{position:absolute;inset:0;width:100%;height:100%}
+.cmdc-fm-lines path{fill:none;stroke:var(--border);stroke-width:.5;transition:stroke .3s ease,stroke-width .3s ease}
+.cmdc-fm-lines path.is-active{stroke:var(--node-color,var(--accent));stroke-width:.9}
+.cmdc-fm-flow-dot{fill:var(--border);transition:fill .3s ease}
+.cmdc-fm-flow-dot.is-active{fill:var(--node-color,var(--accent))}
+@media(prefers-reduced-motion:no-preference){.cmdc-fm-flow-dot.is-active{animation:cmdc-fm-flow 1.8s ease-in-out infinite}}
+@keyframes cmdc-fm-flow{0%,100%{opacity:.35;r:1.1}50%{opacity:1;r:1.6}}
+.cmdc-fm-node{position:absolute;transform:translate(-50%,-50%);z-index:1}
+.cmdc-fm-node[data-agent=frost]{top:50%;left:50%;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;width:150px}
+.cmdc-fm-node:not([data-agent=frost]){display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px 14px 8px 8px;box-shadow:0 2px 8px rgba(0,0,0,.06);width:172px}
+.cmdc-fm-node[data-agent=performance]{top:20%;left:12%}
+.cmdc-fm-node[data-agent=intelligence]{top:20%;left:88%}
+.cmdc-fm-node[data-agent=leads]{top:80%;left:12%}
+.cmdc-fm-node[data-agent=strategy]{top:80%;left:88%}
+.cmdc-fm-node-icon{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:color-mix(in srgb,var(--node-color,var(--accent)) 16%,var(--surface));color:var(--node-color,var(--accent));border:1px solid color-mix(in srgb,var(--node-color,var(--accent)) 30%,transparent)}
+.cmdc-fm-node[data-agent=frost] .cmdc-fm-node-icon{width:84px;height:84px;background:radial-gradient(circle at 32% 28%,color-mix(in srgb,var(--node-color) 55%,#fff),var(--node-color) 75%);color:#fff;border:none;box-shadow:0 0 0 8px color-mix(in srgb,var(--node-color) 12%,transparent),0 10px 26px color-mix(in srgb,var(--node-color) 30%,transparent)}
+.cmdc-fm-node[data-agent=frost] .cmdc-fm-node-icon svg{width:34px;height:34px}
+.cmdc-fm-node.is-active .cmdc-fm-node-icon{animation:frost-pulse 2.4s ease-in-out infinite}
+.cmdc-fm-node-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cmdc-fm-node-label{font-size:12px;font-weight:600;color:var(--ink)}
+.cmdc-fm-node[data-agent=frost] .cmdc-fm-node-label{font-size:16px}
+.cmdc-fm-node-caption{font-size:11px;color:var(--ink-muted)}
+.cmdc-fm-node-idle{font-size:11px;color:var(--ink-muted)}
+.cmdc-fm-node .pill{font-size:10px;padding:2px 8px;align-self:flex-start}
+.cmdc-fm-node[data-agent=frost] .pill{align-self:center}
 .cmdc-messages{flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:4px;min-height:320px;max-height:520px}
 .cmdc-message{border-radius:var(--radius-sm);padding:12px 14px;max-width:85%}
 .cmdc-message p{margin:0}

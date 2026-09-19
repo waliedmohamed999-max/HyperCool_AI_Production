@@ -11,6 +11,7 @@ import {fmtDateTime} from '../format.js';
 
 const $=s=>document.querySelector('#command-center '+s);
 let apiClient,pollTimer=null,currentConversationId=null,renderGeneration=0;
+let activeRunId=null,activeRunSteps=[],activeRunTopStatus=null;
 async function api(path,body,method){return apiClient(path,body,method);}
 function staleGuard(generation){return generation!==renderGeneration;}
 
@@ -27,6 +28,17 @@ const BRAIN_TYPES=['brain_identity','brain_goals','brain_customers','brain_produ
 let currentBrainType=BRAIN_TYPES[0],brainRowsCache=BRAIN_TYPES.map(()=>[]),brainConflictsCache=[],dataContextTabsController=null;
 const OPERATION_ICON={agent_run:'agent',audit:'clock'};
 const INBOX_ICON={crm_lead:'users',crm_followup:'clock',content:'file',escalation:'bell',connection:'plug',webhook:'plug'};
+// Live Frost delegation diagram — exactly the 4 agents delegate_to_agent can actually reach
+// from Command Center (runtime/tools.js's own enum), plus Frost itself. Not the full 12-agent
+// roster shown on the public marketing site's decorative diagram — that would misrepresent what
+// this surface can really do.
+const FROST_MAP_AGENTS=['performance','intelligence','leads','strategy'];
+const FROST_MAP_COLOR={frost:'#7c3aed',performance:'#0ea5e9',intelligence:'#22c55e',leads:'#8b5cf6',strategy:'#f97316'};
+function frostMapStatusLabel(status){
+ if(!status)return '';
+ const key='run'+status.toLowerCase().split('_').map(part=>part[0].toUpperCase()+part.slice(1)).join('');
+ return t('agents.'+key);
+}
 
 export function installCommandCenter() {
  const root=document.querySelector('[data-page="command-center"] #command-center');
@@ -34,6 +46,26 @@ export function installCommandCenter() {
   <div id="cmdc-health" class="kpi-grid"></div>
   <div class="cmdc-layout">
    <div class="cmdc-main">
+    <section class="report-section panel" id="cmdc-frost-map-section">
+     <div class="report-section-head"><h3>${escape(t('commandCenter.frostActivityTitle'))}</h3><span class="cmdc-fm-caption" id="cmdc-frost-map-caption"></span></div>
+     <div class="cmdc-fm-stage" id="cmdc-fm-stage">
+      <svg class="cmdc-fm-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+       <path data-agent="performance" d="M50,50 Q50,20 12,20"/>
+       <path data-agent="intelligence" d="M50,50 Q50,20 88,20"/>
+       <path data-agent="leads" d="M50,50 Q50,80 12,80"/>
+       <path data-agent="strategy" d="M50,50 Q50,80 88,80"/>
+       <circle class="cmdc-fm-flow-dot" data-agent="performance" cx="40.5" cy="27.5" r="1.1"/>
+       <circle class="cmdc-fm-flow-dot" data-agent="intelligence" cx="59.5" cy="27.5" r="1.1"/>
+       <circle class="cmdc-fm-flow-dot" data-agent="leads" cx="40.5" cy="72.5" r="1.1"/>
+       <circle class="cmdc-fm-flow-dot" data-agent="strategy" cx="59.5" cy="72.5" r="1.1"/>
+      </svg>
+      <div class="cmdc-fm-node" data-agent="frost"></div>
+      <div class="cmdc-fm-node" data-agent="performance"></div>
+      <div class="cmdc-fm-node" data-agent="intelligence"></div>
+      <div class="cmdc-fm-node" data-agent="leads"></div>
+      <div class="cmdc-fm-node" data-agent="strategy"></div>
+     </div>
+    </section>
     <section class="cmdc-chat panel">
      <div class="cmdc-chat-head">
       <span class="cmdc-frost-signature" aria-hidden="true"></span>
@@ -285,6 +317,10 @@ async function onSendMessage(event) {
   host.insertAdjacentHTML('beforeend',messageBubbleHtml(result.assistantMessage));
   host.scrollTop=host.scrollHeight;
   enhance(host);
+  activeRunId=result.assistantMessage.runId||result.assistantMessage.meta?.runId||null;
+  activeRunSteps=result.assistantMessage.meta?.steps||[];
+  activeRunTopStatus=result.runStatus||null;
+  renderFrostActivity({fromSteps:true});
   pulsePolling();
   await Promise.all([renderSuggestions(),renderOperations(),renderAiUsage()]);
  } finally {button.disabled=false;textarea.focus();}
@@ -351,6 +387,53 @@ document.addEventListener('click',async event=>{
 });
 
 // ------------------------------------------------------------------------------------------
+// Live Frost delegation diagram — "who Frost is working with right now." Chat sends are fully
+// synchronous (command-chat.js's sendCommandMessage awaits the whole delegated chain before the
+// HTTP response returns), so this is never a fabricated mid-flight animation: it reveals the
+// real outcome the instant it's known (from the send response itself, zero extra fetch), then
+// re-confirms via the same polling burst every other live panel already uses, and keeps the
+// last real snapshot visible as the baseline until the next send — never resets to a fake
+// "nothing happened" state once something real has.
+// ------------------------------------------------------------------------------------------
+const FROST_MAP_ICON={frost:'agent',performance:'chart',intelligence:'search',leads:'users',strategy:'file'};
+function frostMapNodeHtml(agentId,status) {
+ const stage=$('#cmdc-fm-stage');
+ const node=stage?.querySelector(`.cmdc-fm-node[data-agent="${agentId}"]`);
+ if(!node)return;
+ const isFrost=agentId==='frost';
+ node.style.setProperty('--node-color',FROST_MAP_COLOR[agentId]);
+ node.classList.toggle('is-active',status==='RUNNING'||(isFrost&&status));
+ node.innerHTML=isFrost
+  ?`<span class="cmdc-fm-node-icon">${icon('agent')}</span><span class="cmdc-fm-node-label">Frost</span><span class="cmdc-fm-node-caption">${escape(t('commandCenter.frostActivityController'))}</span>${status?badge(frostMapStatusLabel(status),status):`<span class="pill">${escape(t('commandCenter.frostActivityReady'))}</span>`}`
+  :`<span class="cmdc-fm-node-icon">${icon(FROST_MAP_ICON[agentId])}</span><span class="cmdc-fm-node-text"><strong class="cmdc-fm-node-label">${escape(t('agents.roles.'+agentId))}</strong>${status?badge(frostMapStatusLabel(status),status):`<span class="cmdc-fm-node-idle">${escape(t('commandCenter.frostActivityIdleNode'))}</span>`}</span>`;
+ for(const el of stage?.querySelectorAll(`svg [data-agent="${agentId}"]`)||[])el.classList.toggle('is-active',!!status);
+}
+async function renderFrostActivity({fromSteps=false}={}) {
+ const generation=renderGeneration;
+ const caption=$('#cmdc-frost-map-caption');
+ if(!activeRunId) {
+  frostMapNodeHtml('frost',null);
+  FROST_MAP_AGENTS.forEach(agentId=>frostMapNodeHtml(agentId,null));
+  if(caption)caption.textContent=t('commandCenter.frostActivityIdleCaption');
+  return;
+ }
+ let frostStatus,statusByAgent={};
+ if(fromSteps) {
+  frostStatus=activeRunTopStatus;
+  for(const step of activeRunSteps)if(step.delegatedAgent)statusByAgent[step.delegatedAgent]=step.delegatedStatus;
+ } else {
+  let run;
+  try {run=await api('/api/agents/runs/'+activeRunId);} catch {return;}
+  if(staleGuard(generation))return;
+  frostStatus=run.status;
+  for(const child of run.childRuns||[])if(FROST_MAP_AGENTS.includes(child.agent_id))statusByAgent[child.agent_id]=child.status;
+ }
+ frostMapNodeHtml('frost',frostStatus);
+ FROST_MAP_AGENTS.forEach(agentId=>frostMapNodeHtml(agentId,statusByAgent[agentId]||null));
+ if(caption)caption.textContent=t('commandCenter.frostActivityLastRunCaption').replace('{when}',fmtDateTime(new Date().toISOString()));
+}
+
+// ------------------------------------------------------------------------------------------
 // Live Operations (safe polling — no SSE/WebSocket exists anywhere in this app; paused when
 // the tab/page is hidden, matching spec item 73's "safe polling is acceptable initially")
 // ------------------------------------------------------------------------------------------
@@ -400,7 +483,7 @@ document.addEventListener('click',async event=>{
 // keep hammering the DB. No new transport — still the same GET /api/command/operations poll.
 function startPolling(intervalMs=15000) {
  stopPolling();
- pollTimer=setInterval(()=>{if(document.visibilityState==='visible' && location.hash==='#command-center')renderOperations().catch(()=>{});},intervalMs);
+ pollTimer=setInterval(()=>{if(document.visibilityState==='visible' && location.hash==='#command-center')Promise.all([renderOperations(),renderFrostActivity()]).catch(()=>{});},intervalMs);
 }
 function stopPolling() {if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
 function pulsePolling() {
@@ -714,7 +797,7 @@ export async function renderCommandCenter({api:client}) {
   const health=await api('/api/command/health');
   if(staleGuard(generation))return;
   renderHealthFrom(health);
-  await Promise.all([loadConversations(),renderSuggestions(),renderOperations(),renderInbox(),renderCompanyBrain(),renderSystemMap(),renderWorkflowsWidget(),renderAiUsage(),renderRunbooksList(),renderConfigHistoryList(),renderAttachmentsList(),renderQuickCommands()]);
+  await Promise.all([loadConversations(),renderSuggestions(),renderOperations(),renderInbox(),renderCompanyBrain(),renderSystemMap(),renderWorkflowsWidget(),renderAiUsage(),renderRunbooksList(),renderConfigHistoryList(),renderAttachmentsList(),renderQuickCommands(),renderFrostActivity()]);
   if(staleGuard(generation))return;
   startPolling();
  } catch(error) {

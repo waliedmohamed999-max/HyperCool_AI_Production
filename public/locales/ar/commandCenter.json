@@ -110,6 +110,12 @@
   "agentsReady": "وكلاء جاهزون",
   "openFullMap": "افتح الخريطة الكاملة",
   "runExecutiveReview": "تشغيل المراجعة التنفيذية",
+  "frostActivityTitle": "من يعمل الآن مع Frost",
+  "frostActivityIdleCaption": "لم يتم تفويض أي مهمة بعد في هذه الجلسة",
+  "frostActivityLastRunCaption": "آخر تفويض: {when}",
+  "frostActivityController": "المتحكم الذكي",
+  "frostActivityReady": "جاهز",
+  "frostActivityIdleNode": "بانتظار",
   "searchPlaceholder": "ابحث في المحادثات والأوامر السابقة...",
   "noSearchResults": "لا نتائج مطابقة",
   "quickCommand": {
