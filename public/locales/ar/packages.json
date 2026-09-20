@@ -1,0 +1,41 @@
+{
+  "pageTitle": "الباقات",
+  "pageSubtitle": "اختر الباقة المناسبة لحجم عملك — كل باقة تربط عدد الوكلاء والقنوات والمزايا المتاحة فعليًا في حسابك.",
+  "currentPlanLabel": "باقتك الحالية",
+  "noPlanAssigned": "لا توجد باقة مفعّلة — الوصول غير مقيد حاليًا",
+  "monthly": "شهريًا",
+  "startingFrom": "تبدأ من",
+  "currency": "ريال",
+  "mostPopular": "الأكثر طلبًا",
+  "activatePlan": "تفعيل هذه الباقة",
+  "currentPlanBadge": "الباقة الحالية",
+  "ownerOnlyNote": "تغيير الباقة متاح لمالك المنشأة فقط.",
+  "noPaymentNote": "التفعيل فوري ولا يتطلب بطاقة دفع حاليًا — يديره مالك المنشأة مباشرة من هنا.",
+  "confirmSwitchTitle": "تفعيل باقة {plan}؟",
+  "confirmSwitchBody": "سيتم تحديث الوكلاء والقنوات والمزايا المتاحة لحسابك فورًا وفق هذه الباقة.",
+  "switchSuccess": "تم تفعيل باقة {plan} بنجاح",
+  "agentsIncluded": "الوكلاء المتاحون",
+  "allAgents": "كل الوكلاء ({count})",
+  "channelsIncluded": "القنوات المتاحة",
+  "allChannels": "كل القنوات",
+  "teamSeats": "أعضاء الفريق",
+  "unlimitedSeats": "غير محدود",
+  "seatsLimit": "حتى {count} أعضاء",
+  "features": "المزايا",
+  "featureAutomation": "الأتمتة (المتابعات والجدولة التلقائية)",
+  "featureCommandCenter": "غرفة القيادة (Frost Command Center)",
+  "featureCustomIntegrations": "تكاملات مخصصة (REST/OAuth2)",
+  "featureAdvancedReports": "تقارير وتحليلات متقدمة",
+  "planNames": {
+    "starter": "الأساسية",
+    "growth": "النمو",
+    "professional": "الاحترافية",
+    "enterprise": "المؤسسات"
+  },
+  "planTaglines": {
+    "starter": "لأصحاب الأعمال اللي بادئين يبنوا حضورهم الرقمي",
+    "growth": "لفرق التسويق والمبيعات النشطة على أكثر من قناة",
+    "professional": "القسم الاحترافي — كل الوكلاء وكل القنوات في مكان واحد",
+    "enterprise": "تكاملات مخصصة ودعم مباشر واتفاقية مستوى خدمة"
+  }
+}

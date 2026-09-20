@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {fail} from '../auth.js';
 import {resolveActiveTenantId} from '../tenancy.js';
 import {getIntegrationDefinition} from './definitions.js';
+import {effectivePlanForTenantId,planAllowsIntegration} from '../plans.js';
 
 // IntegrationConnection — Multi-Tenant Phase 4A, Part 4/5/6. Per-tenant, and — the whole
 // point of this phase — MULTIPLE per (tenant, provider): a tenant can hold "Main Store" and
@@ -78,6 +79,10 @@ export function createConnection(db,{integrationDefinitionId,name,connectedBy=nu
  // tenant's own createConnection call can never bypass regardless of how it learned the slug.
  if(definition.status==='DISABLED')fail(400,'هذا التكامل معطَّل حاليًا من قِبل مسؤول المنصة (DISABLED)');
  if(definition.status==='DRAFT')fail(400,'هذا التكامل لا يزال مسودة ولم يُنشر بعد');
+ // Packages (src/plans.js) — a tenant's plan may not include this integration (e.g. Starter
+ // only includes WhatsApp). A tenant with no assigned plan is unrestricted (grandfather rule).
+ const plan=effectivePlanForTenantId(db,resolvedTenantId);
+ if(!planAllowsIntegration(plan,definition))fail(403,'هذا التكامل غير متاح في باقتك الحالية — يمكنك الترقية من صفحة الباقات');
  const id=randomUUID(),now=new Date().toISOString();
  const isDefault=db.prepare('SELECT COUNT(*) n FROM integration_connections WHERE tenant_id=? AND integration_definition_id=?').get(resolvedTenantId,integrationDefinitionId).n===0?1:0;
  db.prepare(`INSERT INTO integration_connections (id,tenant_id,integration_definition_id,name,status,connected_by,is_default,created_at,updated_at)

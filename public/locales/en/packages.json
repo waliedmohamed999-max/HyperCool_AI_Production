@@ -1,0 +1,41 @@
+{
+  "pageTitle": "Packages",
+  "pageSubtitle": "Pick the plan that matches your business size — each plan ties the agents, channels, and features actually enabled on your account.",
+  "currentPlanLabel": "Your current plan",
+  "noPlanAssigned": "No plan assigned — access is currently unrestricted",
+  "monthly": "monthly",
+  "startingFrom": "Starting from",
+  "currency": "SAR",
+  "mostPopular": "Most popular",
+  "activatePlan": "Activate this plan",
+  "currentPlanBadge": "Current plan",
+  "ownerOnlyNote": "Only the workspace owner can change the plan.",
+  "noPaymentNote": "Activation is immediate and requires no payment card today — the workspace owner manages it directly here.",
+  "confirmSwitchTitle": "Activate the {plan} plan?",
+  "confirmSwitchBody": "The agents, channels, and features available on your account will update immediately to match this plan.",
+  "switchSuccess": "The {plan} plan is now active",
+  "agentsIncluded": "Agents included",
+  "allAgents": "All agents ({count})",
+  "channelsIncluded": "Channels included",
+  "allChannels": "All channels",
+  "teamSeats": "Team seats",
+  "unlimitedSeats": "Unlimited",
+  "seatsLimit": "Up to {count} members",
+  "features": "Features",
+  "featureAutomation": "Automation (auto follow-ups and scheduling)",
+  "featureCommandCenter": "Command Center (Frost)",
+  "featureCustomIntegrations": "Custom integrations (REST/OAuth2)",
+  "featureAdvancedReports": "Advanced reports and analytics",
+  "planNames": {
+    "starter": "Starter",
+    "growth": "Growth",
+    "professional": "Professional",
+    "enterprise": "Enterprise"
+  },
+  "planTaglines": {
+    "starter": "For businesses starting to build their digital presence",
+    "growth": "For marketing and sales teams active across multiple channels",
+    "professional": "The professional tier — every agent and every channel in one place",
+    "enterprise": "Custom integrations, direct support, and a service-level agreement"
+  }
+}

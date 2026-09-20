@@ -1,7 +1,8 @@
 import {randomUUID, randomBytes, createHash} from 'node:crypto';
 import {fail} from './auth.js';
-import {getTenant} from './tenancy.js';
+import {getTenant,listActiveMembers} from './tenancy.js';
 import {normalizeEmail} from './platform-identity.js';
+import {effectivePlanForTenantId,planSeatLimitReached} from './plans.js';
 
 // Multi-Tenant Phase 4C-3 — Workspace Invitations. A minimal, honest invitation model built
 // on the REAL constraints of this app's existing auth (server-side sessions, no JWT — Part
@@ -89,6 +90,15 @@ export function createInvitation(db,tenantId,{email,role},invitedByUserId) {
  if(!VALID_ROLES.includes(role))fail(400,'دور غير صالح');
  const now=new Date().toISOString(),token=genToken(),expiresAt=new Date(Date.now()+INVITATION_EXPIRY_MS).toISOString();
  const existing=db.prepare("SELECT id FROM workspace_invitations WHERE tenant_id=? AND email=? AND status='PENDING'").get(tenantId,normalizedEmail);
+ if(!existing) {
+  // Packages (src/plans.js) — a NEW invitation reserves a seat; resending an existing PENDING
+  // one (the branch below) does not, since it doesn't grow the tenant's member count. A tenant
+  // with no assigned plan is unrestricted (grandfather rule).
+  const plan=effectivePlanForTenantId(db,tenantId);
+  const pendingCount=db.prepare("SELECT COUNT(*) n FROM workspace_invitations WHERE tenant_id=? AND status='PENDING'").get(tenantId).n;
+  const activeCount=listActiveMembers(db,tenantId).length+pendingCount;
+  if(planSeatLimitReached(plan,activeCount))fail(403,'وصلت للحد الأقصى لعدد أعضاء الفريق في باقتك الحالية — يمكنك الترقية من صفحة الباقات');
+ }
  if(existing) {
   // Part 32 — a fresh invite action always intends the new, binding policy, even if it
   // happens to reuse an existing PENDING row for the same address.

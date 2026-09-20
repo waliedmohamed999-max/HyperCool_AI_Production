@@ -8,6 +8,7 @@ import {createEscalation} from './escalations.js';
 import {createApproval} from './approvals.js';
 import {getAgent} from './registry.js';
 import {resolveActiveTenantId,getTenant,tenantOperationalBlockReason} from '../tenancy.js';
+import {effectivePlan,planAllowsAgent} from '../plans.js';
 import {getTenantAgentConfig} from './agent-config.js';
 import {resolveToolConnection} from './tool-assignments.js';
 import {evaluateAgentReadiness} from './agent-readiness.js';
@@ -185,6 +186,12 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
    // the same instant a trial expires is blocked here immediately, not one tick later.
    const blockReason=tenantOperationalBlockReason(tenant);
    if(blockReason)return finishTenantNotOperational(db,agentId,triggerType,triggerId,user,resolvedTenantId,blockReason,parentRunId);
+   // Packages (src/plans.js) — the ONE gate for "is this agent included in the tenant's plan",
+   // checked at the same real checkpoint as tenant-operational eligibility above, right before
+   // any token spend. A tenant with no assigned plan (effectivePlan returns null) is always
+   // unrestricted (grandfather rule — see plans.js).
+   const plan=effectivePlan(tenant);
+   if(!planAllowsAgent(plan,agentId))return finishPlanRestricted(db,agentId,triggerType,triggerId,user,resolvedTenantId,plan.id,parentRunId);
    const level=effectiveLevel(levelOf(db,agentId,resolvedTenantId),env,tenant?.maxAgentLevel||null);
    // Phase 34 — readiness precheck BEFORE spending any AI tokens. Only a genuinely BLOCKED
    // REQUIRED TOOL short-circuits here with AGENT_NOT_READY (a required tool that is
@@ -358,5 +365,13 @@ function finishTenantNotOperational(db,agentId,triggerType,triggerId,user,tenant
  const run={id:randomUUID(),tenantId,agentId,triggerType,triggerId,parentRunId,status:'CANCELLED',inputContext:{},startedAt:new Date().toISOString(),actorId:user?.id||null,actorName:user?.name||null};
  insertRun(db,run);
  finishRun(db,run.id,{status:'CANCELLED',error:reason,output:{status:'TENANT_NOT_OPERATIONAL',reason}});
+ return {...getRun(db,run.id,tenantId),toolCalls:[]};
+}
+// Packages (src/plans.js) — same real, visible-in-history outcome shape as the two above, for
+// an agent that exists and is enabled but simply isn't included in the tenant's current plan.
+function finishPlanRestricted(db,agentId,triggerType,triggerId,user,tenantId,planId,parentRunId=null) {
+ const run={id:randomUUID(),tenantId,agentId,triggerType,triggerId,parentRunId,status:'CANCELLED',inputContext:{},startedAt:new Date().toISOString(),actorId:user?.id||null,actorName:user?.name||null};
+ insertRun(db,run);
+ finishRun(db,run.id,{status:'CANCELLED',error:'PLAN_AGENT_NOT_INCLUDED',output:{status:'PLAN_AGENT_NOT_INCLUDED',planId}});
  return {...getRun(db,run.id,tenantId),toolCalls:[]};
 }

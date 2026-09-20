@@ -21,6 +21,7 @@ import {isRecoveryRoute,installRecoveryPage,renderRecoveryPage} from './pages/re
 import {isNewWorkspaceRoute,installNewWorkspacePage,renderNewWorkspacePage} from './pages/new-workspace.js';
 import {installPlatformPage,renderPlatformPage} from './pages/platform.js';
 import {installCommandCenter,renderCommandCenter} from './pages/command-center.js';
+import {installPackagesPage,renderPackagesPage} from './pages/packages.js';
 import {installWorkflowsPage,renderWorkflowsPage} from './pages/workflows.js';
 import {installMarketingPage,renderMarketingPage} from './pages/marketing.js';
 import {isInviteRoute,renderInvitePage} from './pages/invite.js';
@@ -52,6 +53,7 @@ installRecoveryPage();
 installNewWorkspacePage();
 installPlatformPage();
 installCommandCenter();
+installPackagesPage();
 installWorkflowsPage();
 installMarketingPage();
 installCRMInteractions();
@@ -89,6 +91,7 @@ function refetchPageIfNeeded(page){
   // user arrives, not just after the next full login/workspace-switch render() — same targeted
   // refetch treatment as control-center/platform above, guarded by its own renderGeneration.
   else if(page==='command-center')renderCommandCenter({api,auth}).catch(error=>message(error.message,'error'));
+  else if(page==='packages')renderPackagesPage({api,auth}).catch(error=>message(error.message,'error'));
   else if(page==='workflows')renderWorkflowsPage({api,auth}).catch(error=>message(error.message,'error'));
   else if(page==='marketing')renderMarketingPage({api,auth}).catch(error=>message(error.message,'error'));
 }
@@ -249,6 +252,7 @@ async function render(){
   await renderControlCenter({api,auth});
   await renderPlatformPage({api,auth});
   await renderCommandCenter({api,auth});
+  await renderPackagesPage({api,auth});
   await renderWorkflowsPage({api,auth});
   await renderMarketingPage({api,auth});
   await renderOnboardingPage({api,auth});

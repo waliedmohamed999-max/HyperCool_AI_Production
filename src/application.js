@@ -133,6 +133,7 @@ import {testXConnection} from './runtime/x-publishing.js';
 import {linkedInOAuthConfigured,createLinkedInAuthorizeUrl,consumeLinkedInState,exchangeCodeForTokens as exchangeLinkedInCodeForTokens,resolveConnectedProfile as resolveLinkedInProfile,resolveAdministeredOrganizations,saveLinkedInConnection,linkedInOAuthStatus,disconnectLinkedIn} from './runtime/linkedin-oauth.js';
 import {testLinkedInConnection} from './runtime/linkedin-publishing.js';
 import {setWorkspaceAiDefault,setMaxAgentLevel,getTenant} from './tenancy.js';
+import {PLAN_IDS,listPlans,effectivePlan,planAllowsCommandCenter} from './plans.js';
 import {installTenantAgentConfigs,getTenantAgentConfig,updateTenantAgentConfig,listTenantAgentConfigs,seedTenantAgentConfigs} from './runtime/agent-config.js';
 import {installToolDefinitions,listToolDefinitions,getToolDefinition} from './runtime/tool-definitions.js';
 import {installAgentToolAssignments,listAssignmentsForAgent,upsertAssignment,deleteAssignment,findAssignmentsUsingConnection} from './runtime/tool-assignments.js';
@@ -1473,6 +1474,23 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         recordAudit(store.db,{id:crypto.randomUUID(),action:'TENANT_SAFETY_CEILING_CHANGED',itemId:session.tenantId,detail:input.level||'NONE',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,tenant);
       }
+      // Packages (src/plans.js) — GET is open to any authenticated tenant member (matches how
+      // /api/reports/weekly is visible tenant-wide); only PATCH (actually assigning a plan) is
+      // owner-only. No payment step exists anywhere in this app — assigning a plan here is the
+      // real, whole action, not a "start checkout" step.
+      if(req.method==='GET' && url.pathname==='/api/plans') {
+        const tenant=getTenant(store.db,session.tenantId);
+        return send(200,{plans:listPlans(),currentPlanId:tenant?.plan&&PLAN_IDS.includes(tenant.plan)?tenant.plan:null});
+      }
+      if(req.method==='PATCH' && url.pathname==='/api/tenant/plan') {
+        authorize(session,['owner']);
+        const input=await body(req);
+        if(input.planId!==null && !PLAN_IDS.includes(input.planId))fail(400,'باقة غير معروفة');
+        store.db.prepare('UPDATE tenants SET plan=? WHERE id=?').run(input.planId,session.tenantId);
+        const tenant=getTenant(store.db,session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'TENANT_PLAN_CHANGED',itemId:session.tenantId,detail:input.planId||'NONE',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,tenant);
+      }
       if(url.pathname==='/api/approvals') {
         if(req.method==='GET')return send(200,listApprovals(store.db,{status:url.searchParams.get('status')||undefined},session.tenantId));
       }
@@ -1551,6 +1569,12 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // orchestrator/tool registry/approval engine here, only the thin session bookkeeping
       // (conversations/messages) and read-only aggregation routes below.
       // ---------------------------------------------------------------------------------
+      // Packages (src/plans.js) — the ONE gate for the entire Command Center API surface: every
+      // route below lives under this exact prefix, so a single check here covers all of them
+      // rather than repeating the plan check per-route. A tenant with no assigned plan is
+      // unrestricted (grandfather rule).
+      if(url.pathname.startsWith('/api/command/')&&!planAllowsCommandCenter(effectivePlan(getTenant(store.db,session.tenantId))))
+        return send(403,{error:'PLAN_FEATURE_NOT_INCLUDED',feature:'commandCenter'});
       if(url.pathname==='/api/command/conversations') {
         if(req.method==='GET')return send(200,listConversations(store.db,session.tenantId));
         if(req.method==='POST') {
@@ -2868,8 +2892,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         }
       }
       const files={'/favicon.svg':'favicon.svg','/':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
-      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js','pages/command-center.js','pages/workflows.js','pages/marketing.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter','workflows','marketing'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js','pages/command-center.js','pages/workflows.js','pages/marketing.js','pages/packages.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter','workflows','marketing','packages'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       // Website AI Chat Widget embed script (spec Part 87) — served publicly, unauthenticated,
       // exactly like /app.js already is; the ONE file a tenant embeds on their OWN external
       // website. Carries no secret — only the public, non-secret widget id the tenant pastes
