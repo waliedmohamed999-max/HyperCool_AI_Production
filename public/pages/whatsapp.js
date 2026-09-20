@@ -23,12 +23,15 @@ let leadsCache=[],campaignsCache=[],followupsCache=[];
 export function installWhatsAppPage() {
  const root=document.querySelector('[data-page="whatsapp"] #whatsapp');
  root.innerHTML=`
-  <div id="wa-connection" class="panel"></div>
+  <div class="wa-hero"><div class="wa-hero-copy"><span class="wa-eyebrow">WHATSAPP BUSINESS</span><h2>${escape(t('whatsapp.heroTitle'))}</h2><p>${escape(t('whatsapp.heroHint'))}</p><div class="wa-hero-tags"><span>${icon('file')}${escape(t('whatsapp.tabTemplates'))}</span><span>${icon('chart')}${escape(t('whatsapp.tabCampaigns'))}</span><span>${icon('clock')}${escape(t('whatsapp.tabFollowups'))}</span></div></div><div class="wa-guide"><span class="wa-guide-title">${escape(t('whatsapp.guideTitle'))}</span>${['connectStep','templateStep','campaignStep'].map((key,i)=>`<div class="wa-guide-step"><span>${i+1}</span><strong>${escape(t('whatsapp.'+key))}</strong></div>`).join('')}</div></div>
+  <div id="wa-summary" class="wa-summary"></div>
+  <div id="wa-connection" class="panel wa-connection"></div>
+  <div id="wa-library" class="wa-library">
   <div id="wa-tab-templates"></div>
   <div id="wa-tab-campaigns"></div>
-  <div id="wa-tab-followups"></div>`;
+  <div id="wa-tab-followups"></div></div>`;
  const panels=[$('#wa-tab-templates'),$('#wa-tab-campaigns'),$('#wa-tab-followups')];
- tabs(root,[
+ tabs($('#wa-library'),[
   [t('whatsapp.tabTemplates'),panels[0]],
   [t('whatsapp.tabCampaigns'),panels[1]],
   [t('whatsapp.tabFollowups'),panels[2]]
@@ -39,6 +42,14 @@ export function installWhatsAppPage() {
  $('#wa-sync-templates').onclick=onSyncTemplates;
  $('#wa-new-campaign').onclick=onNewCampaign;
  $('#wa-run-sweep').onclick=onRunSweep;
+ for(const [id,name] of [['wa-sync-templates','plug'],['wa-new-campaign','plus'],['wa-run-sweep','clock']])$('#'+id).insertAdjacentHTML('afterbegin',icon(name));
+ renderSummary();
+}
+
+let templateCount=null,summaryLoaded=false;
+function renderSummary(){
+ const values=[templateCount,summaryLoaded?campaignsCache.filter(c=>(c.channels||[]).includes('WhatsApp')).length:null,summaryLoaded?followupsCache.filter(f=>f.channel==='WhatsApp').length:null];
+ $('#wa-summary').innerHTML=['tabTemplates','tabCampaigns','tabFollowups'].map((key,i)=>metric(t('whatsapp.'+key),values[i]??'—',t('whatsapp.'+['templatesMetric','campaignsMetric','followupsMetric'][i]),['file','chart','clock'][i])).join('');
 }
 
 // ------------------------------------------------------------------------------------------
@@ -52,9 +63,9 @@ async function renderConnection() {
  const host=$('#wa-connection');
  if(!status.connected||!wa) {
   host.innerHTML=`
-   <div class="row-between"><h3>${escape(t('whatsapp.connectionTitle'))}</h3>${badge(t('whatsapp.notConnected'),'ERROR')}</div>
+   <div class="row-between"><div class="wa-connection-heading"><span class="wa-connection-icon">${icon('plug')}</span><div><span class="wa-overline">META BUSINESS</span><h3>${escape(t('whatsapp.connectionTitle'))}</h3></div></div>${badge(t('whatsapp.notConnected'),'PENDING')}</div>
    <p>${escape(t('whatsapp.connectHint'))}</p>
-   <a class="button primary" href="/api/integrations/meta/oauth/start">${escape(t('whatsapp.connectButton'))}</a>`;
+   <a class="button primary" href="/api/integrations/meta/oauth/start">${icon('plus')}${escape(t('whatsapp.connectButton'))}</a>`;
   return;
  }
  host.innerHTML=`
@@ -87,11 +98,12 @@ async function onDisconnect() {
 async function renderTemplates() {
  const host=$('#wa-templates-list');
  let templates;
- try {templates=await api('/api/whatsapp/templates');} catch(error) {host.innerHTML=empty(t('whatsapp.templatesUnavailable'));return;}
+ try {templates=await api('/api/whatsapp/templates');} catch(error) {templateCount=null;renderSummary();host.innerHTML=empty(t('whatsapp.templatesUnavailable'));return;}
+ templateCount=templates.length;renderSummary();
  host.innerHTML=templates.length
   ?table([t('whatsapp.templateName'),t('whatsapp.templateLanguage'),t('whatsapp.templateCategory'),t('whatsapp.templateStatus')],
      templates.map(tpl=>[escape(tpl.name),escape(tpl.language),escape(tpl.category||'—'),badge(tpl.status,tpl.status==='APPROVED'?'CONNECTED':tpl.status==='REJECTED'?'ERROR':'PENDING')]))
-  :empty(t('whatsapp.noTemplates'));
+  :empty(t('whatsapp.noTemplates'),t('whatsapp.noTemplatesHint'));
 }
 async function onSyncTemplates() {
  try {const result=await api('/api/whatsapp/templates/sync',{});toast(t('whatsapp.syncedCount').replace('{count}',result.synced));await renderTemplates();}
@@ -102,6 +114,7 @@ async function onSyncTemplates() {
 // Campaigns tab (WhatsApp-filtered; reuses src/marketing.js's campaign system entirely)
 // ------------------------------------------------------------------------------------------
 function renderCampaignsList() {
+ renderSummary();
  const host=$('#wa-campaigns-list');
  const whatsappCampaigns=campaignsCache.filter(c=>(c.channels||[]).includes('WhatsApp'));
  host.innerHTML=whatsappCampaigns.length
@@ -156,13 +169,14 @@ async function onSendBlast(campaignId) {
 // Follow-ups tab (WhatsApp-filtered; reuses CRM follow-ups entirely — no new entity)
 // ------------------------------------------------------------------------------------------
 function renderFollowupsList() {
+ renderSummary();
  const host=$('#wa-followups-list');
  const whatsappFollowups=followupsCache.filter(f=>f.channel==='WhatsApp');
  const leadName=id=>leadsCache.find(l=>l.id===id)?.name||id;
  host.innerHTML=whatsappFollowups.length
   ?table([t('whatsapp.followupLead'),t('whatsapp.followupSequence'),t('whatsapp.followupDue'),t('whatsapp.followupStatus')],
      whatsappFollowups.map(f=>[escape(leadName(f.leadId)),escape(f.sequence)+` (${f.touch}/${f.maxTouches})`,escape(fmtDateTime(f.dueAt)),badge(f.status,f.status==='HOLD'?'ERROR':f.status==='READY_FOR_CHANNEL'?'CONNECTED':'PENDING')]))
-  :empty(t('whatsapp.noFollowups'));
+  :empty(t('whatsapp.noFollowups'),t('whatsapp.noFollowupsHint'));
 }
 async function onRunSweep() {
  try {const result=await api('/api/crm/followups/prepare',{});toast(t('whatsapp.sweepResultSummary').replace('{ready}',result.ready).replace('{held}',result.held));const crm=await api('/api/crm');leadsCache=crm.leads;followupsCache=crm.followups;renderFollowupsList();}
@@ -173,12 +187,14 @@ async function onRunSweep() {
 export async function renderWhatsAppPage({api:client,auth}) {
  apiClient=client;currentAuth=auth;
  const generation=++renderGeneration;
+ summaryLoaded=false;templateCount=null;renderSummary();
  const runSweepButton=$('#wa-run-sweep');
  if(runSweepButton)runSweepButton.hidden=!(auth.user&&auth.user.role==='owner');
  try {
   const [crm,campaigns]=await Promise.all([api('/api/crm'),api('/api/marketing/campaigns')]);
   if(staleGuard(generation))return;
   leadsCache=crm.leads;followupsCache=crm.followups;campaignsCache=campaigns;
+  summaryLoaded=true;renderSummary();
   await renderConnection();
   if(staleGuard(generation))return;
   await renderTemplates();

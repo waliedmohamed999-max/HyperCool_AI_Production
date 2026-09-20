@@ -9,7 +9,7 @@
   var currentScript = document.currentScript;
   if (!currentScript) return;
   var widgetId = currentScript.getAttribute('data-widget-id');
-  if (!widgetId) { console.warn('[HyperCool Widget] missing data-widget-id attribute'); return; }
+  if (!widgetId) { console.warn('[Frost Widget] missing data-widget-id attribute'); return; }
   var origin = new URL(currentScript.src).origin;
   var leadId = null;
   try { leadId = sessionStorage.getItem('hc_widget_lead_' + widgetId) || null; } catch (e) {}
@@ -38,7 +38,7 @@
   var panel = document.createElement('div');
   panel.className = 'hc-widget-panel';
   panel.innerHTML =
-    '<div class="hc-widget-head">HyperCool Assistant</div>' +
+    '<div class="hc-widget-head">Frost Assistant</div>' +
     '<div class="hc-widget-messages"></div>' +
     '<form class="hc-widget-form">' +
       '<input type="text" name="text" placeholder="Type a message..." maxlength="2000" required>' +

@@ -110,7 +110,7 @@
   "agentsReady": "وكلاء جاهزون",
   "openFullMap": "افتح الخريطة الكاملة",
   "runExecutiveReview": "تشغيل المراجعة التنفيذية",
-  "frostActivityTitle": "من يعمل الآن مع Frost",
+  "frostActivityTitle": "من يعمل الآن مع Frost Core",
   "frostActivityIdleCaption": "لم يتم تفويض أي مهمة بعد في هذه الجلسة",
   "frostActivityLastRunCaption": "آخر تفويض: {when}",
   "frostActivityController": "المتحكم الذكي",

@@ -27,7 +27,7 @@ export function createContent(input) {
   if(input.body.length>10000 || input.title.length>200) throw new Error('النص أطول من الحد المسموح');
   let url;
   try {url = new URL(input.url);} catch {throw new Error('أضف رابط منتج أو تصنيف صحيح');}
-  if(url.protocol!=='https:' || url.hostname!=='hyper-cool.com' || url.username || url.password) throw new Error('الرابط يجب أن يكون من متجر HyperCool عبر HTTPS');
+  if(url.protocol!=='https:' || url.hostname!=='hyper-cool.com' || url.username || url.password) throw new Error('الرابط يجب أن يكون من نطاق hyper-cool.com المعتمد عبر HTTPS');
   if(input.englishCopy!==undefined && (typeof input.englishCopy!=='string'||input.englishCopy.length>10000))throw new Error('النص الإنجليزي غير صالح');
   let assetUrl='';
   if(input.assetUrl){let asset;try{asset=new URL(input.assetUrl);}catch{throw new Error('رابط الأصل البصري غير صالح');}if(asset.protocol!=='https:'||asset.username||asset.password)throw new Error('الأصل البصري يتطلب رابط HTTPS بدون بيانات دخول');assetUrl=asset.href;}

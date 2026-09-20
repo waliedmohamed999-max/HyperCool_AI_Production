@@ -4,7 +4,7 @@
   "addB2BOpportunity": "+ إضافة فرصة B2B",
   "followupCenter": "مركز المتابعات",
   "openConversations": "فتح المحادثات",
-  "runFrostCycle": "تشغيل دورة Frost للمبيعات",
+  "runFrostCycle": "تشغيل دورة Frost Core للمبيعات",
   "pipeline": "قمع المبيعات",
   "pipelineBoard": "Pipeline — لوحة المراحل",
   "hotCustomers": "العملاء الساخنون",
@@ -173,7 +173,7 @@
     "probabilityModelNote": "نموذج الاحتمالية تقديري وليس معدل فوز مُتعلَّمًا: {model}."
   },
   "aiInsightsSection": {
-    "frostRecommendation": "توصية Frost: {text}",
+    "frostRecommendation": "توصية Frost Core: {text}",
     "insufficientData": "بيانات غير كافية لاستخلاص رؤى موثوقة (INSUFFICIENT_DATA).",
     "insufficientDataHint": "تحتاج 5 عملاء مسجلين على الأقل.",
     "topProducts": "أكثر المنتجات طلبًا",
@@ -293,7 +293,7 @@
     "followupsStopped": "تم إيقاف المتابعات",
     "followupsPrepareResult": "جاهز للقناة: {ready} · موقوف: {held} · مرسل: 0",
     "frostPausedNotice": "الدورة متوقفة حاليًا — استأنف من صفحة فريق الوكلاء",
-    "frostRunManual": "تم تشغيل دورة Frost يدويًا",
+    "frostRunManual": "تم تشغيل دورة Frost Core يدويًا",
     "categorySwitched": "تم تبديل التصنيف",
     "moveToStagePrompt": "نقل الفرصة إلى مرحلة \"{stage}\""
   }

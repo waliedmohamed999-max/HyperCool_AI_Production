@@ -1,5 +1,5 @@
 {
- "navLabel": "منصة HyperCool",
+ "navLabel": "منصة Frost",
  "title": "لوحة تشغيل المنصة",
  "subtitle": "نظرة مركزية على كل المنشآت — متاحة فقط لمسؤول المنصة.",
  "commandCenter": {
@@ -111,7 +111,7 @@
    "published": "منشور",
    "disabled": "معطَّل"
   },
-  "emptyState": "أنشئ أول تكامل جديد واربط HyperCool بأي منصة أو API.",
+  "emptyState": "أنشئ أول تكامل جديد واربط Frost بأي منصة أو API.",
   "emptyStateHint": "استخدم منشئ التكاملات لإضافة Zid وTikTok وSnapchat وOdoo وZoho وأي نظام محاسبي أو REST API آخر.",
   "notFound": "هذا التكامل غير موجود",
   "clone": "استنساخ",

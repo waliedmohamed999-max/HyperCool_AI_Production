@@ -59,7 +59,7 @@ export const ERROR_ACTIONS={
  INVALID_SALLA_RESPONSE:'استجابة سلة غير متوقعة، أعد المحاولة لاحقًا',
  INVALID_SALLA_PRODUCT:'بيانات منتج غير صالحة وردت من سلة',
  INVALID_SALLA_PRODUCT_URL:'رابط منتج غير صالح من سلة',
- STORE_DOMAIN_MISMATCH:'رابط منتج لا يطابق نطاق متجر HyperCool',
+ STORE_DOMAIN_MISMATCH:'رابط منتج لا يطابق نطاق hyper-cool.com المعتمد',
  DUPLICATE_SALLA_PRODUCT:'معرف منتج مكرر ورد من سلة',
  INVALID_SALLA_PAGINATION:'بيانات ترقيم صفحات غير صالحة من سلة',
  SALLA_PAGE_LIMIT:'تجاوزت المزامنة الحد الأقصى لعدد الصفحات',

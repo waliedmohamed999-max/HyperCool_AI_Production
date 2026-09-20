@@ -117,7 +117,7 @@ export function installCommandCenter() {
  $('#cmdc-run-executive-review').onclick=onRunExecutiveReview;
  $('#cmdc-conversation-select').onchange=e=>openConversation(e.target.value);
  $('#cmdc-chat-form').addEventListener('submit',onSendMessage);
- // File input polish (HyperCool Frost UI Part UI-2, item 30/31) — the native <input type=file>
+ // File input polish (Frost UI Part UI-2, item 30/31) — the native <input type=file>
  // stays in the DOM and fully functional (real keyboard access, real screen-reader label via
  // the <label for>, real .files value) so nothing about the actual upload logic above changes;
  // only its own browser-chrome text ("Choose File" / unlocalized) is visually replaced by a
@@ -404,7 +404,7 @@ function frostMapNodeHtml(agentId,status) {
  node.style.setProperty('--node-color',FROST_MAP_COLOR[agentId]);
  node.classList.toggle('is-active',status==='RUNNING'||(isFrost&&status));
  node.innerHTML=isFrost
-  ?`<span class="cmdc-fm-node-icon">${icon('agent')}</span><span class="cmdc-fm-node-label">Frost</span><span class="cmdc-fm-node-caption">${escape(t('commandCenter.frostActivityController'))}</span>${status?badge(frostMapStatusLabel(status),status):`<span class="pill">${escape(t('commandCenter.frostActivityReady'))}</span>`}`
+  ?`<span class="cmdc-fm-node-icon">${icon('agent')}</span><span class="cmdc-fm-node-label">Frost Core</span><span class="cmdc-fm-node-caption">${escape(t('commandCenter.frostActivityController'))}</span>${status?badge(frostMapStatusLabel(status),status):`<span class="pill">${escape(t('commandCenter.frostActivityReady'))}</span>`}`
   :`<span class="cmdc-fm-node-icon">${icon(FROST_MAP_ICON[agentId])}</span><span class="cmdc-fm-node-text"><strong class="cmdc-fm-node-label">${escape(t('agents.roles.'+agentId))}</strong>${status?badge(frostMapStatusLabel(status),status):`<span class="cmdc-fm-node-idle">${escape(t('commandCenter.frostActivityIdleNode'))}</span>`}</span>`;
  for(const el of stage?.querySelectorAll(`svg [data-agent="${agentId}"]`)||[])el.classList.toggle('is-active',!!status);
 }

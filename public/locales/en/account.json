@@ -1,7 +1,7 @@
 {
   "navLabel": "My Account",
   "title": "Account Settings",
-  "subtitle": "Your personal identity on HyperCool — separate from any single workspace's settings.",
+  "subtitle": "Your personal identity on Frost — separate from any single workspace's settings.",
   "usernameLabel": "Username",
   "emailSection": "Email",
   "noEmail": "No email registered yet",

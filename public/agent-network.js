@@ -3,10 +3,10 @@
 // array (AGENTS + FROST below) so it can later be pointed at a real backend endpoint without
 // touching markup — see the module doc in home.html's comment above this section.
 //
-// Real roster note: HyperCool markets 12 total agents = Frost + 11 specialists (see
+// Real roster note: Frost (the platform) markets 12 total agents = Frost Core + 11 specialists (see
 // src/domain.js — frost_commander is the 13th, internal-only Command Center helper, never
 // public-marketed). This file keeps that real count; it does not add a 12th specialist
-// alongside a separately-counted Frost, since that would overstate the real product by one.
+// alongside a separately-counted Frost Core, since that would overstate the real product by one.
 //
 // Everything here is presentational/illustrative: the "live automation demo" is a scripted
 // mock (clearly labeled with a caption-note, same honesty convention already used elsewhere on
@@ -46,7 +46,7 @@
   // line color), not a status. Status (active/pending/idle) is conveyed separately via the
   // dot + text label below, never by this color alone.
   var FROST = {
-    id: 'frost', name: 'Frost', icon: 'frost', status: 'ok', color: '#7c3aed',
+    id: 'frost', name: 'Frost Core', icon: 'frost', status: 'ok', color: '#7c3aed',
     description: 'إدارة المنظومة وتوجيه الوكلاء',
     when: 'مستمر — يستقبل كل طلب جديد ويقرر أي وكيل يتولاه.',
     tools: ['قراءة حالة النظام', 'توزيع المهام', 'المراقبة', 'المراجعة'],
@@ -60,12 +60,12 @@
       description: 'يحدد الرسائل والقنوات',
       when: 'عند تخطيط حملة أو تقويم محتوى جديد.',
       tools: ['قراءة أهداف الحملة', 'تحليل السوق', 'اقتراح خطة محتوى'],
-      receivesFrom: ['Frost', 'رصد السوق'], sendsTo: ['كتابة المحتوى'], requiresApproval: false },
+      receivesFrom: ['Frost Core', 'رصد السوق'], sendsTo: ['كتابة المحتوى'], requiresApproval: false },
     { id: 'compliance', name: 'مراجعة الامتثال', icon: 'compliance', status: 'ok', side: 'right', color: '#0ea5e9',
       description: 'يتحقق قبل التنفيذ',
       when: 'قبل أي عرض على فريقك للاعتماد.',
       tools: ['فحص الأسعار والمواصفات', 'كشف الادعاءات غير الموثقة'], receivesFrom: ['كتابة المحتوى', 'التصميم'],
-      sendsTo: ['Frost', 'فريقك للاعتماد'], requiresApproval: false },
+      sendsTo: ['Frost Core', 'فريقك للاعتماد'], requiresApproval: false },
     { id: 'publishing', name: 'النشر والجدولة', icon: 'publishing', status: 'pending', side: 'right', color: '#f43f5e',
       description: 'ينشر المحتوى المعتمد',
       when: 'فقط بعد موافقة بشرية على المحتوى.',
@@ -75,12 +75,12 @@
       description: 'يؤهل العميل ويحرك الصفقة',
       when: 'فور تسليم ملخص عميل مؤهل.',
       tools: ['الرد المؤهل', 'تحديث حالة الصفقة'], receivesFrom: ['العملاء المحتملون'],
-      sendsTo: ['المتابعة', 'Frost'], requiresApproval: false },
+      sendsTo: ['المتابعة', 'Frost Core'], requiresApproval: false },
     { id: 'intelligence', name: 'رصد السوق', icon: 'intelligence', status: 'ok', side: 'right', color: '#22c55e',
       description: 'يراقب السوق والمنافسين',
-      when: 'بشكل دوري ومستمر، أو عند طلب Frost.',
+      when: 'بشكل دوري ومستمر، أو عند طلب Frost Core.',
       tools: ['تحليل السوق والمنافسين'], receivesFrom: ['مصادر خارجية معتمدة'],
-      sendsTo: ['استراتيجية المحتوى', 'Frost'], requiresApproval: false },
+      sendsTo: ['استراتيجية المحتوى', 'Frost Core'], requiresApproval: false },
     { id: 'followup', name: 'المتابعة', icon: 'followup', status: 'pending', side: 'right', color: '#14b8a6',
       description: 'يتابع بعد موافقة العميل',
       when: 'فقط بعد موافقة صريحة من العميل على التواصل.',
@@ -89,7 +89,7 @@
     { id: 'copy', name: 'كتابة المحتوى', icon: 'copy', status: 'ok', side: 'left', color: '#3b82f6',
       description: 'صياغة المحتوى لكل قناة',
       when: 'بعد اعتماد خطة المحتوى، لكل منشور مطلوب.',
-      tools: ['توليد نص عربي/إنجليزي'], receivesFrom: ['استراتيجية المحتوى', 'Frost'],
+      tools: ['توليد نص عربي/إنجليزي'], receivesFrom: ['استراتيجية المحتوى', 'Frost Core'],
       sendsTo: ['التصميم', 'مراجعة الامتثال'], requiresApproval: false },
     { id: 'creative', name: 'التصميم', icon: 'creative', status: 'ok', side: 'left', color: '#ec4899',
       description: 'تصاميم وصور وفيديوهات',
@@ -105,7 +105,7 @@
       description: 'تحليل النتائج والتحسين',
       when: 'بعد كل دورة نشر، وفي التقرير الأسبوعي.',
       tools: ['تحليل نتائج القنوات الحقيقية'], receivesFrom: ['نتائج القنوات المتصلة'],
-      sendsTo: ['Frost'], requiresApproval: false },
+      sendsTo: ['Frost Core'], requiresApproval: false },
     { id: 'memory', name: 'ذاكرة العلامة', icon: 'memory', status: 'idle', side: 'left', color: '#475569',
       description: 'يحفظ المعرفة المعتمدة',
       when: 'يُستدعى كمرجع من أي وكيل آخر.',
@@ -114,8 +114,8 @@
     // The 13th real registry agent (see src/runtime/registry.js's seedRegistry — 13 agents
     // total). Genuinely exists and is already user-facing via the real "غرفة القيادة" /
     // Command Center feature; included here (not previously shown on this marketing page) so
-    // the 12-specialist count is both honest and evenly split 6/6, matching "بقيادة Frost" —
-    // Frost as the leader, distinct from (not one of) the 12 it leads.
+    // the 12-specialist count is both honest and evenly split 6/6, matching "بقيادة Frost Core" —
+    // Frost Core as the leader, distinct from (not one of) the 12 it leads.
     { id: 'frost_commander', name: 'مساعد غرفة القيادة', icon: 'commander', status: 'ok', side: 'left', color: '#f59e0b',
       description: 'يجيب من بيانات النظام',
       when: 'عند سؤال مباشر داخل غرفة القيادة.',
@@ -130,24 +130,24 @@
   var STATUS_LABEL = { ok: 'نشط', pending: 'بانتظار', idle: 'مرجعي' };
 
   var DEMO_STEPS = [
-    { id: 'frost', label: 'Frost', note: 'يستقبل الطلب ويحدد المسار' },
+    { id: 'frost', label: 'Frost Core', note: 'يستقبل الطلب ويحدد المسار' },
     { id: 'leads', label: 'العملاء المحتملون', note: 'فرز الاهتمام وتجهيز الملخص' },
     { id: 'sales', label: 'المحادثات والمبيعات', note: 'تأهيل العميل والرد' },
     { id: 'followup', label: 'المتابعة', note: 'بانتظار موافقة العميل على المتابعة' }
   ];
 
   // 7 major steps for the default marketing view — combines the full internal 11-step flow
-  // into a comprehensible story (idea -> Frost -> content -> review -> approval -> results).
+  // into a comprehensible story (idea -> Frost Core -> content -> review -> approval -> results).
   // The detailed step-by-step breakdown lives in the compact "live demo" chips below instead
   // of forcing all 11 into one unreadable row.
   var WORKFLOW_STEPS = [
     { label: 'فكرة أو Lead', note: 'من عميل أو بيانات جديدة', icon: 'lightbulb', color: '#0ea5e9' },
-    { label: 'Frost يحلل الهدف', note: 'ويوزّع المهام', icon: 'frost', color: '#7c3aed' },
+    { label: 'Frost Core يحلل الهدف', note: 'ويوزّع المهام', icon: 'frost', color: '#7c3aed' },
     { label: 'استراتيجية ومحتوى', note: 'تخطيط وصياغة الرسائل', icon: 'strategy', color: '#f97316' },
     { label: 'التصميم', note: 'إنشاء الأصول البصرية', icon: 'creative', color: '#ec4899' },
     { label: 'مراجعة الامتثال', note: 'تدقيق قبل الاعتماد', icon: 'compliance', color: '#0ea5e9' },
     { label: 'موافقتك والنشر', note: 'تنفيذ بعد اعتمادك', icon: 'approval', color: '#f43f5e', approval: true },
-    { label: 'قياس النتائج', note: 'Frost يحسّن الجولة التالية', icon: 'performance', color: '#8b5cf6' }
+    { label: 'قياس النتائج', note: 'Frost Core يحسّن الجولة التالية', icon: 'performance', color: '#8b5cf6' }
   ];
 
   // Single illustrative example — a fixed incoming event, not a rotating news ticker. Rotating
@@ -219,13 +219,13 @@
     core.className = 'ann-core';
     core.id = 'ann-frost-core';
     core.setAttribute('aria-haspopup', 'dialog');
-    core.setAttribute('aria-label', 'Frost — المتحكم الذكي، اضغط لعرض التفاصيل');
+    core.setAttribute('aria-label', 'Frost Core — المتحكم الذكي، اضغط لعرض التفاصيل');
     core.innerHTML =
       '<span class="ann-core-ring ann-core-ring-3" aria-hidden="true"></span>' +
       '<span class="ann-core-ring" aria-hidden="true"></span>' +
       '<span class="ann-core-ring ann-core-ring-2" aria-hidden="true"></span>' +
       '<span class="ann-core-logo" aria-hidden="true">' + svgIcon('frost') + '</span>' +
-      '<strong>Frost</strong>' +
+      '<strong>Frost Core</strong>' +
       '<span class="ann-core-subtitle">المتحكم الذكي</span>' +
       '<span class="ann-core-caption">يخطط • يوزّع • يراجع • يحسّن</span>' +
       '<span class="ann-core-status"><span class="status-dot ok" aria-hidden="true"></span>يعمل الآن</span>' +

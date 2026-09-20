@@ -110,7 +110,7 @@
   "agentsReady": "Agents ready",
   "openFullMap": "Open full map",
   "runExecutiveReview": "Run Executive Review",
-  "frostActivityTitle": "Who Frost Is Working With",
+  "frostActivityTitle": "Who Frost Core Is Working With",
   "frostActivityIdleCaption": "No task has been delegated yet in this session",
   "frostActivityLastRunCaption": "Last delegation: {when}",
   "frostActivityController": "The Smart Controller",

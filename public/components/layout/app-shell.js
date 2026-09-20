@@ -34,7 +34,7 @@ export function installShell(){
  // which key off the unchanged ROUTE_KEYS array order and are deliberately left alone here.
  for(const [key] of [['overview'],['command-center'],['marketing'],['crm'],['content'],['integrations'],['audit']]){const el=document.createElement('span');el.className='nav-group';nav.querySelector(`[href="#${key}"]`).before(el);groupSpans.set(key,el);}
  const rail=document.createElement('div');rail.className='sidebar-rail';
- rail.innerHTML='<div class="rail-brand">H</div>'+RAIL_GROUPS.map(([key])=>`<button type="button" class="rail-icon" data-rail="${key}"></button>`).join('');
+ rail.innerHTML='<div class="rail-brand">F</div>'+RAIL_GROUPS.map(([key])=>`<button type="button" class="rail-icon" data-rail="${key}"></button>`).join('');
  rail.querySelectorAll('[data-rail]').forEach(b=>b.onclick=()=>navigate(b.dataset.rail));
  document.body.prepend(rail);
  for(const link of nav.querySelectorAll('a')){const id=link.hash.slice(1);link.innerHTML=`<span class="nav-icon"></span><span></span>`;link.onclick=()=>closeMobile();}

@@ -1,7 +1,7 @@
 {
-  "name": "HyperCool | مركز التشغيل",
-  "short_name": "HyperCool",
-  "description": "منصة أتمتة التسويق والمبيعات لـHyperCool",
+  "name": "Frost | مركز التشغيل",
+  "short_name": "Frost",
+  "description": "منصة أتمتة التسويق والمبيعات لـFrost",
   "start_url": "/app",
   "scope": "/app",
   "display": "standalone",

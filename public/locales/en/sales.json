@@ -4,7 +4,7 @@
   "addB2BOpportunity": "+ Add B2B Opportunity",
   "followupCenter": "Follow-up Center",
   "openConversations": "Open Conversations",
-  "runFrostCycle": "Run Frost Sales Cycle",
+  "runFrostCycle": "Run Frost Core Sales Cycle",
   "pipeline": "Sales Funnel",
   "pipelineBoard": "Pipeline — Stage Board",
   "hotCustomers": "Hot Customers",
@@ -173,7 +173,7 @@
     "probabilityModelNote": "The probability model is an estimate, not a learned win rate: {model}."
   },
   "aiInsightsSection": {
-    "frostRecommendation": "Frost recommendation: {text}",
+    "frostRecommendation": "Frost Core recommendation: {text}",
     "insufficientData": "Not enough data for reliable insights (INSUFFICIENT_DATA).",
     "insufficientDataHint": "Needs at least 5 registered customers.",
     "topProducts": "Most Requested Products",
@@ -293,7 +293,7 @@
     "followupsStopped": "Follow-ups stopped",
     "followupsPrepareResult": "Ready for channel: {ready} · On hold: {held} · Sent: 0",
     "frostPausedNotice": "The cycle is currently paused — resume it from the Agent Team page",
-    "frostRunManual": "Frost cycle run manually",
+    "frostRunManual": "Frost Core cycle run manually",
     "categorySwitched": "Category switched",
     "moveToStagePrompt": "Move opportunity to stage \"{stage}\""
   }

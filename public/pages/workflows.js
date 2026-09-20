@@ -18,7 +18,7 @@ async function api(path,body,method){return apiClient(path,body,method);}
 export function installWorkflowsPage() {
  const root=document.querySelector('[data-page="workflows"] #workflows');
  root.innerHTML=`
-  <header class="wf-hero"><div class="wf-hero-copy"><p class="wf-eyebrow">HYPERCOOL / AUTOMATION</p>
+  <header class="wf-hero"><div class="wf-hero-copy"><p class="wf-eyebrow">FROST / AUTOMATION</p>
    <h1>${escape(t('workflows.design.heading'))}</h1><p>${escape(t('workflows.design.intro'))}</p>
    <div class="wf-hero-actions"><button type="button" id="wf-new">${icon('plus')}${escape(t('workflows.newWorkflow'))}</button><a class="wf-frost-link" href="#command-center">${icon('agent')}${escape(t('workflows.design.askFrost'))}</a></div></div>
    <div class="wf-flow-guide"><span class="wf-guide-label">${escape(t('workflows.design.howItWorks'))}</span><div class="wf-flow-nodes">${[['clock','trigger'],['agent','execute'],['check','review']].map(([glyph,key],i)=>`<div class="wf-flow-node"><span>${icon(glyph)}</span><strong>${escape(t('workflows.design.'+key))}</strong><small>0${i+1}</small></div>`).join('')}</div><p>${escape(t('workflows.design.guideNote'))}</p></div>

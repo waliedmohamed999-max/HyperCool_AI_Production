@@ -1,5 +1,5 @@
 {
- "navLabel": "HyperCool Platform",
+ "navLabel": "Frost Platform",
  "title": "Platform Operations Dashboard",
  "subtitle": "A central view over every tenant — platform admin only.",
  "commandCenter": {
@@ -111,7 +111,7 @@
    "published": "Published",
    "disabled": "Disabled"
   },
-  "emptyState": "Create your first integration and connect HyperCool to any platform or API.",
+  "emptyState": "Create your first integration and connect Frost to any platform or API.",
   "emptyStateHint": "Use the Integration Builder to add Zid, TikTok, Snapchat, Odoo, Zoho, an accounting system, or any other REST API.",
   "notFound": "This connector could not be found",
   "clone": "Clone",

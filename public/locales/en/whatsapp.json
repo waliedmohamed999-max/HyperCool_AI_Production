@@ -45,5 +45,16 @@
   "followupStatus": "Status",
   "noFollowups": "No WhatsApp follow-ups right now",
   "runSweep": "Run follow-up sweep now",
-  "sweepResultSummary": "Ready: {ready} — held: {held}"
+  "sweepResultSummary": "Ready: {ready} — held: {held}",
+  "heroTitle": "Closer conversations. Stronger relationships.",
+  "heroHint": "Make WhatsApp your customer connection hub. Organize templates, launch campaigns, and manage follow-ups in one place.",
+  "guideTitle": "From connection to your first campaign",
+  "connectStep": "Connect WhatsApp Business",
+  "templateStep": "Sync message templates from Meta",
+  "campaignStep": "Launch campaigns and follow up",
+  "templatesMetric": "Synced message templates",
+  "campaignsMetric": "Campaigns using WhatsApp",
+  "followupsMetric": "Recorded customer follow-ups",
+  "noTemplatesHint": "Connect WhatsApp Business, then select ?Sync from Meta? to import your templates and view their status here.",
+  "noFollowupsHint": "Your WhatsApp customer follow-ups will appear here with their due dates and status."
 }

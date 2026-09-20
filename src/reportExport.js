@@ -88,7 +88,7 @@ export async function buildReportWorkbook(report,{locale='ar'}={}) {
  const L=loadLabels(locale);
  const rtl=locale!=='en';
  const wb=new ExcelJS.Workbook();
- wb.creator='HyperCool AI';
+ wb.creator='Frost';
  wb.created=new Date(report.generatedAt||Date.now());
  const sheetOpts={views:[{rightToLeft:rtl}]};
  const headerRow=ws=>{const row=ws.getRow(1);row.font={bold:true};row.alignment={horizontal:rtl?'right':'left'};};
@@ -209,7 +209,7 @@ export async function buildReportPdfBuffer(report,{locale='ar'}={}) {
   const ensureSpace=needed=>{if(y+needed>doc.page.height-marginX){doc.addPage();y=marginX;}};
   const sectionHeading=text=>{ensureSpace(40);line(text,{fontSize:16,bold:true,color:'#0f766e',gap:10});doc.moveTo(marginX,y-4).lineTo(doc.page.width-marginX,y-4).strokeColor('#e2e8f0').stroke();y+=6;};
 
-  line(`HyperCool AI — ${L.title||'Weekly Report'}`,{fontSize:22,bold:true,color:'#0f766e',gap:4});
+  line(`Frost — ${L.title||'Weekly Report'}`,{fontSize:22,bold:true,color:'#0f766e',gap:4});
   line(`${report.weekStart} - ${report.weekEnd}`,{fontSize:11,color:'#64748b',gap:16});
 
   if(!report.kpis) {
