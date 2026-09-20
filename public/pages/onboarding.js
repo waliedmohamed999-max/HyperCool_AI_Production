@@ -6,7 +6,7 @@
 // duplicating them — this page adds no new business logic, only a guided real-status view over
 // what already exists. No step here is ever a client-asserted checkbox: every state shown is
 // read verbatim from `GET /api/onboarding`, which derives it live server-side.
-import {escape,button,badge,empty,skeleton,tabs,promptDrawer,toast as showToast} from '../components/ui/index.js';
+import {escape,button,badge,empty,skeleton,tabs,promptDrawer,icon,toast as showToast} from '../components/ui/index.js';
 import {t,getLocale} from '../i18n.js';
 
 const $=s=>document.querySelector('#onboarding '+s);
@@ -22,7 +22,7 @@ function staleGuard(generation){return generation!==renderGeneration;}
 
 export function installOnboardingPage(){
  const root=document.querySelector('[data-page="onboarding"] #onboarding');
- root.innerHTML=`<div id="ob-banner"></div><div id="ob-tabs"></div>`;
+ root.innerHTML=`<div id="ob-banner"></div><div id="ob-progress"></div><div id="ob-tabs"></div>`;
 }
 
 export async function renderOnboardingPage({api:client,auth}){
@@ -43,7 +43,22 @@ export async function renderOnboardingPage({api:client,auth}){
  if(staleGuard(generation))return;
  state=onboardingState;summary=summaryData;
  renderBanner();
+ renderProgress();
  renderSteps();
+}
+
+// Visual progress summary - derived only from the server-provided step states, never asserted client-side.
+function renderProgress(){
+ const total=STEP_IDS.length,steps=state.steps;
+ const ready=steps.filter(s=>s.state==='READY').length,skipped=steps.filter(s=>s.state==='SKIPPED').length;
+ const requiredLeft=steps.filter(s=>s.required&&s.state!=='READY').length;
+ const pct=Math.round(ready/total*100);
+ const host=$('#ob-progress');
+ host.innerHTML=`<section class="ob-progress"><div class="ob-progress-copy"><span class="ob-eyebrow">FROST / SETUP</span><h2>${escape(t('onboarding.progressTitle'))}</h2><p>${escape(t('onboarding.progressCount',{ready,total}))}</p></div>
+  <div class="ob-progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="${escape(t('onboarding.progressTitle'))}"><div class="ob-meter-track"><span></span></div><b dir="ltr">${pct}%</b></div>
+  <div class="ob-progress-tags">${requiredLeft?badge(t('onboarding.requiredLeft',{count:requiredLeft}),'PENDING'):badge(t('onboarding.requiredDone'),'CONNECTED')}${skipped?badge(t('onboarding.skippedCount',{count:skipped}),'DISCONNECTED'):''}</div></section>`;
+ // CSP is style-src 'self': the width must be set through the CSSOM, never an inline style attribute.
+ host.querySelector('.ob-meter-track span').style.width=pct+'%';
 }
 
 function renderBanner(){
@@ -70,6 +85,7 @@ function renderSteps(){
   return [label,panels[i]];
  });
  tabControl=tabs(host,entries);
+ decorateStepper(host);
  const startIndex=Math.max(0,STEP_IDS.indexOf(state.currentStep));
  tabControl.select(startIndex);
  // Persist the owner's chosen step server-side (Part 46) — a view-only operator can still
@@ -85,6 +101,16 @@ function renderSteps(){
  STEP_IDS.forEach((id,i)=>paintStep(id,panels[i],i));
 }
 
+function stepMark(step,index){return step.state==='READY'?icon('check'):step.state==='SKIPPED'?'-':String(index+1);}
+function decorateStepper(host){
+ const bar=host.querySelector('.ui-tabs');bar.classList.add('ob-stepper');
+ bar.querySelectorAll('[role=tab]').forEach((b,i)=>{
+  const id=STEP_IDS[i],step=state.steps.find(s=>s.id===id);
+  b.dataset.state=step.state;
+  b.innerHTML=`<span class="ob-step-num">${stepMark(step,i)}</span><span class="ob-step-text"><strong>${escape(t('onboarding.step.'+id))}${step.required?' *':''}</strong><small>${escape(t('onboarding.state.'+step.state))}</small></span>`;
+ });
+}
+
 function goToStep(index){
  tabControl.select(index);
  document.querySelectorAll('#ob-tabs .ui-tabs [role=tab]')[index]?.focus();
@@ -93,7 +119,7 @@ function goToStep(index){
  }
 }
 function stepNav(panel,index,{skippable=false}={}){
- const nav=document.createElement('div');nav.className='report-actions';
+ const nav=document.createElement('div');nav.className='report-actions ob-actions';
  if(index>0){const back=button(t('onboarding.backButton'),{variant:'ghost'});back.onclick=()=>goToStep(index-1);nav.append(back);}
  const step=state.steps.find(s=>s.id===STEP_IDS[index]);
  const isOwner=currentAuth.user.role==='owner';
@@ -114,10 +140,10 @@ function stepNav(panel,index,{skippable=false}={}){
 function paintStep(id,panel,index){
  panel.innerHTML='';
  const step=state.steps.find(s=>s.id===id);
- const head=document.createElement('div');head.className='row-between';
- head.innerHTML=`<h3>${escape(t('onboarding.step.'+id))} ${step.required?badge(t('onboarding.requiredBadge'),'PENDING'):badge(t('onboarding.optionalBadge'),'DISCONNECTED')}</h3>${stepBadge(step)}`;
+ const head=document.createElement('div');head.className='ob-panel-head';
+ head.innerHTML=`<span class="ob-step-num big" data-state="${step.state}">${stepMark(step,index)}</span><div class="ob-panel-title"><h3>${escape(t('onboarding.step.'+id))}</h3><div>${step.required?badge(t('onboarding.requiredBadge'),'PENDING'):badge(t('onboarding.optionalBadge'),'DISCONNECTED')}</div></div>${stepBadge(step)}`;
  panel.append(head);
- const body=document.createElement('div');panel.append(body);
+ const body=document.createElement('div');body.className='ob-panel-body';panel.append(body);
  ({company:paintCompany,ai:paintAi,commerce:paintCommerce,messaging:paintMessaging,productivity:paintProductivity,agents:paintAgents,safety:paintSafety,systemCheck:paintSystemCheck}[id])(body,step,index);
  stepNav(panel,index,{skippable:['commerce','messaging','productivity'].includes(id)});
 }
@@ -126,21 +152,18 @@ function paintStep(id,panel,index){
 
 function paintCompany(body){
  const w=summary.workspace;
- body.innerHTML=`<p>${escape(t('onboarding.companyStep.note'))}</p>
-  <p><strong>${escape(t('onboarding.companyStep.name'))}:</strong> ${escape(w.name)}</p>
-  <p><strong>${escape(t('onboarding.companyStep.slug'))}:</strong> <span dir="ltr">${escape(w.slug)}</span></p>
-  <p><strong>${escape(t('onboarding.companyStep.locale'))}:</strong> ${escape(w.locale)}</p>
-  <p><strong>${escape(t('onboarding.companyStep.timezone'))}:</strong> ${escape(w.timezone)}</p>
-  <p><strong>${escape(t('onboarding.companyStep.role'))}:</strong> ${escape(t('workspace.role'+w.role.charAt(0).toUpperCase()+w.role.slice(1)))}</p>`;
+ const facts=[[t('onboarding.companyStep.name'),w.name,false],[t('onboarding.companyStep.slug'),w.slug,true],[t('onboarding.companyStep.locale'),w.locale,true],[t('onboarding.companyStep.timezone'),w.timezone,true],[t('onboarding.companyStep.role'),t('workspace.role'+w.role.charAt(0).toUpperCase()+w.role.slice(1)),false]];
+ body.innerHTML=`<p class="ob-note">${escape(t('onboarding.companyStep.note'))}</p>
+  <dl class="ob-facts">${facts.map(([label,value,ltr])=>`<div class="ob-fact"><dt>${escape(label)}</dt><dd${ltr?' dir="ltr"':''}>${escape(value)}</dd></div>`).join('')}</dl>`;
 }
 
 // --- AI provider (Part 15-18: the only REQUIRED step) -------------------------------------
 
 function paintAi(body,step){
  const connected=summary.aiProviders.filter(c=>c.status==='CONNECTED');
- body.innerHTML=`<p>${escape(t('onboarding.aiStep.hint'))}</p>`;
+ body.innerHTML=`<p class="ob-note">${escape(t('onboarding.aiStep.hint'))}</p>`;
  if(connected.length){
-  const note=document.createElement('p');note.textContent=t('onboarding.aiStep.connectedHint');body.append(note);
+  const note=document.createElement('p');note.className='ob-callout ok';note.textContent=t('onboarding.aiStep.connectedHint');body.append(note);
   const presetCard=document.createElement('div');presetCard.className='card';
   presetCard.innerHTML=`<h4>${escape(t('onboarding.aiStep.presetTitle'))}</h4><p>${escape(t('onboarding.aiStep.presetHint'))}</p>`;
   const select=document.createElement('select');
@@ -183,8 +206,8 @@ function openAddAiConnection(){
 function paintCommerce(body,step){
  const salla=summary.integrations.providers.find(p=>p.slug==='salla');
  const healthy=salla?.connections.some(c=>['CONNECTED','DEGRADED'].includes(c.status));
- body.innerHTML=`<p>${escape(t('onboarding.commerceStep.hint'))}</p>`;
- if(healthy){body.append(Object.assign(document.createElement('p'),{textContent:t('onboarding.commerceStep.connectedHint')}));return;}
+ body.innerHTML=`<p class="ob-note">${escape(t('onboarding.commerceStep.hint'))}</p>`;
+ if(healthy){body.append(Object.assign(document.createElement('p'),{className:'ob-callout ok',textContent:t('onboarding.commerceStep.connectedHint')}));return;}
  const connect=button(t('onboarding.commerceStep.connectButton'),{variant:'primary',iconName:'plus'});
  connect.onclick=()=>{
   promptDrawer(t('onboarding.commerceStep.connectButton'),node=>{
@@ -200,13 +223,13 @@ function paintCommerce(body,step){
 }
 function paintMessaging(body){
  const healthy=['whatsapp','meta','x','linkedin'].some(slug=>summary.integrations.providers.find(p=>p.slug===slug)?.connections.some(c=>['CONNECTED','DEGRADED'].includes(c.status)));
- body.innerHTML=`<p>${escape(t('onboarding.messagingStep.hint'))}</p>${healthy?`<p>${escape(t('onboarding.messagingStep.connectedHint'))}</p>`:''}`;
+ body.innerHTML=`<p class="ob-note">${escape(t('onboarding.messagingStep.hint'))}</p>${healthy?`<p class="ob-callout ok">${escape(t('onboarding.messagingStep.connectedHint'))}</p>`:''}`;
  const goCc=button(t('onboarding.goToControlCenter'),{variant:'secondary'});goCc.onclick=()=>{location.hash='#control-center';};
  body.append(goCc);
 }
 function paintProductivity(body){
  const healthy=summary.integrations.providers.find(p=>p.slug==='microsoft365')?.connections.some(c=>['CONNECTED','DEGRADED'].includes(c.status));
- body.innerHTML=`<p>${escape(t('onboarding.productivityStep.hint'))}</p>${healthy?`<p>${escape(t('onboarding.productivityStep.connectedHint'))}</p>`:''}`;
+ body.innerHTML=`<p class="ob-note">${escape(t('onboarding.productivityStep.hint'))}</p>${healthy?`<p class="ob-callout ok">${escape(t('onboarding.productivityStep.connectedHint'))}</p>`:''}`;
  const goCc=button(t('onboarding.goToControlCenter'),{variant:'secondary'});goCc.onclick=()=>{location.hash='#control-center';};
  body.append(goCc);
 }
@@ -214,7 +237,7 @@ function paintProductivity(body){
 // --- Agents (Part 25-26: informational signal only, never blocks) ------------------------
 
 function paintAgents(body){
- body.innerHTML=`<p>${escape(t('onboarding.agentsStep.hint'))}</p><p>${escape(t('onboarding.agentsStep.readyCount',{ready:summary.agents.ready,total:summary.agents.total}))}</p>`;
+ body.innerHTML=`<p class="ob-note">${escape(t('onboarding.agentsStep.hint'))}</p><div class="ob-tiles"><div class="ob-tile"><b dir="ltr">${summary.agents.ready}/${summary.agents.total}</b><span>${escape(t('onboarding.tileAgents'))}</span></div></div><p class="kpi-context">${escape(t('onboarding.agentsStep.readyCount',{ready:summary.agents.ready,total:summary.agents.total}))}</p>`;
  const goCc=button(t('onboarding.goToControlCenter'),{variant:'secondary'});goCc.onclick=()=>{location.hash='#control-center';};
  body.append(goCc);
 }
@@ -226,8 +249,8 @@ async function paintSafety(body){
  let snapshot;
  try{snapshot=await api('/api/onboarding/safety');}
  catch(error){body.innerHTML=empty(t('onboarding.loadFailed'),error.message);return;}
- body.innerHTML=`<p>${escape(t('onboarding.safetyStep.hint'))}</p>
-  <p><strong>${escape(t('onboarding.safetyStep.safetyCeiling'))}:</strong> ${escape(snapshot.tenantSafetyCeiling||t('onboarding.safetyStep.noCeiling'))}</p>
+ body.innerHTML=`<p class="ob-note">${escape(t('onboarding.safetyStep.hint'))}</p>
+  <dl class="ob-facts"><div class="ob-fact"><dt>${escape(t('onboarding.safetyStep.safetyCeiling'))}</dt><dd>${escape(snapshot.tenantSafetyCeiling||t('onboarding.safetyStep.noCeiling'))}</dd></div></dl>
   <div class="grid">${snapshot.agentLevels.map(a=>`<div class="card"><strong>${escape(t('agents.roles.'+a.id))}</strong> ${badge(a.level,'PENDING')}</div>`).join('')}</div>
   <h4>${escape(t('onboarding.safetyStep.flags'))}</h4>
   <div class="grid">${Object.entries(snapshot.flags).map(([key,on])=>`<div class="audit-row row-between"><span>${escape(t('onboarding.safetyStep.flag.'+key))}</span>${badge(on?t('onboarding.safetyStep.flagOn'):t('onboarding.safetyStep.flagOff'),on?'CONNECTED':'DISCONNECTED')}</div>`).join('')}</div>`;
@@ -238,8 +261,10 @@ async function paintSafety(body){
 function paintSystemCheck(body,step,index){
  const canComplete=state.steps.filter(s=>s.required).every(s=>s.state==='READY');
  const healthy=summary.integrations.healthyConnections;
- body.innerHTML=`<p>${escape(t('onboarding.systemCheckStep.hint'))}</p>
-  <p>${escape(t('onboarding.systemCheckStep.summary',{ready:summary.agents.ready,total:summary.agents.total,healthy}))}</p>
+ const reqSteps=state.steps.filter(s=>s.required),reqReady=reqSteps.filter(s=>s.state==='READY').length;
+ body.innerHTML=`<p class="ob-note">${escape(t('onboarding.systemCheckStep.hint'))}</p>
+  <div class="ob-tiles"><div class="ob-tile"><b dir="ltr">${summary.agents.ready}/${summary.agents.total}</b><span>${escape(t('onboarding.tileAgents'))}</span></div><div class="ob-tile"><b dir="ltr">${healthy}</b><span>${escape(t('onboarding.tileConnections'))}</span></div><div class="ob-tile ${canComplete?'ok':'warn'}"><b dir="ltr">${reqReady}/${reqSteps.length}</b><span>${escape(t('onboarding.tileRequired'))}</span></div></div>
+  <p class="kpi-context">${escape(t('onboarding.systemCheckStep.summary',{ready:summary.agents.ready,total:summary.agents.total,healthy}))}</p>
   <p>${canComplete?badge(t('onboarding.systemCheckStep.requiredReady'),'CONNECTED'):badge(t('onboarding.systemCheckStep.requiredNotReady'),'ERROR')}</p>`;
  const finish=button(t('onboarding.finishButton'),{variant:'primary',iconName:'check'});
  finish.disabled=!canComplete||currentAuth.user.role!=='owner';
