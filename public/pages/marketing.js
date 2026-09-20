@@ -403,9 +403,19 @@ function renderContentList() {
      // tab (it filters on scheduledAt/publishedAt) — ask for one instead of leaving it null.
      if(next==='SCHEDULED') {
       const when=await promptDrawer(t('marketing.advanceTo.SCHEDULED'),node=>{
-       node.innerHTML=`<label>${escape(t('marketing.colWhen'))}<input name="scheduledAt" type="datetime-local" required></label>`;
+       // Label reuses calendar.scheduleTime ("Time (Riyadh)") rather than the generic
+       // marketing.colWhen — makes the single canonical scheduling timezone (item 9) explicit
+       // to the person filling this in, matching the Global Calendar's own schedule form.
+       node.innerHTML=`<label>${escape(t('calendar.scheduleTime'))}<input name="scheduledAt" type="datetime-local" required></label>`;
        const input=node.querySelector('[name=scheduledAt]');
-       return {value:()=>input.value?new Date(input.value).toISOString():null,validate:()=>{if(!input.value){input.setCustomValidity(t('common.reasonRequired'));input.reportValidity();return false;}input.setCustomValidity('');return true;},focus:()=>input.focus()};
+       // Production-readiness gate item 9 (timezone consistency): this app has one canonical
+       // scheduling timezone, Riyadh (+03:00) — see public/planning.js's identical
+       // `input.localTime+':00+03:00'` pattern for the Global Calendar's own schedule form.
+       // `new Date(input.value)` on a bare datetime-local value (no offset) is interpreted in
+       // the VISITOR'S BROWSER-LOCAL timezone by the JS spec, not Riyadh — two people in
+       // different timezones typing the identical displayed time would silently schedule two
+       // different real UTC instants. Always attach the explicit Riyadh offset before parsing.
+       return {value:()=>input.value?new Date(input.value+':00+03:00').toISOString():null,validate:()=>{if(!input.value){input.setCustomValidity(t('common.reasonRequired'));input.reportValidity();return false;}input.setCustomValidity('');return true;},focus:()=>input.focus()};
       },{confirmLabel:t('marketing.advanceTo.SCHEDULED')});
       if(!when)return;
       patch.scheduledAt=when;

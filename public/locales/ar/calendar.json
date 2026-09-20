@@ -60,5 +60,21 @@
   "noSlotsHint": "أنشئ خطة محتوى أو غيّر عامل تصفية المنصة.",
   "ideaCol": "الفكرة",
   "waitingForApprovedContent": "بانتظار محتوى معتمد",
-  "scrollableAriaLabel": "التقويم قابل للتمرير"
+  "scrollableAriaLabel": "التقويم قابل للتمرير",
+  "allContentTitle": "كل المحتوى المجدول",
+  "allContentHint": "يشمل منشورات مستقلة ومحتوى حملات معًا — نفس البيانات التي تظهر في تقويم السوشيال بقسم التسويق.",
+  "filterCampaignLabel": "الحملة",
+  "filterCampaignAll": "كل الحملات",
+  "filterCampaignNone": "بدون حملة (مستقل)",
+  "filterPlatformAll": "كل المنصات",
+  "filterFormatLabel": "نوع المحتوى",
+  "filterFormatAll": "كل الأنواع",
+  "filterStatusLabel": "الحالة",
+  "filterStatusAll": "كل الحالات",
+  "filterDateFromLabel": "من تاريخ",
+  "filterDateToLabel": "إلى تاريخ",
+  "filterAccountLabel": "الحساب المتصل",
+  "filterAccountUnavailable": "غير متاح بعد — لا يوجد ربط لكل عنصر على حدة حاليًا",
+  "noUnifiedContent": "لا يوجد محتوى مطابق لهذا التصفية.",
+  "campaignBadge": "حملة: {name}"
 }

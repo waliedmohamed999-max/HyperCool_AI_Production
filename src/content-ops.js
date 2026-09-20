@@ -4,7 +4,7 @@
 // machine), planning.js (schedule_jobs) and compliance.js (compliance_runs)
 // already persist and validate. Kept pure (arrays/maps in, plain objects out)
 // so it never needs to import server.js or the runtime layer.
-import {listContent} from './content.js';
+import {listContent,isCampaignShaped} from './content.js';
 import {listJobs} from './planning.js';
 import {listAuditLog} from './audit.js';
 const DAY_MS=86400000;
@@ -100,7 +100,11 @@ export function computeFrostContentInsights(content,jobs,issues,now=Date.now()) 
  return {generatedAt:new Date(now).toISOString(),bullets,hasData:content.length>0};
 }
 export function buildContentWorkspace(store,{complianceByContent,tenantId=null}) {
- const content=listContent(store.db,tenantId);
+ // Content Unification: this workspace is built entirely around the legacy standalone-post
+ // shape (assetUrl/title/review-pipeline fields) — a campaign-originated row (richer, no
+ // assetUrl concept, its own dedicated UI in Marketing) would otherwise show up here as a
+ // permanently "missing creative asset" false signal, not a meaningful insight.
+ const content=listContent(store.db,tenantId).filter(item=>!isCampaignShaped(item));
  const jobs=listJobs(store.db,tenantId);
  const audit=listAuditLog(store.db,{tenantId});
  const flaggedIds=new Set([...complianceByContent].filter(([,run])=>run.status==='COMPLETED'&&['BLOCK','PASS_WITH_EDITS'].includes(run.decision.payload?.classification)).map(([id])=>id));

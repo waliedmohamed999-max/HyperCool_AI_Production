@@ -1,9 +1,10 @@
-import {randomUUID, createHash} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import {fail} from './auth.js';
 import {resolveActiveTenantId} from './tenancy.js';
 import {recordAudit} from './audit.js';
 import {listLeads, listAllMessages} from './crm.js';
-import {listContent} from './content.js';
+import {listContent, getContent, listContentFiltered, insertContent, writeContent, isCampaignShaped} from './content.js';
+import {contentHash, scheduleCampaignContent, hasActiveScheduleJob} from './planning.js';
 import {buildExecutiveReport, currentWeekStart} from './reporting.js';
 import {createWorkflowDraft, activateWorkflow} from './runtime/workflow-engine.js';
 
@@ -55,45 +56,13 @@ export function installMarketing(db) {
  // this is just the pointer.
  const campaignColumns=db.prepare('PRAGMA table_info(marketing_campaigns)').all().map(c=>c.name);
  if(!campaignColumns.includes('orchestration_workflow_id'))db.exec('ALTER TABLE marketing_campaigns ADD COLUMN orchestration_workflow_id TEXT');
- db.exec(`
- CREATE TABLE IF NOT EXISTS campaign_content_items (
-  id TEXT PRIMARY KEY,
-  tenant_id TEXT NOT NULL,
-  campaign_id TEXT,
-  channel TEXT NOT NULL,
-  format TEXT NOT NULL,
-  objective TEXT,
-  audience TEXT,
-  hook TEXT,
-  body TEXT NOT NULL DEFAULT '',
-  cta TEXT,
-  hashtags_json TEXT NOT NULL DEFAULT '[]',
-  creative_brief_json TEXT,
-  status TEXT NOT NULL DEFAULT 'DRAFT',
-  approval_id TEXT,
-  scheduled_at TEXT,
-  published_at TEXT,
-  created_by TEXT,
-  created_by_name TEXT,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
- );
- CREATE INDEX IF NOT EXISTS idx_campaign_content_tenant ON campaign_content_items(tenant_id,status);
- CREATE INDEX IF NOT EXISTS idx_campaign_content_campaign ON campaign_content_items(campaign_id);
- CREATE INDEX IF NOT EXISTS idx_campaign_content_scheduled ON campaign_content_items(tenant_id,scheduled_at);`);
- // Phase MKT-2, Part C/D — additive columns for the real compliance gate and creative-brief
- // evidence trail. Same ALTER TABLE ADD COLUMN pattern already used by
- // integration_definitions.js — never a table rebuild.
- const contentColumns=db.prepare('PRAGMA table_info(campaign_content_items)').all().map(c=>c.name);
- for(const [name,def] of [
-  ['compliance_run_id',"TEXT"],
-  ['compliance_classification',"TEXT"], // PASS | PASS_WITH_EDITS | BLOCK
-  ['compliance_json',"TEXT"], // full compliance agent decision payload
-  ['compliance_checked_at',"TEXT"],
-  ['compliance_content_hash',"TEXT"], // content hash AT THE TIME of the check — a later edit that
-  // changes this hash silently invalidates the stored result (checked at gate time, never trusted blindly)
-  ['creative_run_id',"TEXT"]
- ]) if(!contentColumns.includes(name))db.exec(`ALTER TABLE campaign_content_items ADD COLUMN ${name} ${def}`);
+ // Content Unification: campaign_content_items is no longer created here — it's now a legacy
+ // table content.js's migrateUnifyContentItems() renames to campaign_content_items_pre_unify
+ // (real pre-existing data) the moment content_items/planning.js are installed, before this
+ // function ever runs. Campaign content lives in content_items now (see this file's
+ // createCampaignContentItem/etc. adapters) — recreating this table here would only produce a
+ // permanent empty orphan (and, worse, collide with migrateUnifyContentItems' own rename on a
+ // later restart), so it's simply not done anymore.
  db.exec(`
  CREATE TABLE IF NOT EXISTS marketing_assets (
   id TEXT PRIMARY KEY,
@@ -124,33 +93,38 @@ function hydrateCampaign(row) {
   createdBy:row.created_by,createdByName:row.created_by_name,createdAt:row.created_at,updatedAt:row.updated_at
  };
 }
-function hydrateContentItem(row) {
- if(!row)return null;
- const item={
-  id:row.id,tenantId:row.tenant_id,campaignId:row.campaign_id,channel:row.channel,format:row.format,
-  objective:row.objective,audience:row.audience,hook:row.hook,body:row.body,cta:row.cta,
-  hashtags:JSON.parse(row.hashtags_json||'[]'),creativeBrief:row.creative_brief_json?JSON.parse(row.creative_brief_json):null,
-  status:row.status,approvalId:row.approval_id,scheduledAt:row.scheduled_at,publishedAt:row.published_at,
-  createdBy:row.created_by,createdByName:row.created_by_name,createdAt:row.created_at,updatedAt:row.updated_at,
-  complianceRunId:row.compliance_run_id||null,complianceClassification:row.compliance_classification||null,
-  compliance:row.compliance_json?JSON.parse(row.compliance_json):null,complianceCheckedAt:row.compliance_checked_at||null,
-  creativeRunId:row.creative_run_id||null
+// Content Unification: `item` here is now the canonical content.js item object (already a
+// full JS object, not a raw SQL row) — this maps it back to the external campaign-content
+// shape every existing caller (application.js routes, public/pages/marketing.js) already
+// expects, translating the one renamed field (platform -> channel) at this boundary.
+function hydrateContentItem(item) {
+ if(!item)return null;
+ const external={
+  id:item.id,tenantId:item.tenantId,campaignId:item.campaignId||null,channel:item.platform,format:item.format,
+  objective:item.objective||null,audience:item.audience||null,hook:item.hook,body:item.body||'',cta:item.cta||null,
+  hashtags:item.hashtags||[],creativeBrief:item.creativeBrief||null,
+  status:item.status,approvalId:item.approvalId||null,scheduledAt:item.scheduledAt||null,publishedAt:item.publishedAt||null,
+  createdBy:item.createdBy||null,createdByName:item.createdByName||null,createdAt:item.createdAt,updatedAt:item.updatedAt||item.createdAt,
+  complianceRunId:item.complianceRunId||null,complianceClassification:item.complianceClassification||null,
+  compliance:item.compliance||null,complianceCheckedAt:item.complianceCheckedAt||null,
+  creativeRunId:item.creativeRunId||null
  };
  // Part C — a compliance result only counts if it was run against the content EXACTLY as it
  // reads right now; any edit since (hook/body/cta/hashtags) silently invalidates it rather than
  // letting a stale PASS approve different text. Computed at read time, never trusted from a
  // cached "isValid" flag that could itself drift.
- item.complianceValid=!!(row.compliance_content_hash && row.compliance_content_hash===campaignContentHash(item));
- return item;
+ external.complianceValid=!!(item.complianceContentHash && item.complianceContentHash===campaignContentHash(external));
+ return external;
 }
 function cleanText(value,max) {
  return typeof value==='string'?value.trim().slice(0,max):null;
 }
-// Hash-pinned approval philosophy (mirrors planning.js's contentHash for the legacy content_items
-// table) — only the fields a compliance reviewer actually looked at count toward the pin; fields
-// like status/scheduledAt/campaignId changing does NOT invalidate a real compliance result.
+// Content Unification: delegates to the one canonical contentHash (src/planning.js) via a
+// channel->platform field-name translation at this exact boundary — every internal call site
+// in this file keeps passing {channel,...} exactly as before; contentHash itself never knew
+// "channel" was ever a name used for this field.
 export function campaignContentHash(item) {
- return createHash('sha256').update(JSON.stringify({channel:item.channel,format:item.format,hook:item.hook||'',body:item.body||'',cta:item.cta||'',hashtags:item.hashtags||[]})).digest('hex');
+ return contentHash({platform:item.channel,format:item.format,hook:item.hook,body:item.body,cta:item.cta,hashtags:item.hashtags});
 }
 
 // -----------------------------------------------------------------------------------------
@@ -301,7 +275,15 @@ export function campaignOrchestrationTriggerContext(campaign) {
 }
 
 // -----------------------------------------------------------------------------------------
-// Campaign content items
+// Campaign content items — Content Unification (see plan doc): these are now thin ADAPTERS
+// over content.js's canonical content_items store (formerly a separate campaign_content_items
+// table, renamed to campaign_content_items_pre_unify and retained as an inert historical
+// backup by content.js's migration). External signatures/return shapes are preserved exactly
+// so application.js's routes and public/pages/marketing.js's/whatsapp.js's UI code need zero
+// changes. New campaign-content logic belongs in content.js/planning.js, not here — this file
+// only keeps its own CONTENT_TRANSITIONS/compliance-gate validation, a real, distinct
+// invariant from the legacy review/approval hash-pin that is not being merged into one state
+// machine in this pass (see the plan's "compatibility decisions").
 // -----------------------------------------------------------------------------------------
 export function createCampaignContentItem(db,input,user,tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
@@ -309,38 +291,36 @@ export function createCampaignContentItem(db,input,user,tenantId=null) {
  if(!CONTENT_FORMATS.includes(input.format))fail(400,'نوع محتوى غير معروف');
  if(input.campaignId)getCampaign(db,input.campaignId,resolvedTenantId);
  const now=new Date().toISOString();
- const row={
-  id:randomUUID(),tenantId:resolvedTenantId,campaignId:input.campaignId||null,channel:input.channel,format:input.format,
-  objective:cleanText(input.objective,300),audience:cleanText(input.audience,300),hook:cleanText(input.hook,300),
-  body:cleanText(input.body,8000)||'',cta:cleanText(input.cta,200),
-  hashtags:Array.isArray(input.hashtags)?input.hashtags.slice(0,30).map(h=>String(h).trim()).filter(Boolean):[],
-  creativeBrief:input.creativeBrief||null,createdBy:user?.id||null,createdByName:user?.name||null
+ const hashtags=Array.isArray(input.hashtags)?input.hashtags.slice(0,30).map(h=>String(h).trim()).filter(Boolean):[];
+ const hook=cleanText(input.hook,300),body=cleanText(input.body,8000)||'';
+ const item={
+  id:randomUUID(),status:'DRAFT',platform:input.channel,format:input.format,date:now.slice(0,10),
+  title:hook||body.slice(0,80),body,englishCopy:null,url:null,assetUrl:null,
+  campaignId:input.campaignId||null,scheduledAt:null,connectionId:null,
+  objective:cleanText(input.objective,300),audience:cleanText(input.audience,300),hook,cta:cleanText(input.cta,200),
+  hashtags,creativeBrief:input.creativeBrief||null,approvalId:null,
+  complianceRunId:null,complianceClassification:null,compliance:null,complianceCheckedAt:null,complianceContentHash:null,
+  creativeRunId:null,externalPostId:null,liveUrl:null,publishedAt:null,
+  createdBy:user?.id||null,createdByName:user?.name||null,createdAt:now,updatedAt:now
  };
- db.prepare(`INSERT INTO campaign_content_items (id,tenant_id,campaign_id,channel,format,objective,audience,hook,body,cta,hashtags_json,creative_brief_json,status,created_by,created_by_name,created_at,updated_at)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'DRAFT',?,?,?,?)`)
-  .run(row.id,row.tenantId,row.campaignId,row.channel,row.format,row.objective,row.audience,row.hook,row.body,row.cta,
-   JSON.stringify(row.hashtags),row.creativeBrief?JSON.stringify(row.creativeBrief):null,row.createdBy,row.createdByName,now,now);
- recordAudit(db,{id:randomUUID(),action:'MARKETING_CONTENT_CREATED',itemId:row.id,actorId:user?.id||null,actorName:user?.name||null,actorRole:user?.role||null,at:now},resolvedTenantId);
- return getCampaignContentItem(db,row.id,resolvedTenantId);
+ insertContent(db,item,resolvedTenantId);
+ recordAudit(db,{id:randomUUID(),action:'MARKETING_CONTENT_CREATED',itemId:item.id,actorId:user?.id||null,actorName:user?.name||null,actorRole:user?.role||null,at:now},resolvedTenantId);
+ return getCampaignContentItem(db,item.id,resolvedTenantId);
 }
 export function getCampaignContentItem(db,id,tenantId=null) {
- const row=db.prepare('SELECT * FROM campaign_content_items WHERE id=? AND tenant_id=?').get(id,tenantId||resolveActiveTenantId(db));
- if(!row)fail(404,'عنصر المحتوى غير موجود');
- return hydrateContentItem(row);
+ const item=getContent(db,id,tenantId);
+ if(!isCampaignShaped(item))fail(404,'عنصر المحتوى غير موجود');
+ return hydrateContentItem(item);
 }
 export function listCampaignContentItems(db,tenantId=null,{campaignId,status}={}) {
- const resolvedTenantId=tenantId||resolveActiveTenantId(db);
- let sql='SELECT * FROM campaign_content_items WHERE tenant_id=?';
- const params=[resolvedTenantId];
- if(campaignId){sql+=' AND campaign_id=?';params.push(campaignId);}
- if(status){sql+=' AND status=?';params.push(status);}
- sql+=' ORDER BY created_at DESC';
- return db.prepare(sql).all(...params).map(hydrateContentItem);
+ return listContentFiltered(db,tenantId,{campaignId,status}).filter(isCampaignShaped).map(hydrateContentItem);
 }
 const CONTENT_TRANSITIONS={DRAFT:['IN_REVIEW','FAILED'],IN_REVIEW:['APPROVED','DRAFT','FAILED'],APPROVED:['SCHEDULED','PUBLISHED','FAILED'],SCHEDULED:['PUBLISHED','FAILED','APPROVED'],PUBLISHED:[],FAILED:['DRAFT']};
 export function updateCampaignContentItem(db,id,patch,user,tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
- const existing=getCampaignContentItem(db,id,resolvedTenantId);
+ const existingRaw=getContent(db,id,resolvedTenantId);
+ if(!isCampaignShaped(existingRaw))fail(404,'عنصر المحتوى غير موجود');
+ const existing=hydrateContentItem(existingRaw);
  const next={
   hook:patch.hook!==undefined?cleanText(patch.hook,300):existing.hook,
   body:patch.body!==undefined?(cleanText(patch.body,8000)||''):existing.body,
@@ -350,6 +330,16 @@ export function updateCampaignContentItem(db,id,patch,user,tenantId=null) {
   scheduledAt:patch.scheduledAt!==undefined?patch.scheduledAt:existing.scheduledAt,
   approvalId:patch.approvalId!==undefined?patch.approvalId:existing.approvalId
  };
+ // Production-readiness gate item 5 (duplicate-job protection): changing scheduledAt while a
+ // real schedule_jobs row is still active for this content must never be accepted silently —
+ // the content record would then disagree with the job the publishing worker actually executes
+ // (the job keeps firing at the OLD time). Checked against the ACTUAL schedule_jobs table (via
+ // planning.js, which owns it), not existing.status, since cancelJobs() never resets campaign
+ // content.status back to APPROVED — relying on status alone would permanently lock out a
+ // legitimate reschedule-after-cancel.
+ if(patch.scheduledAt!==undefined && next.scheduledAt!==existing.scheduledAt && hasActiveScheduleJob(db,id,resolvedTenantId)) {
+  fail(409,'المحتوى مجدول بالفعل بموعد قائم؛ ألغِ الجدولة الحالية عبر /api/schedule/cancel أولًا ثم أعد الجدولة');
+ }
  let status=existing.status;
  if(patch.status!==undefined && patch.status!==existing.status) {
   if(!CONTENT_STATUSES.includes(patch.status))fail(400,'حالة غير صالحة');
@@ -359,18 +349,27 @@ export function updateCampaignContentItem(db,id,patch,user,tenantId=null) {
   // call that tries to approve must NOT sneak past a compliance result that reviewed different
   // text. A BLOCK classification can never be approved past regardless of hash freshness.
   if(existing.status==='IN_REVIEW' && patch.status==='APPROVED') {
-   const raw=db.prepare('SELECT compliance_classification,compliance_content_hash FROM campaign_content_items WHERE id=? AND tenant_id=?').get(id,resolvedTenantId);
    const wouldBeHash=campaignContentHash({channel:existing.channel,format:existing.format,hook:next.hook,body:next.body,cta:next.cta,hashtags:next.hashtags});
-   if(!raw?.compliance_classification)fail(409,'يتطلب الاعتماد فحص امتثال حقيقي أولاً (compliance) — لا يوجد فحص مسجّل لهذا العنصر');
-   if(raw.compliance_content_hash!==wouldBeHash)fail(409,'تغيّر المحتوى بعد آخر فحص امتثال — أعد الفحص قبل الاعتماد');
-   if(raw.compliance_classification==='BLOCK')fail(409,'فحص الامتثال رفض هذا المحتوى (BLOCK) — لا يمكن اعتماده');
+   if(!existingRaw.complianceClassification)fail(409,'يتطلب الاعتماد فحص امتثال حقيقي أولاً (compliance) — لا يوجد فحص مسجّل لهذا العنصر');
+   if(existingRaw.complianceContentHash!==wouldBeHash)fail(409,'تغيّر المحتوى بعد آخر فحص امتثال — أعد الفحص قبل الاعتماد');
+   if(existingRaw.complianceClassification==='BLOCK')fail(409,'فحص الامتثال رفض هذا المحتوى (BLOCK) — لا يمكن اعتماده');
   }
   status=patch.status;
  }
  const publishedAt=status==='PUBLISHED'&&!existing.publishedAt?new Date().toISOString():existing.publishedAt;
  const now=new Date().toISOString();
- db.prepare(`UPDATE campaign_content_items SET hook=?,body=?,cta=?,hashtags_json=?,creative_brief_json=?,status=?,approval_id=?,scheduled_at=?,published_at=?,updated_at=? WHERE id=? AND tenant_id=?`)
-  .run(next.hook,next.body,next.cta,JSON.stringify(next.hashtags),next.creativeBrief?JSON.stringify(next.creativeBrief):null,status,next.approvalId,next.scheduledAt,publishedAt,now,id,resolvedTenantId);
+ const updated={...existingRaw,hook:next.hook,body:next.body,cta:next.cta,hashtags:next.hashtags,creativeBrief:next.creativeBrief,
+  status,approvalId:next.approvalId,scheduledAt:next.scheduledAt,publishedAt,updatedAt:now,
+  title:next.hook||next.body.slice(0,80)||existingRaw.title};
+ // Content Unification: a real transition into SCHEDULED with a real scheduledAt now actually
+ // creates a schedule_jobs row (src/planning.js's scheduleCampaignContent) — the fix for the
+ // previously self-documented gap (marketing-analytics.js) where campaign content could reach
+ // status SCHEDULED/PUBLISHED with zero real scheduling/publishing execution behind it. Must
+ // run BEFORE writeContent below: scheduleCampaignContent re-reads the content row itself and
+ // requires it to still be APPROVED (the pre-patch state), matching legacy scheduleContent's
+ // own "content stays APPROVED, the job carries the SCHEDULED state" invariant.
+ if(status==='SCHEDULED' && next.scheduledAt && existing.status!=='SCHEDULED')scheduleCampaignContent(db,id,next.scheduledAt,user,resolvedTenantId);
+ writeContent(db,updated);
  recordAudit(db,{id:randomUUID(),action:'MARKETING_CONTENT_UPDATED',itemId:id,actorId:user?.id||null,actorName:user?.name||null,actorRole:user?.role||null,at:now},resolvedTenantId);
  return getCampaignContentItem(db,id,resolvedTenantId);
 }
@@ -380,11 +379,12 @@ export function updateCampaignContentItem(db,id,patch,user,tenantId=null) {
 // APPROVE gate check classification+hash without re-querying agent_runs on every attempt.
 export function saveComplianceResult(db,contentId,{runId,decision},tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
- const item=getCampaignContentItem(db,contentId,resolvedTenantId);
- const hash=campaignContentHash(item);
+ const existingRaw=getContent(db,contentId,resolvedTenantId);
+ if(!isCampaignShaped(existingRaw))fail(404,'عنصر المحتوى غير موجود');
+ const hash=campaignContentHash({channel:existingRaw.platform,format:existingRaw.format,hook:existingRaw.hook,body:existingRaw.body,cta:existingRaw.cta,hashtags:existingRaw.hashtags});
  const now=new Date().toISOString();
- db.prepare('UPDATE campaign_content_items SET compliance_run_id=?,compliance_classification=?,compliance_json=?,compliance_checked_at=?,compliance_content_hash=?,updated_at=? WHERE id=? AND tenant_id=?')
-  .run(runId,decision?.classification||null,decision?JSON.stringify(decision):null,now,hash,now,contentId,resolvedTenantId);
+ const updated={...existingRaw,complianceRunId:runId,complianceClassification:decision?.classification||null,compliance:decision||null,complianceCheckedAt:now,complianceContentHash:hash,updatedAt:now};
+ writeContent(db,updated);
  recordAudit(db,{id:randomUUID(),action:'MARKETING_CONTENT_COMPLIANCE_CHECKED',itemId:contentId,detail:{runId,classification:decision?.classification||null},at:now},resolvedTenantId);
  return getCampaignContentItem(db,contentId,resolvedTenantId);
 }
@@ -392,10 +392,11 @@ export function saveComplianceResult(db,contentId,{runId,decision},tenantId=null
 // content item. Populates the existing `creativeBrief` field — no new field/table.
 export function saveCreativeBrief(db,contentId,{runId,payload},tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
- getCampaignContentItem(db,contentId,resolvedTenantId);
+ const existingRaw=getContent(db,contentId,resolvedTenantId);
+ if(!isCampaignShaped(existingRaw))fail(404,'عنصر المحتوى غير موجود');
  const now=new Date().toISOString();
- db.prepare('UPDATE campaign_content_items SET creative_brief_json=?,creative_run_id=?,updated_at=? WHERE id=? AND tenant_id=?')
-  .run(payload?JSON.stringify(payload):null,runId,now,contentId,resolvedTenantId);
+ const updated={...existingRaw,creativeBrief:payload||null,creativeRunId:runId,updatedAt:now};
+ writeContent(db,updated);
  recordAudit(db,{id:randomUUID(),action:'MARKETING_CONTENT_CREATIVE_GENERATED',itemId:contentId,detail:{runId},at:now},resolvedTenantId);
  return getCampaignContentItem(db,contentId,resolvedTenantId);
 }

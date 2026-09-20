@@ -60,5 +60,21 @@
   "noSlotsHint": "Create a content plan or change the platform filter.",
   "ideaCol": "Idea",
   "waitingForApprovedContent": "Awaiting approved content",
-  "scrollableAriaLabel": "The calendar is scrollable"
+  "scrollableAriaLabel": "The calendar is scrollable",
+  "allContentTitle": "All Scheduled Content",
+  "allContentHint": "Includes standalone posts and campaign content together — the same data shown in Marketing's Social Calendar.",
+  "filterCampaignLabel": "Campaign",
+  "filterCampaignAll": "All campaigns",
+  "filterCampaignNone": "No campaign (standalone)",
+  "filterPlatformAll": "All platforms",
+  "filterFormatLabel": "Content type",
+  "filterFormatAll": "All types",
+  "filterStatusLabel": "Status",
+  "filterStatusAll": "All statuses",
+  "filterDateFromLabel": "From date",
+  "filterDateToLabel": "To date",
+  "filterAccountLabel": "Connected account",
+  "filterAccountUnavailable": "Not available yet — no per-item account targeting today",
+  "noUnifiedContent": "No content matches this filter.",
+  "campaignBadge": "Campaign: {name}"
 }
