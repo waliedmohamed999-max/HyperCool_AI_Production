@@ -86,7 +86,7 @@ function showPage(page){
 // `renderGeneration`/staleGuard, so calling either again here is always safe, never a race).
 function refetchPageIfNeeded(page){
   if(page==='control-center')renderControlCenter({api,auth}).catch(error=>message(error.message,'error'));
-  else if(page==='platform')renderPlatformPage({api,auth}).catch(error=>message(error.message,'error'));
+  else if(page==='platform'||page==='integration-builder')renderPlatformPage({api,auth}).catch(error=>message(error.message,'error'));
   // Command Center's chat/live-operations/suggestions are meant to feel current every time a
   // user arrives, not just after the next full login/workspace-switch render() — same targeted
   // refetch treatment as control-center/platform above, guarded by its own renderGeneration.
@@ -104,12 +104,6 @@ navLinks.forEach(a=>a.addEventListener('click',event=>{
   refetchPageIfNeeded(page);
 }));
 window.addEventListener('popstate',()=>{const page=currentPage();showPage(page);refetchPageIfNeeded(page);});
-// The "Integration Builder" sidebar entry shares #platform's real route (never a second page,
-// see app-shell.js's `data-route-key`) but should visibly land the admin ON the Builder
-// section, not wherever the page happened to scroll before.
-document.getElementById('nav-integration-builder')?.addEventListener('click',()=>{
-  setTimeout(()=>document.getElementById('pf-connectors')?.scrollIntoView({behavior:'smooth',block:'start'}),80);
-});
 // A same-tab navigation INTO or OUT OF the standalone recovery/invite flows (e.g. clicking
 // "Forgot password?" from the login screen) needs a full `render()` cycle, not just
 // `showPage()` — those flows force auth-panel/protected/session-bar hidden directly (see
@@ -214,7 +208,7 @@ async function render(){
   // them stuck on a page they have no authority to view instead of the real selection/creation
   // prompt (a real bug this phase's own suspend/reactivate journey testing surfaced).
   const page=currentPage();
-  const viewingWorkspaceIndependentPage=page==='account'||(page==='platform'&&auth.isPlatformAdmin);
+  const viewingWorkspaceIndependentPage=page==='account'||((page==='platform'||page==='integration-builder')&&auth.isPlatformAdmin);
   $('#protected').hidden=!workspace.ready && !viewingWorkspaceIndependentPage;
   if(!workspace.ready && !viewingWorkspaceIndependentPage){
     renderWorkspaceGate(workspace,auth.csrf,()=>render().catch(error=>message(error.message,'error')),auth.user);

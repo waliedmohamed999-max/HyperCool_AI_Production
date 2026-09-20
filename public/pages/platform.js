@@ -7,7 +7,7 @@
 import {escape,button,badge,empty,skeleton,promptDrawer,drawer,tabs,table,metric,toast as showToast} from '../components/ui/index.js';
 import {t,getLocale} from '../i18n.js';
 
-const $=s=>document.querySelector('#platform '+s);
+const $=s=>document.querySelector(s);
 let apiClient,currentAuth,renderGeneration=0;
 
 function toast(text){showToast(text,'success');}
@@ -17,6 +17,9 @@ function staleGuard(generation){return generation!==renderGeneration;}
 export function installPlatformPage(){
  const root=document.querySelector('[data-page="platform"] #platform');
  root.innerHTML=`<div id="pf-command-center"></div><div id="pf-integration-card"></div><div id="pf-overview" class="kpi-grid"></div><div id="pf-directory"></div><div id="pf-pending-custom"></div><div id="pf-webhook-ops"></div><div id="pf-connectors"></div>`;
+ // Integration Builder is its own page/route (#integration-builder), not a scroll target inside
+ // #platform — move its blocks there once; their ids (and every $('#pf-…') lookup) are unchanged.
+ document.querySelector('#integration-builder').append(document.getElementById('pf-integration-card'),document.getElementById('pf-pending-custom'),document.getElementById('pf-connectors'));
 }
 
 export async function renderPlatformPage({api:client,auth}){
@@ -27,7 +30,7 @@ export async function renderPlatformPage({api:client,auth}){
  // Someone navigating straight to #platform's URL without the nav link (never authorized
  // either way — every real route this page calls is independently gated server-side, Part
  // 58) still sees a clear, honest message instead of a blank page.
- if(!visible){$('#pf-integration-card').innerHTML='';$('#pf-overview').innerHTML='';$('#pf-directory').innerHTML=empty(t('platform.notPlatformAdmin'));$('#pf-connectors').innerHTML='';return;}
+ if(!visible){$('#pf-integration-card').innerHTML='';$('#pf-overview').innerHTML='';$('#pf-directory').innerHTML=empty(t('platform.notPlatformAdmin'));$('#pf-connectors').innerHTML=empty(t('platform.notPlatformAdmin'));return;}
  const generation=++renderGeneration;
  $('#pf-overview').innerHTML=skeleton(t('common.loading'));
  let overview,directory,connectors;

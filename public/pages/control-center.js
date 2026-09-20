@@ -178,7 +178,7 @@ function renderIntegrationsTab(){
  if(currentAuth?.isPlatformAdmin){
   const header=document.createElement('div');header.className='report-section-head';
   const addIntegration=button(t('controlCenter.addIntegration'),{variant:'primary',iconName:'plus'});
-  addIntegration.onclick=()=>{location.hash='#platform';setTimeout(()=>document.getElementById('pf-connectors')?.scrollIntoView({behavior:'smooth',block:'start'}),120);};
+  addIntegration.onclick=()=>{location.hash='#integration-builder';setTimeout(()=>document.getElementById('pf-connectors')?.scrollIntoView({behavior:'smooth',block:'start'}),120);};
   header.append(addIntegration);container.append(header);
  }
  if(summary.integrations.providers.length===0){container.append(Object.assign(document.createElement('div'),{innerHTML:empty(t('controlCenter.noIntegrations'))}));return;}
@@ -215,7 +215,7 @@ function renderIntegrationsTab(){
   // or not); a tenant owner/operator/reviewer never does (Item 21's visibility rule).
   if(currentAuth?.isPlatformAdmin){
    const manageDefinition=button(t('controlCenter.manageIntegrationDefinition'),{variant:'ghost'});
-   manageDefinition.onclick=()=>{location.hash='#platform';openConnectorWizardBySlug(provider.slug);};
+   manageDefinition.onclick=()=>{location.hash='#integration-builder';openConnectorWizardBySlug(provider.slug);};
    actions.append(manageDefinition);
   }
   card.append(actions);grid.append(card);
@@ -628,7 +628,7 @@ function renderAgentMapTab(){
  * "Manage" / "Manage Definition" split — never a third navigation pattern). */
 function openConnectorFromMap(connectorSlug){
  if(!connectorSlug)return;
- if(currentAuth?.isPlatformAdmin){location.hash='#platform';openConnectorWizardBySlug(connectorSlug);return;}
+ if(currentAuth?.isPlatformAdmin){location.hash='#integration-builder';openConnectorWizardBySlug(connectorSlug);return;}
  const provider=summary.integrations.providers.find(p=>p.slug===connectorSlug);
  if(provider)openProviderDrawer(provider);
  else toastError(t('controlCenter.agentMap.connectorNotFound'));

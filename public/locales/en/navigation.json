@@ -16,6 +16,7 @@
   "account": { "title": "Account Settings", "description": "Your personal identity on Frost — username, email, and password." },
   "platform": { "title": "Frost Platform", "description": "A central view over every tenant — platform admin only." },
   "integrationBuilder": { "title": "Integration Builder" },
+  "integration-builder": { "title": "Integration Builder", "description": "Create, version and publish REST connectors, and review tenant connectors — platform admin only." },
   "audit": { "title": "Operations Log", "description": "A documented record of what happened and who did it." },
   "users": { "title": "Team Accounts", "description": "Manage team members, roles, permissions, and system access." },
   "workspace": "Workspace",
