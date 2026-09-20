@@ -107,7 +107,7 @@ import {isPlatformAdmin,requirePlatformAdmin,buildPlatformOverview,listTenantDir
 import {checkGlobalSignupLimit,checkWorkspaceCreationIpLimit,checkTotalTrialWorkspacesLimit} from './runtime/pilot-limits.js';
 import {botProtectionStatus,captchaRequiredFor,verifyBotProtection} from './runtime/bot-protection.js';
 import {isTrialActive,getTrialDaysRemaining,countSelfCreatedWorkspaces} from './tenancy.js';
-import {installContent,listContent,getContent,getContentOrNull,insertContent,writeContent} from './content.js';
+import {installContent,migrateUnifyContentItems,listContent,listContentFiltered,getContent,getContentOrNull,insertContent,writeContent,isCampaignShaped} from './content.js';
 import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
 import {createZidAuthorizeUrl,exchangeZidCodeForTokens} from './runtime/zid-oauth.js';
@@ -223,6 +223,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installAuditLog(store.db); // migrates legacy state.audit into a real tenant-scoped table — see docs/AUDIT_MIGRATION.md
   installKnowledge(store.db);
   installPlanning(store.db);
+  migrateUnifyContentItems(store.db); // Content Unification — must run after installPlanning() since it creates real schedule_jobs rows for previously-scheduled campaign content; see docs/CONTENT_MIGRATION.md
   installCRM(store.db);
   installCompliance(store.db);
   installAutonomy(store.db);
@@ -1902,8 +1903,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // Phase MKT-2, Part G — the EXISTING performance agent (#11, agents/performance.md),
       // run for real over whatever real analytics currently exist (getMarketingAnalyticsSummary
       // — see marketing-analytics.js's module note: today that's account/provider-level, not
-      // genuinely per-campaign, since campaign_content_items has no real publish execution
-      // wired yet). `campaignId` is an optional human-facing tag only. The stored review keeps
+      // aggregated/rolled up by campaign). `campaignId` is an optional human-facing tag only.
+      // The stored review keeps
       // the exact evidence shown to the agent and its full structured recommendation —
       // `experiments_next_week`/`stop_doing`/`double_down` — and is never auto-applied to any
       // content (Part G: "must NOT auto-modify or publish content").
@@ -2763,7 +2764,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         checkLlmRateLimit(session.user.id);
         return send(200,await generate(await body(req),session.user,session.tenantId));
       }
-      if(req.method==='GET' && url.pathname==='/api/state') return send(200,{...store.read(),content:listContent(store.db,session?.tenantId),audit:listAuditLog(store.db,{tenantId:session?.tenantId})});
+      // Content Unification: this route backs the legacy flat "Content" review/approve page
+      // (public/app.js's #items rendering), built entirely around the legacy review{}/
+      // approval{} hash-pin shape (e.g. `item.review.reviewer`). Campaign-originated rows
+      // (item.hook!==undefined) now live in the SAME content_items table but use a different
+      // shape/lifecycle with their own dedicated UI in Marketing — including them here would
+      // render broken cards (item.review is undefined for them), not just unrelated ones.
+      if(req.method==='GET' && url.pathname==='/api/state') return send(200,{...store.read(),content:listContent(store.db,session?.tenantId).filter(item=>!isCampaignShaped(item)),audit:listAuditLog(store.db,{tenantId:session?.tenantId})});
       if(url.pathname.startsWith('/api/crm')) {
         authorize(session,['owner','operator']);
         if(req.method==='GET' && url.pathname==='/api/crm')return send(200,{leads:listLeads(store.db,session.tenantId),followups:listFollowups(store.db,session.tenantId),sequences:Object.entries(sequences).map(([id,sequence])=>({id,name:sequence.name,stages:sequence.stages})),staff:store.db.prepare("SELECT id,name,role FROM users WHERE role IN ('owner','operator') ORDER BY name").all(),channelsConnected:false});
@@ -2805,7 +2812,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         // filter at all, despite `daily_briefs` being a real per-tenant table (Phase 3) —
         // a genuine cross-tenant leak, unreachable before a second tenant existed, exactly
         // the class of pre-existing gap this phase's own audit exists to surface and close.
-        return send(200,{slots:listSlots(store.db,session?.tenantId),jobs:listJobs(store.db,session?.tenantId),brief:buildBrief(store,undefined,session?.tenantId),savedBriefs:store.db.prepare('SELECT json FROM daily_briefs WHERE tenant_id=? ORDER BY date DESC LIMIT 14').all(session.tenantId).map(row=>JSON.parse(row.json)),today:riyadhDate(),automationConfigured:!!(env.AUTOMATION_TOKEN?.length>=32),publishingConnected:['meta','x','linkedin'].some(id=>publishingIntegrations[id]?.configured)});
+        // Content Unification — `content` is additive (existing consumers unaffected): the
+        // Global Calendar now reads the SAME canonical content_items store campaign content
+        // lives in too, via listContentFiltered, optionally narrowed by query params so this
+        // one page can filter by campaign/platform/content-type/status/date-range.
+        const filters={campaignId:url.searchParams.get('campaignId')||undefined,platform:url.searchParams.get('platform')||undefined,format:url.searchParams.get('format')||undefined,status:url.searchParams.get('status')||undefined,dateFrom:url.searchParams.get('dateFrom')||undefined,dateTo:url.searchParams.get('dateTo')||undefined};
+        const hasFilters=Object.values(filters).some(Boolean);
+        return send(200,{slots:listSlots(store.db,session?.tenantId),jobs:listJobs(store.db,session?.tenantId),brief:buildBrief(store,undefined,session?.tenantId),savedBriefs:store.db.prepare('SELECT json FROM daily_briefs WHERE tenant_id=? ORDER BY date DESC LIMIT 14').all(session.tenantId).map(row=>JSON.parse(row.json)),today:riyadhDate(),automationConfigured:!!(env.AUTOMATION_TOKEN?.length>=32),publishingConnected:['meta','x','linkedin'].some(id=>publishingIntegrations[id]?.configured),content:hasFilters?listContentFiltered(store.db,session?.tenantId,filters):listContent(store.db,session?.tenantId)});
       }
       if(req.method==='POST' && url.pathname==='/api/calendar') {authorize(session,['owner','operator']);return send(201,createCalendar(store,(await body(req)).startDate,session.user,session.tenantId));}
       if(req.method==='POST' && url.pathname==='/api/schedule') {authorize(session,['owner']);return send(201,scheduleContent(store,await body(req),session.user,undefined,session.tenantId));}

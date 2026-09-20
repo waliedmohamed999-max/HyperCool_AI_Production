@@ -5,7 +5,14 @@ import {resolveActiveTenantId} from './tenancy.js';
 import {getContentOrNull,listContent} from './content.js';
 import {recordAudit} from './audit.js';
 
+// Content Unification: one canonical hash covering both content shapes now stored in the same
+// content_items table. `item.hook!==undefined` distinguishes campaign-originated content (from
+// the former campaign_content_items table, now a src/marketing.js adapter over this same
+// store) from a legacy standalone post — campaign content never had title/englishCopy/url/
+// assetUrl, and legacy content never had hook/cta/hashtags, so hashing the wrong field set for
+// either shape would make every pre-migration approval/compliance pin permanently invalid.
 export function contentHash(item) {
+ if(item.hook!==undefined)return createHash('sha256').update(JSON.stringify({platform:item.platform,format:item.format,hook:item.hook||'',body:item.body||'',cta:item.cta||'',hashtags:item.hashtags||[]})).digest('hex');
  return createHash('sha256').update(JSON.stringify({title:item.title,body:item.body,englishCopy:item.englishCopy||'',url:item.url,assetUrl:item.assetUrl||'',platform:item.platform,date:item.date})).digest('hex');
 }
 export function riyadhDate(now=Date.now()) {return new Date(Number(now)+10800000).toISOString().slice(0,10);}
@@ -73,6 +80,10 @@ function migrateDailyBriefs(db) {
 }
 export function listSlots(db,tenantId=null){return db.prepare('SELECT json FROM calendar_slots WHERE tenant_id=? ORDER BY date,platform').all(tenantId||resolveActiveTenantId(db)).map(row=>JSON.parse(row.json));}
 export function listJobs(db,tenantId=null){return db.prepare('SELECT json FROM schedule_jobs WHERE tenant_id=? ORDER BY scheduled_at DESC').all(tenantId||resolveActiveTenantId(db)).map(row=>JSON.parse(row.json));}
+// schedule_jobs is owned by this module — exported so callers elsewhere (src/marketing.js's
+// updateCampaignContentItem, guarding against a silent scheduledAt desync) never need their own
+// raw SQL against a table they don't own.
+export function hasActiveScheduleJob(db,contentId,tenantId=null){return !!db.prepare("SELECT id FROM schedule_jobs WHERE tenant_id=? AND content_id=? AND status IN ('SCHEDULED','READY_FOR_CONNECTOR')").get(tenantId||resolveActiveTenantId(db),contentId);}
 function audit(db,action,id,user,tenantId=null){recordAudit(db,{id:randomUUID(),action,itemId:id,actorId:user.id,actorName:user.name,actorRole:user.role,at:new Date().toISOString()},tenantId);}
 
 export function createCalendar(store,startDate,user,tenantId=null) {
@@ -125,6 +136,36 @@ export function scheduleContent(store,input,user,now=Date.now(),tenantId=null) {
  });
 }
 
+// Content Unification — the campaign-content counterpart to scheduleContent() above, reusing
+// the exact same schedule_jobs mechanism (so prepareDue/cancelJobs treat both identically) but
+// gated on campaign content's OWN existing invariant (a real, hash-pinned, non-BLOCK compliance
+// result — see src/marketing.js's updateCampaignContentItem) instead of the legacy
+// review{}/approval{} object shape campaign content never had. This is what makes campaign
+// content actually schedulable/publishable for the first time (see marketing-analytics.js's own
+// prior "no external post id" note) rather than a second copy of scheduleContent's logic —
+// slotId stays null since campaign content has no calendar_slots day/platform seeding
+// requirement (a legacy-only UX affordance, not a scheduling invariant).
+// Takes `db` directly (not `store`) — matching src/marketing.js's own existing non-
+// transactional convention for campaign content (its functions never wrap writes in
+// store.mutate() today), rather than introducing a new calling convention just for this path.
+export function scheduleCampaignContent(db,contentId,scheduledAt,user,tenantId=null) {
+ if(typeof scheduledAt!=='string'||!/(Z|[+-]\d{2}:\d{2})$/.test(scheduledAt)||!Number.isFinite(Date.parse(scheduledAt)))fail(400,'موعد الجدولة يجب أن يتضمن المنطقة الزمنية');
+ const normalizedScheduledAt=new Date(Date.parse(scheduledAt)).toISOString();
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const item=getContentOrNull(db,contentId,resolvedTenantId);
+ if(!item)fail(404,'المحتوى غير موجود');
+ if(item.status!=='APPROVED')fail(409,'المحتوى يحتاج اعتمادًا أولاً');
+ if(!item.complianceClassification||item.complianceClassification==='BLOCK')fail(409,'يتطلب فحص امتثال ناجح قبل الجدولة');
+ const hash=contentHash(item);
+ if(item.complianceCheckedAt && item.complianceContentHash && item.complianceContentHash!==hash)fail(409,'تغيّر المحتوى بعد آخر فحص امتثال — أعد الفحص قبل الجدولة');
+ const prior=db.prepare("SELECT json FROM schedule_jobs WHERE tenant_id=? AND content_id=? AND status IN ('SCHEDULED','READY_FOR_CONNECTOR')").get(resolvedTenantId,item.id);
+ if(prior){const job=JSON.parse(prior.json);if(job.scheduledAt===normalizedScheduledAt&&job.contentHash===hash)return {...job,replayed:true};fail(409,'المحتوى مجدول بالفعل؛ ألغِ الجدولة القديمة أولًا');}
+ const job={id:randomUUID(),contentId:item.id,slotId:null,status:'SCHEDULED',scheduledAt:normalizedScheduledAt,contentHash:hash,idempotencyKey:randomUUID(),approvalId:null,snapshot:{platform:item.platform,format:item.format,hook:item.hook,body:item.body,cta:item.cta},scheduledBy:user.id,createdAt:new Date().toISOString(),blockReason:null};
+ db.prepare('INSERT INTO schedule_jobs (id,tenant_id,content_id,status,scheduled_at,json) VALUES (?,?,?,?,?,?)').run(job.id,resolvedTenantId,item.id,job.status,normalizedScheduledAt,JSON.stringify(job));
+ audit(db,'CONTENT_SCHEDULED',item.id,user,resolvedTenantId);
+ return job;
+}
+
 export function cancelJobs(store,state,contentId,user,tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
  const rows=store.db.prepare("SELECT json FROM schedule_jobs WHERE tenant_id=? AND content_id=? AND status IN ('SCHEDULED','READY_FOR_CONNECTOR','BLOCKED')").all(resolvedTenantId,contentId);
@@ -153,7 +194,17 @@ export function prepareDue(store,user,now=Date.now(),eventBus=null,env={},tenant
   let ready=0,blocked=0;
   for(const row of rows) {
    const job=JSON.parse(row.json),item=getContentOrNull(store.db,job.contentId,resolvedTenantId);
-   const valid=item?.status==='APPROVED' && item.approval?.contentHash===job.contentHash && item.review?.contentHash===job.contentHash && item.review?.userId && item.approval?.userId && item.approval?.id===job.approvalId && !item.legacyUnauthenticated && contentHash(item)===job.contentHash;
+   // Content Unification: campaign-originated content (item.hook!==undefined) never had the
+   // legacy review{}/approval{} hash-pin objects — it re-validates against its OWN existing
+   // invariant instead (a real, hash-pinned, non-BLOCK compliance result), matching the exact
+   // gate src/marketing.js's updateCampaignContentItem already enforces at approval time.
+   // Status must be SCHEDULED here, not APPROVED: updateCampaignContentItem() writes
+   // status:'SCHEDULED' (a real, externally-visible campaign status, unlike legacy content
+   // which never surfaces a SCHEDULED content status at all) the moment it creates this job —
+   // requiring APPROVED here would mark every genuinely-scheduled campaign job BLOCKED forever.
+   const valid=item?.hook!==undefined
+    ?item?.status==='SCHEDULED' && !!item.complianceClassification && item.complianceClassification!=='BLOCK' && contentHash(item)===job.contentHash
+    :item?.status==='APPROVED' && item.approval?.contentHash===job.contentHash && item.review?.contentHash===job.contentHash && item.review?.userId && item.approval?.userId && item.approval?.id===job.approvalId && !item.legacyUnauthenticated && contentHash(item)===job.contentHash;
    const status=valid?'READY_FOR_CONNECTOR':'BLOCKED';
    if(valid)ready++;else blocked++;
    if(job.status!==status){

@@ -32,13 +32,78 @@ export function addContentActions(card,item,auth,escape) {
   const details=document.createElement('details');details.innerHTML=`<summary>${t('calendar.rejectContentSummary')}</summary><form data-id="${item.id}" data-action="reject"><label>${t('calendar.rejectReasonFieldLabel')}<input name="reason" required maxlength="1000"></label><button>${t('calendar.rejectAndCancelButton')}</button></form>`;card.append(details);
  }
 }
+// Content Unification: the legacy "Schedule Approved Content" form below (#schedule-form)
+// always meant one specific thing — scheduleContent()'s own hash-pinned review/approval
+// invariant (src/planning.js) — which campaign-originated content never has (it uses its own
+// compliance-classification gate instead, scheduled from its OWN Marketing UI via
+// scheduleCampaignContent()). state.content already excludes campaign-shaped rows at the
+// /api/state level (see src/application.js), so this filter is defense-in-depth, not the only
+// guard — but kept explicit here since this exact dropdown is the one place scheduling this
+// legacy way is actually attempted.
+let campaignsCache=[],metaCache={contentFormats:[],contentStatuses:[]};
+const LEGACY_STATUSES=['DRAFT','REVIEWED','APPROVED','REJECTED','SUPERSEDED','PUBLISHED'];
+let unifiedFilters={campaignId:'',platform:'',format:'',status:'',dateFrom:'',dateTo:''};
+function campaignName(id){return campaignsCache.find(c=>c.id===id)?.name||id;}
+function populateFilterOptions(escape){
+ const campaignSelect=$('#filter-campaign');
+ if(campaignSelect && !campaignSelect.dataset.populated){
+  campaignSelect.innerHTML=`<option value="">${escape(t('calendar.filterCampaignAll'))}</option><option value="none">${escape(t('calendar.filterCampaignNone'))}</option>`+campaignsCache.map(c=>`<option value="${c.id}">${escape(c.name)}</option>`).join('');
+  campaignSelect.dataset.populated='true';
+ }
+ const formatSelect=$('#filter-format');
+ if(formatSelect && !formatSelect.dataset.populated){
+  formatSelect.innerHTML=`<option value="">${escape(t('calendar.filterFormatAll'))}</option>`+metaCache.contentFormats.map(f=>`<option value="${f}">${escape(f)}</option>`).join('');
+  formatSelect.dataset.populated='true';
+ }
+ const statusSelect=$('#filter-status');
+ if(statusSelect && !statusSelect.dataset.populated){
+  const allStatuses=[...new Set([...LEGACY_STATUSES,...metaCache.contentStatuses])];
+  statusSelect.innerHTML=`<option value="">${escape(t('calendar.filterStatusAll'))}</option>`+allStatuses.map(s=>`<option value="${s}">${escape(statuses[s]||s)}</option>`).join('');
+  statusSelect.dataset.populated='true';
+ }
+}
+function renderUnifiedContentList(content,escape){
+ const host=$('#unified-content-list');
+ if(!host)return;
+ host.innerHTML=content.length?content.map(item=>`<article class="card"><div class="meta"><span>${escape(item.platform)}${item.format?' · '+escape(item.format):''} · ${escape(item.scheduledAt?item.scheduledAt.slice(0,10):item.date)}</span><span class="pill" data-status="${escape(item.status)}">${escape(statuses[item.status]||item.status)}</span></div><h4>${escape(item.title||item.hook||'')}</h4>${item.campaignId?`<p><small>${escape(t('calendar.campaignBadge',{name:campaignName(item.campaignId)}))}</small></p>`:''}</article>`).join(''):`<div class="empty">${escape(t('calendar.noUnifiedContent'))}</div>`;
+}
+async function refreshUnifiedContentList(api,escape){
+ const params=new URLSearchParams();
+ if(unifiedFilters.campaignId)params.set('campaignId',unifiedFilters.campaignId);
+ if(unifiedFilters.platform)params.set('platform',unifiedFilters.platform);
+ if(unifiedFilters.format)params.set('format',unifiedFilters.format);
+ if(unifiedFilters.status)params.set('status',unifiedFilters.status);
+ if(unifiedFilters.dateFrom)params.set('dateFrom',unifiedFilters.dateFrom);
+ if(unifiedFilters.dateTo)params.set('dateTo',unifiedFilters.dateTo);
+ const query=params.toString();
+ const plan=await api('/api/planning'+(query?'?'+query:''));
+ renderUnifiedContentList(plan.content||[],escape);
+}
+function wireUnifiedContentFilters(api,escape){
+ const bar=$('#unified-content-filters');
+ if(!bar||bar.dataset.wired)return;
+ bar.dataset.wired='true';
+ const bindings=[['#filter-campaign','campaignId'],['#filter-platform','platform'],['#filter-format','format'],['#filter-status','status'],['#filter-date-from','dateFrom'],['#filter-date-to','dateTo']];
+ for(const [selector,key] of bindings){
+  const el=$(selector);
+  if(!el)continue;
+  el.addEventListener('change',()=>{unifiedFilters[key]=el.value;refreshUnifiedContentList(api,escape).catch(()=>{});});
+ }
+}
 export async function renderPlanning({api,auth,state,escape}) {
  const plan=await api('/api/planning');
  $('#calendar-form').hidden=auth.user.role==='reviewer';
  for(const id of ['schedule-form','save-brief','prepare-due'])$('#'+id).hidden=auth.user.role!=='owner';
  const start=$('#calendar-form input');if(!start.value)start.value=plan.today;
  const select=$('#schedule-content'),selected=select.value;
- select.innerHTML=`<option value="">${escape(t('calendar.chooseApprovedContentOption'))}</option>`+state.content.filter(item=>item.status==='APPROVED').map(item=>`<option value="${item.id}">${escape(item.title)} · ${item.platform} · ${item.date}</option>`).join('');select.value=selected;
+ select.innerHTML=`<option value="">${escape(t('calendar.chooseApprovedContentOption'))}</option>`+state.content.filter(item=>item.status==='APPROVED'&&!item.campaignId).map(item=>`<option value="${item.id}">${escape(item.title)} · ${item.platform} · ${item.date}</option>`).join('');select.value=selected;
+ try{
+  const [campaigns,meta]=await Promise.all([api('/api/marketing/campaigns'),api('/api/marketing/meta')]);
+  campaignsCache=campaigns;metaCache=meta;
+ }catch{campaignsCache=[];}
+ populateFilterOptions(escape);
+ wireUnifiedContentFilters(api,escape);
+ renderUnifiedContentList(plan.content||[],escape);
  const brief=plan.brief;
  $('#brief-view').innerHTML=`<p>${escape(t('calendar.briefTomorrowContentLine',{count:brief.tomorrowContent.length,count2:brief.decisionsNeeded.length}))}</p><p>${escape(t('calendar.briefGapsLine',{count:brief.gaps.length,missing:brief.calendarMissing?t('calendar.calendarMissingSuffix'):''}))}</p><p>${escape(t('calendar.briefBlockedLine',{blocked:brief.blockedJobs.length,waiting:brief.waitingForConnector}))}</p>${brief.decisionsNeeded.slice(0,10).map(item=>`<p>${escape(item.title)} · ${item.action==='OWNER_APPROVAL'?escape(t('calendar.decisionOwnerApproval')):escape(t('calendar.decisionReview'))}</p>`).join('')}<small>${escape(t('calendar.livePreviewNote'))}</small>`;
  const locale=dateLocale();

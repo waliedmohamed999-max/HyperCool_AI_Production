@@ -14,14 +14,16 @@ import {getXPostMetrics, getXFollowerCount} from './runtime/x-publishing.js';
 // that genuinely doesn't expose a metric (or a permission scope that isn't granted) is
 // recorded as NOT AVAILABLE, never estimated or zero-filled.
 //
-// Known, deliberate scope limit: only content published through the EXISTING real publish
-// path (the legacy `content_items` table + meta_publish/x_publish/linkedin_publish tools,
-// which store a genuine externalPostId) has anything to sync. The newer `campaign_content_items`
-// table (Phase MKT-2, Part B's orchestration pipeline) has no real external publish execution
-// wired yet — its PUBLISHED status is a logical/manual state only, with no external post id —
-// so campaign-orchestrated content has no per-post analytics until a future phase adds real
-// publish execution for that table. This is reported honestly in docs/MKT_2_REPORT.md rather
-// than silently working around it.
+// Only content published through the real publish path (meta_publish/x_publish/
+// linkedin_publish, which store a genuine externalPostId) has anything to sync. Since the
+// Content Unification (campaign-originated content and legacy standalone posts now share the
+// one canonical `content_items` table), this is no longer a legacy-only limitation: a
+// campaign-originated item that is genuinely scheduled and published through those same tools
+// gets a real externalPostId exactly like a legacy post, and the shape-agnostic filter below
+// (status==='PUBLISHED' && item.externalPostId) picks it up automatically — no campaign-vs-
+// legacy branch needed here. The remaining, still-true limitation is per-CAMPAIGN attribution:
+// this reports account/provider-level metrics per post, not an aggregate rollup by campaign_id
+// (see the module note on marketing_performance_reviews below).
 export function installMarketingAnalytics(db) {
  db.exec(`CREATE TABLE IF NOT EXISTS marketing_analytics_metrics (
   id TEXT PRIMARY KEY,
@@ -42,9 +44,9 @@ export function installMarketingAnalytics(db) {
  // Phase MKT-2, Part G — a real record of every time the EXISTING `performance` agent
  // (agent #11, see agents/performance.md) actually reviewed real analytics data, with the
  // exact evidence it was given and its full structured recommendation. `campaign_id` is
- // nullable and purely a human-facing tag: real analytics today are account/provider-level
- // (see the module note above on campaign_content_items having no real publish path yet),
- // not genuinely attributable to one campaign, so this never pretends otherwise.
+ // nullable and purely a human-facing tag: real analytics today are account/provider-level,
+ // not aggregated/rolled up by campaign_id (see the module note above), so this never
+ // pretends otherwise.
  db.exec(`CREATE TABLE IF NOT EXISTS marketing_performance_reviews (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
@@ -138,9 +140,10 @@ function recordMetricSet(db,{tenantId,provider,externalAccountId,externalContent
 }
 
 /**
- * Syncs per-post metrics for every genuinely PUBLISHED content item (legacy content_items
- * table — see the module-level note on campaign_content_items) that has a real externalPostId,
- * plus one account-level follower snapshot per configured provider. Never throws on a single
+ * Syncs per-post metrics for every genuinely PUBLISHED content item (the one canonical
+ * content_items table, campaign-originated or standalone — see the module-level note above)
+ * that has a real externalPostId, plus one account-level follower snapshot per configured
+ * provider. Never throws on a single
  * item/provider failure — each is isolated so one bad token doesn't block the rest of the sync.
  */
 export async function syncAllMarketingAnalytics(deps,tenantId=null) {
