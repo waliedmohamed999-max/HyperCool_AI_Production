@@ -46,14 +46,14 @@ test('weekly report Excel/PDF export produces real binary files matching the on-
   const xlsx=await callBinary('/api/reports/weekly/export.xlsx',owner);
   assert.equal(xlsx.status,200);
   assert.equal(xlsx.headers.get('content-type'),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  assert.match(xlsx.headers.get('content-disposition')||'',/attachment; filename="hypercool-report-.*\.xlsx"/);
+  assert.match(xlsx.headers.get('content-disposition')||'',/attachment; filename="frost-report-.*\.xlsx"/);
   assert.equal(xlsx.buffer.slice(0,2).toString(),'PK'); // real zip/xlsx magic bytes, not a fake/empty file
   assert.ok(xlsx.buffer.length>1000);
 
   const pdf=await callBinary('/api/reports/weekly/export.pdf',owner);
   assert.equal(pdf.status,200);
   assert.equal(pdf.headers.get('content-type'),'application/pdf');
-  assert.match(pdf.headers.get('content-disposition')||'',/attachment; filename="hypercool-report-.*\.pdf"/);
+  assert.match(pdf.headers.get('content-disposition')||'',/attachment; filename="frost-report-.*\.pdf"/);
   assert.equal(pdf.buffer.slice(0,5).toString(),'%PDF-'); // real PDF magic bytes
   assert.ok(pdf.buffer.length>1000);
 

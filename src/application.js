@@ -2842,7 +2842,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const report=buildExecutiveReport(store,weekStart,{...reportExtras(session.tenantId),tenantId:session.tenantId});
         const buffer=isXlsx?Buffer.from(await (await buildReportWorkbook(report,{locale})).xlsx.writeBuffer()):await buildReportPdfBuffer(report,{locale});
         const contentType=isXlsx?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'application/pdf';
-        res.writeHead(200,{'Content-Type':contentType,'Content-Disposition':`attachment; filename="hypercool-report-${weekStart}.${isXlsx?'xlsx':'pdf'}"`,'Cache-Control':'no-store'});
+        res.writeHead(200,{'Content-Type':contentType,'Content-Disposition':`attachment; filename="frost-report-${weekStart}.${isXlsx?'xlsx':'pdf'}"`,'Cache-Control':'no-store'});
         res.end(buffer);
         logRequest({request_id:requestId,method:req.method,path:req.url.split('?')[0],status:200,duration_ms:Date.now()-startedAt,user_id:userId});
         return;

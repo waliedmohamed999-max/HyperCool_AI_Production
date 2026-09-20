@@ -105,13 +105,13 @@ const [xlsxDownload] = await Promise.all([
  page.waitForEvent('download'),
  page.click('#report-export-xlsx')
 ]);
-check('Excel export triggers a real download with the right filename', /hypercool-report-.*\.xlsx$/.test(xlsxDownload.suggestedFilename()));
+check('Excel export triggers a real download with the right filename', /frost-report-.*\.xlsx$/.test(xlsxDownload.suggestedFilename()));
 
 const [pdfDownload] = await Promise.all([
  page.waitForEvent('download'),
  page.click('#report-export-pdf')
 ]);
-check('PDF export triggers a real download with the right filename', /hypercool-report-.*\.pdf$/.test(pdfDownload.suggestedFilename()));
+check('PDF export triggers a real download with the right filename', /frost-report-.*\.pdf$/.test(pdfDownload.suggestedFilename()));
 
 // Switch to an older known week via the picker and confirm the page actually re-rendered that
 // different period (not just a no-op click).
