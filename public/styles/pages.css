@@ -55,7 +55,7 @@
 @media(max-width:1100px){#crm-summary{grid-template-columns:repeat(2,minmax(0,1fr))}#sales-hero{grid-template-columns:1.5fr 1fr}#sales-hero h2{font-size:24px}}
 @media(max-width:600px){#sales-hero{grid-template-columns:1fr;border-radius:19px}#sales-hero .sales-hero-copy{padding:24px 20px}#sales-hero h2{font-size:24px}#sales-hero p{font-size:12px}.sales-hero-tags{gap:8px}.sales-hero-tags>span{font-size:11px;padding:7px 10px}.sales-hero-aside{padding:18px 20px;border-inline-start:0;border-top:1px solid #ffffff1a;display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 12px}.sales-hero-symbol{display:none}.sales-hero-aside>strong{grid-column:2;grid-row:1/3;font-size:36px}.sales-hero-aside>button{border:0;padding:4px 0;font-size:11px;width:auto;justify-content:flex-start;gap:8px}.sales-eyebrow{margin-bottom:12px}#crm-summary{gap:10px}#crm-summary .sales-metric{padding:15px}#crm-summary .kpi-value{font-size:25px}#crm-summary .kpi-label{font-size:11px}#crm-quick-actions{display:grid;grid-template-columns:1fr 1fr}#crm-quick-actions button:last-child{grid-column:1/-1}#crm-data-status{display:grid;grid-template-columns:1fr 1fr;padding:12px;gap:12px 6px}#crm-data-status>span{font-size:10px;flex-wrap:wrap}#crm .report-section{padding:18px 14px;border-radius:16px}#crm .report-section-head{flex-direction:row;flex-wrap:wrap;gap:8px}#crm .report-section-head h3{font-size:16px}#crm .report-section-head>span:not(.sales-section-number){flex-basis:100%;padding-inline-start:40px;line-height:1.8}#crm .kanban{grid-auto-columns:235px}#crm .empty{padding:20px 14px;min-height:130px}#crm table{min-width:620px}#crm .calendar-scroll{overflow:auto}#crm .hot-lead-card,#crm .lead-button{padding:16px}}
 @media(prefers-reduced-motion:reduce){#crm-summary .sales-metric{transition:none}#crm-summary .sales-metric:hover{transform:none}}
-/* HyperCool Frost UI — Part UI-3, item 1/2: CRM's own "sales-*" component family predates the
+/* Frost UI — Part UI-3, item 1/2: CRM's own "sales-*" component family predates the
    token system and had ~40 hardcoded hex values. Cleaned up below to use existing tokens
    wherever a color was a plain neutral (background/border/muted-text) with no semantic meaning
    of its own. Three colors are DELIBERATELY KEPT as intentional, documented decoration: the
@@ -301,7 +301,7 @@ body.signed-out .fab-shortcut{display:none}
 .cmdc-chip{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--ink);cursor:pointer;margin-inline-end:6px;margin-bottom:6px}
 .cmdc-chip:hover{background:var(--surface-2)}
 .cmdc-attach-row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}
-/* HyperCool Frost UI — Part UI-2, item 30/31: the native <input type=file> stays fully in the
+/* Frost UI — Part UI-2, item 30/31: the native <input type=file> stays fully in the
    DOM (real .files value, real Tab stop, real screen-reader label via the <label for>) — only
    its own browser-chrome button/text is visually replaced. The standard, accessible
    "visually-hidden but still focusable" pattern (never display:none, which would also remove
@@ -312,7 +312,7 @@ body.signed-out .fab-shortcut{display:none}
 #cmdc-attach-status{color:var(--ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
 .cmdc-runbook{padding:14px;margin-bottom:8px}
 @media(max-width:1000px){.cmdc-layout{grid-template-columns:minmax(0,1fr)}.cmdc-chat{min-height:420px}}
-/* HyperCool Frost UI — Part UI-2: Integration Builder's combined Basic/Auth/Capabilities panel
+/* Frost UI — Part UI-2: Integration Builder's combined Basic/Auth/Capabilities panel
    (steps 1-3 share one scrollable panel by design — see platform.js's own comment on why the
    create call is atomic). Each numbered sub-section (<h4>) gets a real visual break instead of
    just floating text, to reduce long-form fatigue — scoped to this one panel only, never
@@ -342,7 +342,7 @@ body.signed-out .fab-shortcut{display:none}
 .builder-review-block h5{margin:0 0 8px;font-size:var(--text-card-title);color:var(--ink-muted)}
 .builder-review-block ul{margin:0;padding-inline-start:18px;font-size:13px}
 .builder-review-block p{margin:0 0 4px;font-size:13px}
-/* HyperCool Frost UI — Part UI-2: Platform Admin gets a quiet, system-level visual cue —
+/* Frost UI — Part UI-2: Platform Admin gets a quiet, system-level visual cue —
    the same cards/tables/tokens as every tenant page (same design system, per spec item 24),
    just a subtle --info accent instead of --accent on its own report sections and KPI numbers,
    so a Platform Admin always has a faint but real signal they are in the operator surface, not

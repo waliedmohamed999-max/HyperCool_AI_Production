@@ -27,7 +27,7 @@ export function installShell(){
  const aside=document.querySelector('body>aside');aside.className='app-sidebar';
  const nav=aside.querySelector('nav');
  const groupSpans=new Map();
- // Sidebar groups (spec: HyperCool Frost UI, Part 7) — five semantic clusters over the real
+ // Sidebar groups (spec: Frost UI, Part 7) — five semantic clusters over the real
  // route set (no invented pages): AI & Operations / Business / Growth / Platform / Account.
  // Each anchor key is the FIRST route of its cluster in the actual DOM order (index.html) —
  // purely a label insertion point, never touched by ROUTE_ICONS/RAIL_GROUPS/railGroupIndex,

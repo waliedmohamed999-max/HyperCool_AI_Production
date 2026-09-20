@@ -1,5 +1,5 @@
 *{box-sizing:border-box}body{margin:0;background:var(--ground);color:var(--ink);font:var(--text-base)/1.7 var(--font-body);text-align:start}h1,h2,h3,h4,h5,p{margin:0}h1{font-size:var(--text-page-title);line-height:1.5;font-weight:600}h2{font-size:var(--text-section-title);font-weight:600}h3{font-size:var(--text-card-title);font-weight:600}h4{font-size:var(--text-base)}p{margin:8px 0;color:var(--ink-muted)}small{font-size:var(--text-caption);color:var(--ink-muted)}
-/* HyperCool Frost UI — Part 3: named type-scale utilities (docs/UI_DESIGN_SYSTEM.md). Every
+/* Frost UI — Part 3: named type-scale utilities (docs/UI_DESIGN_SYSTEM.md). Every
    page should reach for one of these instead of a one-off font-size, so "Card Title" (say)
    reads identically wherever it appears. h1-h4/small above already match Page/Section/Card
    Title and Caption by default; these classes exist for the few spots that aren't a literal
@@ -7,7 +7,7 @@
 .text-metric{font-size:var(--text-metric);line-height:1.3;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
 .text-status-label{font-size:var(--text-status-label);font-weight:500;letter-spacing:.2px}
 .text-body{font-size:var(--text-base);line-height:1.7;color:var(--ink)}
-/* HyperCool Frost UI — Part UI-3, item 12: the standard pattern for any list rendered by
+/* Frost UI — Part UI-3, item 12: the standard pattern for any list rendered by
    mapping an array with no small, known upper bound (a page of leads, quotes, opportunities,
    recommendations, operations...). Caps the container's own height and scrolls internally
    instead of letting the page grow unboundedly — never truncates or paginates the underlying

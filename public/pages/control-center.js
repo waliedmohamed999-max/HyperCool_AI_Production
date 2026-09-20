@@ -16,7 +16,7 @@ let filters={status:'all',query:''};
 const AGENT_STATUS_VARIANT={READY:'CONNECTED',PARTIAL:'DEGRADED',BLOCKED:'ERROR',DISABLED:'DISCONNECTED'};
 const CONNECTION_MODE_LABEL=mode=>t('controlCenter.connectionMode.'+(mode||'SINGLE'));
 const TOOL_STATUS_LABEL=status=>t('controlCenter.toolStatus.'+status)||status;
-// HyperCool Frost UI — Part UI-3, item 9/26: readiness blockers/warnings are real internal
+// Frost UI — Part UI-3, item 9/26: readiness blockers/warnings are real internal
 // reason codes (AI_NOT_CONFIGURED, AGENT_DISABLED, REQUIRED_TOOL_<status>:<slug>) meant for
 // logs/debugging — showing them raw to a user is exactly the "raw enum" the design audit
 // flags. This never invents a reason that isn't real; it only translates the known, fixed

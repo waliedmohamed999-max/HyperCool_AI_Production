@@ -1,6 +1,6 @@
-// HyperCool Website AI Chat Widget — public embed script (Phase MKT-1, spec Part 86-87).
+// Frost Website AI Chat Widget — public embed script (Phase MKT-1, spec Part 86-87).
 // Self-contained vanilla JS, zero dependencies, injects its own minimal styles (this runs on
-// an arbitrary third-party page, so it cannot assume any of HyperCool's own stylesheet).
+// an arbitrary third-party page, so it cannot assume any of Frost's own stylesheet).
 // Carries no secret: the only configuration is the public, non-secret widget id.
 //
 // Usage on a tenant's own website:
