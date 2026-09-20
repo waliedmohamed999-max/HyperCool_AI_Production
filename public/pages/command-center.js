@@ -44,6 +44,46 @@ export function installCommandCenter() {
  const root=document.querySelector('[data-page="command-center"] #command-center');
  root.innerHTML=`
   <div id="cmdc-health" class="kpi-grid"></div>
+  <div class="cmdc-shell" id="cmdc-shell">
+   <aside class="cmdc-sidebar" id="cmdc-sidebar" aria-label="${escape(t('commandCenter.sidebarLabel'))}">
+    <div class="cmdc-sidebar-top">
+     <button type="button" id="cmdc-new-conversation" class="cmdc-newchat">${icon('plus')}<span>${escape(t('commandCenter.newChat'))}</span></button>
+     <div class="cmdc-search"><input id="cmdc-search-input" type="search" placeholder="${escape(t('commandCenter.searchPlaceholder'))}"><div id="cmdc-search-results"></div></div>
+    </div>
+    <div class="cmdc-sidebar-scroll">
+     <section class="cmdc-side-group">
+      <div class="cmdc-side-title"><span>${escape(t('commandCenter.projectsTitle'))}</span><button type="button" id="cmdc-new-project" class="cmdc-icon-btn" aria-label="${escape(t('commandCenter.newProject'))}" title="${escape(t('commandCenter.newProject'))}">${icon('plus')}</button></div>
+      <div id="cmdc-projects-list"></div>
+     </section>
+     <section class="cmdc-side-group">
+      <div class="cmdc-side-title"><span>${escape(t('commandCenter.recentChats'))}</span></div>
+      <div id="cmdc-chats-list"></div>
+     </section>
+    </div>
+   </aside>
+   <section class="cmdc-chat">
+    <div class="cmdc-chat-head">
+     <button type="button" id="cmdc-sidebar-toggle" class="cmdc-icon-btn cmdc-toggle" aria-label="${escape(t('commandCenter.sidebarLabel'))}">${icon('menu')}</button>
+     <div class="cmdc-chat-identity"><span class="cmdc-avatar" aria-hidden="true">F<i class="cmdc-online"></i></span><div><strong id="cmdc-chat-title">Frost</strong><small id="cmdc-chat-crumb">${escape(t('commandCenter.assistantSubtitle'))}</small></div></div>
+     <button type="button" id="cmdc-run-executive-review" class="secondary">${icon('chart')}<span>${escape(t('commandCenter.runExecutiveReview'))}</span></button>
+    </div>
+    <div id="cmdc-messages" class="cmdc-messages"></div>
+    <div id="cmdc-ai-notice" class="notice" hidden></div>
+    <form id="cmdc-chat-form">
+     <div class="cmdc-composer">
+      <textarea name="text" required maxlength="4000" rows="1" placeholder="${escape(t('commandCenter.chatPlaceholder'))}"></textarea>
+      <div class="cmdc-composer-bar">
+       <input type="file" id="cmdc-attach-input" class="file-input-native" accept=".pdf,.csv,.xlsx,.docx,.txt,.png,.jpg,.jpeg">
+       <label for="cmdc-attach-input" class="file-input-trigger cmdc-attach" title="${escape(t('commandCenter.chooseFile'))}" aria-label="${escape(t('commandCenter.chooseFile'))}">${icon('plus')}</label>
+       <span id="cmdc-attach-status">${escape(t('commandCenter.noFileChosen'))}</span>
+       <button type="submit" class="cmdc-send" aria-label="${escape(t('commandCenter.send'))}" title="${escape(t('commandCenter.send'))}">${icon('arrow')}</button>
+      </div>
+     </div>
+     <p class="cmdc-hint">${escape(t('commandCenter.composerHint'))}</p>
+    </form>
+    <div id="cmdc-templates" class="cmdc-templates"></div>
+   </section>
+  </div>
   <div class="cmdc-layout">
    <div class="cmdc-main">
     <section class="report-section panel" id="cmdc-frost-map-section">
@@ -65,28 +105,6 @@ export function installCommandCenter() {
       <div class="cmdc-fm-node" data-agent="leads"></div>
       <div class="cmdc-fm-node" data-agent="strategy"></div>
      </div>
-    </section>
-    <section class="cmdc-chat panel">
-     <div class="cmdc-chat-head">
-      <span class="cmdc-frost-signature" aria-hidden="true"></span>
-      <select id="cmdc-conversation-select" aria-label="${escape(t('commandCenter.conversationSelectLabel'))}"></select>
-      <button type="button" id="cmdc-new-conversation" class="secondary">${escape(t('commandCenter.newConversation'))}</button>
-      <button type="button" id="cmdc-run-executive-review" class="secondary">${escape(t('commandCenter.runExecutiveReview'))}</button>
-     </div>
-     <div class="cmdc-search"><input id="cmdc-search-input" type="search" placeholder="${escape(t('commandCenter.searchPlaceholder'))}"><div id="cmdc-search-results"></div></div>
-     <div id="cmdc-quick-commands" class="cmdc-templates"></div>
-     <div id="cmdc-messages" class="cmdc-messages"></div>
-     <div id="cmdc-ai-notice" class="notice" hidden></div>
-     <form id="cmdc-chat-form">
-      <textarea name="text" required maxlength="4000" placeholder="${escape(t('commandCenter.chatPlaceholder'))}"></textarea>
-      <div class="cmdc-attach-row">
-       <input type="file" id="cmdc-attach-input" class="file-input-native" accept=".pdf,.csv,.xlsx,.docx,.txt,.png,.jpg,.jpeg">
-       <label for="cmdc-attach-input" class="button secondary file-input-trigger">${escape(t('commandCenter.chooseFile'))}</label>
-       <span id="cmdc-attach-status">${escape(t('commandCenter.noFileChosen'))}</span>
-      </div>
-      <button type="submit">${escape(t('commandCenter.send'))}</button>
-     </form>
-     <div id="cmdc-templates" class="cmdc-templates"></div>
     </section>
     <section class="report-section" id="cmdc-data-context"><div class="report-section-head"><h3>${escape(t('commandCenter.dataContext'))}</h3></div></section>
    </div>
@@ -113,10 +131,15 @@ export function installCommandCenter() {
  panels[3].innerHTML=`<div id="cmdc-runbooks-list"></div><form id="cmdc-runbook-form"><input name="name" required maxlength="200" placeholder="${escape(t('commandCenter.runbookNamePlaceholder'))}"><input name="commandText" required maxlength="2000" placeholder="${escape(t('commandCenter.runbookCommandPlaceholder'))}"><button type="submit">${escape(t('commandCenter.runbookSave'))}</button></form>`;
  panels[4].innerHTML=`<div id="cmdc-config-history-list"></div>`;
  panels[5].innerHTML=`<div id="cmdc-attachments-list"></div>`;
- $('#cmdc-new-conversation').onclick=onNewConversation;
+ $('#cmdc-new-conversation').onclick=()=>onNewConversation();
  $('#cmdc-run-executive-review').onclick=onRunExecutiveReview;
- $('#cmdc-conversation-select').onchange=e=>openConversation(e.target.value);
+ $('#cmdc-new-project').onclick=onNewProject;
+ $('#cmdc-sidebar').addEventListener('click',onSidebarClick);
+ $('#cmdc-sidebar-toggle').onclick=()=>$('#cmdc-shell').classList.toggle('sidebar-open');
+ $('#cmdc-messages').addEventListener('click',e=>{const card=e.target.closest('[data-prompt]');if(card){prefillChat(card.dataset.prompt);$('#cmdc-chat-form').requestSubmit();}});
+ $('#cmdc-chat-form textarea').addEventListener('input',e=>autosize(e.target));
  $('#cmdc-chat-form').addEventListener('submit',onSendMessage);
+ $('#cmdc-chat-form textarea').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();$('#cmdc-chat-form').requestSubmit();}});
  // File input polish (Frost UI Part UI-2, item 30/31) — the native <input type=file>
  // stays in the DOM and fully functional (real keyboard access, real screen-reader label via
  // the <label for>, real .files value) so nothing about the actual upload logic above changes;
@@ -133,13 +156,18 @@ function debounce(fn,ms){let timer=null;return(...args)=>{clearTimeout(timer);ti
 // Tenant-aware Quick Commands (spec Part 48-52) — the KEYS come from the server, derived from
 // real tenant signals (connected e-commerce integration, mostly-B2B leads book, or generic);
 // only the localized phrase mapping lives here.
+let quickKeys=[];
 async function renderQuickCommands() {
  const {keys}=await api('/api/command/quick-commands');
- $('#cmdc-quick-commands').innerHTML=keys.map(key=>`<button type="button" class="cmdc-chip" data-quick="${key}">${escape(t('commandCenter.quickCommand.'+key))}</button>`).join('');
- $('#cmdc-quick-commands').querySelectorAll('[data-quick]').forEach(chip=>{
-  chip.onclick=()=>{prefillChat(t('commandCenter.quickCommand.'+chip.dataset.quick));$('#cmdc-chat-form').requestSubmit();};
- });
+ quickKeys=keys;
+ if(currentConversationId && !messagesCache.length)$('#cmdc-messages').innerHTML=welcomeHtml();
 }
+function welcomeHtml() {
+ const seen=new Set(),prompts=[];
+ for(const key of quickKeys){const text=t('commandCenter.quickCommand.'+key);if(!seen.has(text)){seen.add(text);prompts.push(text);}}
+ return `<div class="empty cmdc-welcome"><span class="cmdc-avatar big" aria-hidden="true">F</span><h2>${escape(t('commandCenter.welcomeTitle'))}</h2><p>${escape(t('commandCenter.welcomeHint'))}</p><div class="cmdc-prompts">${prompts.slice(0,prompts.length>=6?6:4).map(text=>`<button type="button" class="cmdc-prompt" data-prompt="${escape(text)}">${escape(text)}</button>`).join('')}</div></div>`;
+}
+function autosize(textarea) {textarea.style.height='auto';textarea.style.height=Math.min(textarea.scrollHeight,200)+'px';}
 async function onSearchInput(event) {
  const query=event.target.value.trim();
  const host=$('#cmdc-search-results');
@@ -148,7 +176,7 @@ async function onSearchInput(event) {
  host.hidden=false;
  host.innerHTML=results.length?results.map(r=>`<button type="button" class="cmdc-search-hit" data-conversation-id="${escape(r.conversationId)}">${escape(r.conversationTitle)} — ${escape(r.snippet)}</button>`).join(''):empty(t('commandCenter.noSearchResults'));
  host.querySelectorAll('[data-conversation-id]').forEach(hitButton=>{
-  hitButton.onclick=async()=>{$('#cmdc-conversation-select').value=hitButton.dataset.conversationId;await openConversation(hitButton.dataset.conversationId);host.innerHTML='';host.hidden=true;$('#cmdc-search-input').value='';};
+  hitButton.onclick=async()=>{await openConversation(hitButton.dataset.conversationId);host.innerHTML='';host.hidden=true;$('#cmdc-search-input').value='';};
  });
 }
 async function onRunExecutiveReview() {
@@ -201,17 +229,152 @@ function messageBubbleHtml(message) {
  const exportHtml=message.role==='assistant'&&message.id?`<button type="button" class="small ghost" data-export-message="${escape(message.id)}">${escape(t('commandCenter.exportMarkdown'))}</button>`:'';
  return `<div class="cmdc-message cmdc-message-${escape(message.role)}"><p>${escape(message.content)}</p>${stepsHtml}${sourcesHtml}${usageHtml}${approvalHtml}${exportHtml}</div>`;
 }
+// ---- Chats sidebar (ChatGPT-style): Projects + recent chats, all backed by real routes ----------
+const DEFAULT_CHAT_TITLE='محادثة جديدة';
+let conversationsCache=[],projectsCache=[];
+const expandedProjects=new Set();
+const FOLDER_ICON='<svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>';
+const CHEVRON_ICON='<svg class="icon cmdc-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
+async function loadSidebarData() {
+ // Projects are an add-on: if that route is unavailable (e.g. a new page served against an older
+ // backend during a deploy) the chats must still load and send normally.
+ [conversationsCache,projectsCache]=await Promise.all([api('/api/command/conversations'),api('/api/command/projects').catch(()=>[])]);
+}
 async function loadConversations() {
- const conversations=await api('/api/command/conversations');
- const select=$('#cmdc-conversation-select');
- if(!conversations.length) {
+ await loadSidebarData();
+ if(!conversationsCache.length) {
   const created=await api('/api/command/conversations',{});
-  conversations.push(created);
+  conversationsCache.push(created);
  }
- select.innerHTML=conversations.map(c=>`<option value="${c.id}">${escape(c.title)}</option>`).join('');
- currentConversationId=conversations[0].id;
- select.value=currentConversationId;
+ currentConversationId=conversationsCache[0].id;
+ const project=conversationsCache[0].projectId;if(project)expandedProjects.add(project);
+ updateChatHeader();
+ renderSidebar();
  await renderMessages();
+}
+function currentConversation() {return conversationsCache.find(c=>c.id===currentConversationId)||null;}
+function updateChatHeader() {
+ const conversation=currentConversation();
+ const project=conversation?.projectId?projectsCache.find(p=>p.id===conversation.projectId):null;
+ $('#cmdc-chat-title').textContent=conversation?.title||'Frost';
+ $('#cmdc-chat-crumb').textContent=project?project.name:t('commandCenter.assistantSubtitle');
+}
+function convItemHtml(c) {
+ return `<div class="cmdc-conv${c.id===currentConversationId?' is-active':''}" data-conversation-id="${escape(c.id)}"><button type="button" class="cmdc-conv-open" title="${escape(c.title)}">${escape(c.title)}</button><button type="button" class="cmdc-conv-menu" data-menu="conversation" aria-label="${escape(t('commandCenter.menuMore'))}" aria-haspopup="menu">⋯</button></div>`;
+}
+function renderSidebar() {
+ const projectsHost=$('#cmdc-projects-list'),chatsHost=$('#cmdc-chats-list');
+ if(!projectsHost||!chatsHost)return;
+ projectsHost.innerHTML=projectsCache.length?projectsCache.map(project=>{
+  const chats=conversationsCache.filter(c=>c.projectId===project.id),open=expandedProjects.has(project.id);
+  return `<div class="cmdc-proj${open?' is-open':''}" data-project-id="${escape(project.id)}"><div class="cmdc-proj-row"><button type="button" class="cmdc-proj-toggle" aria-expanded="${open}">${CHEVRON_ICON}${FOLDER_ICON}<span class="cmdc-proj-name">${escape(project.name)}</span><em>${chats.length}</em></button><button type="button" class="cmdc-conv-menu" data-menu="project" aria-label="${escape(t('commandCenter.menuMore'))}" aria-haspopup="menu">⋯</button></div>${open?`<div class="cmdc-proj-chats">${chats.length?chats.map(convItemHtml).join(''):`<p class="cmdc-side-empty">${escape(t('commandCenter.projectEmpty'))}</p>`}</div>`:''}</div>`;
+ }).join(''):`<p class="cmdc-side-empty">${escape(t('commandCenter.noProjects'))}</p>`;
+ const plain=conversationsCache.filter(c=>!c.projectId||!projectsCache.some(p=>p.id===c.projectId));
+ chatsHost.innerHTML=plain.length?plain.map(convItemHtml).join(''):`<p class="cmdc-side-empty">${escape(t('commandCenter.noChats'))}</p>`;
+}
+function closeMenus() {document.querySelectorAll('#cmdc-sidebar .cmdc-menu').forEach(m=>m.remove());}
+function openMenu(anchor,items) {
+ closeMenus();
+ const sidebar=$('#cmdc-sidebar'),menu=document.createElement('div');
+ menu.className='cmdc-menu';menu.setAttribute('role','menu');
+ for(const [label,handler,danger] of items){
+  const item=document.createElement('button');item.type='button';item.setAttribute('role','menuitem');item.textContent=label;if(danger)item.className='danger';
+  item.onclick=async()=>{closeMenus();try{await handler();}catch(error){toast(error.message,'error');}};
+  menu.append(item);
+ }
+ sidebar.append(menu);
+ const a=anchor.getBoundingClientRect(),s=sidebar.getBoundingClientRect();
+ menu.style.top=Math.min(a.bottom-s.top+4,s.height-menu.offsetHeight-8)+'px';
+ if(document.documentElement.dir==='rtl')menu.style.left=Math.max(8,a.left-s.left)+'px';
+ else menu.style.left=Math.min(a.left-s.left,s.width-menu.offsetWidth-8)+'px';
+ menu.querySelector('button')?.focus();
+ setTimeout(()=>document.addEventListener('click',closeMenus,{once:true}),0);
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeMenus();});
+async function askName(title,value='') {
+ return promptDrawer(title,node=>{
+  const input=document.createElement('input');input.name='name';input.required=true;input.maxLength=200;input.value=value;
+  const label=document.createElement('label');label.textContent=t('commandCenter.nameLabel');label.append(input);node.append(label);
+  return {value:()=>input.value.trim(),focus:()=>{input.focus();input.select();}};
+ },{confirmLabel:t('common.save')});
+}
+async function onSidebarClick(event) {
+ const menuButton=event.target.closest('[data-menu]');
+ if(menuButton){
+  event.stopPropagation();
+  const projectId=menuButton.closest('[data-project-id]')?.dataset.projectId;
+  if(menuButton.dataset.menu==='project'){
+   const project=projectsCache.find(p=>p.id===projectId);
+   openMenu(menuButton,[
+    [t('commandCenter.menuNewChatInProject'),()=>onNewConversation(projectId)],
+    [t('commandCenter.menuRename'),()=>renameProjectFlow(project)],
+    [t('commandCenter.menuArchiveProject'),()=>archiveProjectFlow(project),true]
+   ]);
+  } else {
+   const id=menuButton.closest('[data-conversation-id]').dataset.conversationId;
+   const chat=conversationsCache.find(c=>c.id===id);
+   openMenu(menuButton,[
+    [t('commandCenter.menuRename'),()=>renameChatFlow(chat)],
+    [t('commandCenter.menuMove'),()=>moveChatFlow(chat)],
+    [t('commandCenter.menuArchive'),()=>archiveChatFlow(chat),true]
+   ]);
+  }
+  return;
+ }
+ const toggle=event.target.closest('.cmdc-proj-toggle');
+ if(toggle){const id=toggle.closest('[data-project-id]').dataset.projectId;if(expandedProjects.has(id))expandedProjects.delete(id);else expandedProjects.add(id);renderSidebar();return;}
+ const open=event.target.closest('.cmdc-conv-open');
+ if(open)await openConversation(open.closest('[data-conversation-id]').dataset.conversationId);
+}
+async function renameChatFlow(chat) {
+ const name=await askName(t('commandCenter.menuRename'),chat.title);
+ if(!name||name===chat.title)return;
+ Object.assign(chat,await api(`/api/command/conversations/${chat.id}`,{title:name},'PATCH'));
+ updateChatHeader();renderSidebar();
+}
+async function moveChatFlow(chat) {
+ const result=await promptDrawer(t('commandCenter.moveTitle'),node=>{
+  const select=document.createElement('select');
+  select.innerHTML=`<option value="">${escape(t('commandCenter.noProject'))}</option>`+projectsCache.map(p=>`<option value="${escape(p.id)}"${p.id===chat.projectId?' selected':''}>${escape(p.name)}</option>`).join('');
+  const label=document.createElement('label');label.textContent=t('commandCenter.projectLabel');label.append(select);node.append(label);
+  return {value:()=>select.value,focus:()=>select.focus()};
+ },{confirmLabel:t('common.save')});
+ if(result===null||result===undefined||result===(chat.projectId||''))return;
+ Object.assign(chat,await api(`/api/command/conversations/${chat.id}`,{projectId:result||null},'PATCH'));
+ if(chat.projectId)expandedProjects.add(chat.projectId);
+ updateChatHeader();renderSidebar();
+}
+async function archiveChatFlow(chat) {
+ const confirmed=await confirmAction(t('commandCenter.archiveChatTitle'),t('commandCenter.archiveChatBody'));
+ if(!confirmed)return;
+ await api(`/api/command/conversations/${chat.id}/archive`,{});
+ conversationsCache=conversationsCache.filter(c=>c.id!==chat.id);
+ if(chat.id===currentConversationId){
+  if(!conversationsCache.length)return onNewConversation();
+  return openConversation(conversationsCache[0].id);
+ }
+ renderSidebar();
+}
+async function onNewProject() {
+ const name=await askName(t('commandCenter.newProject'));
+ if(!name)return;
+ const project=await api('/api/command/projects',{name});
+ projectsCache.push(project);expandedProjects.add(project.id);
+ renderSidebar();
+}
+async function renameProjectFlow(project) {
+ const name=await askName(t('commandCenter.menuRename'),project.name);
+ if(!name||name===project.name)return;
+ Object.assign(project,await api(`/api/command/projects/${project.id}`,{name},'PATCH'));
+ updateChatHeader();renderSidebar();
+}
+async function archiveProjectFlow(project) {
+ const confirmed=await confirmAction(t('commandCenter.archiveProjectTitle'),t('commandCenter.archiveProjectBody'));
+ if(!confirmed)return;
+ await api(`/api/command/projects/${project.id}/archive`,{});
+ projectsCache=projectsCache.filter(p=>p.id!==project.id);
+ for(const c of conversationsCache)if(c.projectId===project.id)c.projectId=null;
+ updateChatHeader();renderSidebar();
 }
 let messagesCache=[];
 async function renderMessages() {
@@ -219,7 +382,7 @@ async function renderMessages() {
  const messages=await api(`/api/command/conversations/${currentConversationId}/messages`);
  messagesCache=messages;
  const host=$('#cmdc-messages');
- host.innerHTML=messages.length?messages.map(messageBubbleHtml).join(''):empty(t('commandCenter.noMessagesTitle'),t('commandCenter.noMessagesHint'));
+ host.innerHTML=messages.length?messages.map(messageBubbleHtml).join(''):welcomeHtml();
  host.scrollTop=host.scrollHeight;
  enhance(host);
 }
@@ -259,14 +422,17 @@ document.addEventListener('click',event=>{
 });
 async function openConversation(id) {
  currentConversationId=id;
+ const project=currentConversation()?.projectId;if(project)expandedProjects.add(project);
+ updateChatHeader();renderSidebar();
+ $('#cmdc-shell')?.classList.remove('sidebar-open');
  await renderMessages();
 }
-async function onNewConversation() {
- const created=await api('/api/command/conversations',{});
- const select=$('#cmdc-conversation-select');
- const option=document.createElement('option');option.value=created.id;option.textContent=created.title;
- select.prepend(option);select.value=created.id;
+async function onNewConversation(projectId=null) {
+ const created=await api('/api/command/conversations',projectId?{projectId}:{});
+ conversationsCache.unshift(created);
+ if(projectId)expandedProjects.add(projectId);
  await openConversation(created.id);
+ $('#cmdc-chat-form textarea')?.focus();
 }
 export function prefillChat(text) {
  const textarea=$('#cmdc-chat-form textarea');
@@ -289,7 +455,7 @@ async function onSendMessage(event) {
  // 6th special case with a different response shape to that shared dispatcher.
  event.preventDefault();
  event.stopPropagation();
- const form=event.target,textarea=form.querySelector('textarea'),button=form.querySelector('button'),fileInput=form.querySelector('#cmdc-attach-input');
+ const form=event.target,textarea=form.querySelector('textarea'),button=form.querySelector('button[type=submit]'),fileInput=form.querySelector('#cmdc-attach-input');
  const text=textarea.value.trim();
  if(!text)return;
  button.disabled=true;
@@ -311,12 +477,23 @@ async function onSendMessage(event) {
   if(host.querySelector('.empty'))host.innerHTML='';
   host.insertAdjacentHTML('beforeend',messageBubbleHtml({role:'user',content:text}));
   messagesCache.push({role:'user',content:text});
-  textarea.value='';
+  const isFirstMessage=messagesCache.length===1;
+  textarea.value='';textarea.style.height='';
   const result=await api(`/api/command/conversations/${currentConversationId}/messages`,{text,...(attachmentId?{attachmentId}:{})});
   messagesCache.push(result.assistantMessage);
   host.insertAdjacentHTML('beforeend',messageBubbleHtml(result.assistantMessage));
   host.scrollTop=host.scrollHeight;
   enhance(host);
+  {
+   const conversation=currentConversation();
+   if(conversation){
+    conversationsCache=[conversation,...conversationsCache.filter(c=>c.id!==conversation.id)];
+    if(isFirstMessage && conversation.title===DEFAULT_CHAT_TITLE) {
+     try{Object.assign(conversation,await api(`/api/command/conversations/${conversation.id}`,{title:text.replace(/\s+/g,' ').slice(0,48)},'PATCH'));}catch{}
+    }
+    updateChatHeader();renderSidebar();
+   }
+  }
   activeRunId=result.assistantMessage.runId||result.assistantMessage.meta?.runId||null;
   activeRunSteps=result.assistantMessage.meta?.steps||[];
   activeRunTopStatus=result.runStatus||null;
@@ -672,7 +849,8 @@ async function runRunbook(id) {
  const conversationId=currentConversationId||conversations[0]?.id;
  const result=await api(`/api/command/runbooks/${id}/run`,conversationId?{conversationId}:{});
  currentConversationId=result.conversationId;
- $('#cmdc-conversation-select').value=result.conversationId;
+ await loadSidebarData();
+ updateChatHeader();renderSidebar();
  await renderMessages();
  pulsePolling();
  await Promise.all([renderSuggestions(),renderOperations()]);

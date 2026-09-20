@@ -62,7 +62,7 @@ import {installApprovals,listApprovals,decideApproval,createApproval} from './ru
 import {installEscalations,listEscalations,resolveEscalation} from './runtime/escalations.js';
 import {installContextItems,createContextItem,listContextItems,updateContextItem,archiveContextItem,detectContextConflicts,withFreshness} from './runtime/context-items.js';
 import {installSuggestions,syncSuggestions,listSuggestions,acceptSuggestion,dismissSuggestion,createTaskFromSuggestion,suggestionWorkflowTemplate} from './runtime/suggestions.js';
-import {installCommandChat,createConversation,listConversations,renameConversation,archiveConversation,listMessages,sendCommandMessage} from './runtime/command-chat.js';
+import {installCommandChat,createConversation,listConversations,renameConversation,archiveConversation,moveConversation,createProject,listProjects,renameProject,archiveProject,listMessages,sendCommandMessage} from './runtime/command-chat.js';
 import {computeCompanyHealth,deriveQuickCommandKeys} from './runtime/command-health.js';
 import {installAttachments,createAttachment,getAttachment,listAttachments,pinAttachmentToBrain,readAttachmentTextForChat,ALLOWED_TYPES,MAX_ATTACHMENT_BYTES} from './runtime/attachments.js';
 import {installConfigurationHistory,listConfigurationHistory,undoConfigurationChange} from './runtime/configuration-history.js';
@@ -1556,14 +1556,29 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(req.method==='GET')return send(200,listConversations(store.db,session.tenantId));
         if(req.method==='POST') {
           const input=await body(req);
-          return send(201,createConversation(store.db,session.user,session.tenantId,typeof input.title==='string'?input.title.slice(0,200):null));
+          return send(201,createConversation(store.db,session.user,session.tenantId,typeof input.title==='string'?input.title.slice(0,200):null,typeof input.projectId==='string'?input.projectId:null));
         }
       }
       const conversationRename=url.pathname.match(/^\/api\/command\/conversations\/([\w-]+)$/);
       if(req.method==='PATCH' && conversationRename) {
         const input=await body(req);
+        // `projectId` (a project id, or null to take the chat out of its project) moves the chat;
+        // `title` renames it. Sending only a blank/missing title keeps the old 400 behaviour.
+        if(input.projectId!==undefined) {
+          authorize(session,['owner','operator']);
+          const moved=moveConversation(store.db,conversationRename[1],typeof input.projectId==='string'?input.projectId:null,session.tenantId);
+          if(input.title===undefined)return send(200,moved);
+        }
         return send(200,renameConversation(store.db,conversationRename[1],input.title,session.tenantId));
       }
+      if(url.pathname==='/api/command/projects') {
+        if(req.method==='GET')return send(200,listProjects(store.db,session.tenantId));
+        if(req.method==='POST') {authorize(session,['owner','operator']);const input=await body(req);return send(201,createProject(store.db,session.user,session.tenantId,input.name));}
+      }
+      const projectItem=url.pathname.match(/^\/api\/command\/projects\/([\w-]+)$/);
+      if(req.method==='PATCH' && projectItem) {authorize(session,['owner','operator']);const input=await body(req);return send(200,renameProject(store.db,projectItem[1],input.name,session.tenantId));}
+      const projectArchive=url.pathname.match(/^\/api\/command\/projects\/([\w-]+)\/archive$/);
+      if(req.method==='POST' && projectArchive) {authorize(session,['owner','operator']);return send(200,archiveProject(store.db,projectArchive[1],session.tenantId));}
       const conversationArchive=url.pathname.match(/^\/api\/command\/conversations\/([\w-]+)\/archive$/);
       if(req.method==='POST' && conversationArchive)return send(200,archiveConversation(store.db,conversationArchive[1],session.tenantId));
       const conversationMessages=url.pathname.match(/^\/api\/command\/conversations\/([\w-]+)\/messages$/);

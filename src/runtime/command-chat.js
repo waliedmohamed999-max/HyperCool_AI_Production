@@ -30,23 +30,42 @@ export function installCommandChat(db) {
   meta_json TEXT,
   created_at TEXT NOT NULL
  );
- CREATE INDEX IF NOT EXISTS idx_command_messages_conversation ON command_messages(conversation_id,created_at);`);
+ CREATE INDEX IF NOT EXISTS idx_command_messages_conversation ON command_messages(conversation_id,created_at);
+ CREATE TABLE IF NOT EXISTS command_projects (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  archived_at TEXT
+ );
+ CREATE INDEX IF NOT EXISTS idx_command_projects_tenant ON command_projects(tenant_id,archived_at);`);
+ // Additive migration (same PRAGMA-gated ALTER idiom used across this codebase): a conversation
+ // may optionally belong to one project. NULL = a plain chat; existing rows are untouched.
+ const columns=db.prepare('PRAGMA table_info(command_conversations)').all().map(c=>c.name);
+ if(!columns.includes('project_id'))db.exec('ALTER TABLE command_conversations ADD COLUMN project_id TEXT');
 }
 function hydrateConversation(row) {
  if(!row)return null;
- return {id:row.id,tenantId:row.tenant_id,userId:row.user_id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,archivedAt:row.archived_at};
+ return {id:row.id,tenantId:row.tenant_id,userId:row.user_id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,archivedAt:row.archived_at,projectId:row.project_id||null};
+}
+function hydrateProject(row) {
+ if(!row)return null;
+ return {id:row.id,tenantId:row.tenant_id,name:row.name,createdBy:row.created_by,createdAt:row.created_at,updatedAt:row.updated_at,archivedAt:row.archived_at};
 }
 function hydrateMessage(row) {
  if(!row)return null;
  return {id:row.id,conversationId:row.conversation_id,role:row.role,content:row.content,runId:row.run_id,
   meta:row.meta_json?JSON.parse(row.meta_json):null,createdAt:row.created_at};
 }
-export function createConversation(db,user,tenantId=null,title=null) {
+export function createConversation(db,user,tenantId=null,title=null,projectId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ if(projectId)getProject(db,projectId,resolvedTenantId); // 404s if missing, archived or another tenant's
  const now=new Date().toISOString();
  const row={id:randomUUID(),tenantId:resolvedTenantId,userId:user.id,title:title||'محادثة جديدة',createdAt:now,updatedAt:now};
- db.prepare('INSERT INTO command_conversations (id,tenant_id,user_id,title,created_at,updated_at) VALUES (?,?,?,?,?,?)')
-  .run(row.id,row.tenantId,row.userId,row.title,row.createdAt,row.updatedAt);
+ db.prepare('INSERT INTO command_conversations (id,tenant_id,user_id,title,created_at,updated_at,project_id) VALUES (?,?,?,?,?,?,?)')
+  .run(row.id,row.tenantId,row.userId,row.title,row.createdAt,row.updatedAt,projectId||null);
  return getConversation(db,row.id,resolvedTenantId);
 }
 // Every tenant member sees every conversation for this tenant (matches this app's existing
@@ -67,6 +86,50 @@ export function renameConversation(db,id,title,tenantId=null) {
  const cleanTitle=typeof title==='string'?title.trim().slice(0,200):'';
  if(!cleanTitle)fail(400,'العنوان مطلوب');
  db.prepare('UPDATE command_conversations SET title=?,updated_at=? WHERE id=? AND tenant_id=?').run(cleanTitle,new Date().toISOString(),id,resolvedTenantId);
+ return getConversation(db,id,resolvedTenantId);
+}
+// --- Projects: named folders that group related conversations (ChatGPT-style). Tenant-scoped and
+// soft-archived; archiving a project never deletes or hides its chats - they become plain chats.
+function cleanProjectName(name) {
+ const clean=typeof name==='string'?name.trim().replace(/\s+/g,' ').slice(0,120):'';
+ if(!clean)fail(400,'اسم المشروع مطلوب');
+ return clean;
+}
+export function createProject(db,user,tenantId=null,name) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ const now=new Date().toISOString(),id=randomUUID();
+ db.prepare('INSERT INTO command_projects (id,tenant_id,name,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?)').run(id,resolvedTenantId,cleanProjectName(name),user?.id||null,now,now);
+ return getProject(db,id,resolvedTenantId);
+}
+export function listProjects(db,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ return db.prepare('SELECT * FROM command_projects WHERE tenant_id=? AND archived_at IS NULL ORDER BY created_at').all(resolvedTenantId).map(hydrateProject);
+}
+export function getProject(db,id,tenantId=null) {
+ const row=db.prepare('SELECT * FROM command_projects WHERE id=? AND tenant_id=? AND archived_at IS NULL').get(id,tenantId||resolveActiveTenantId(db));
+ if(!row)fail(404,'المشروع غير موجود');
+ return hydrateProject(row);
+}
+export function renameProject(db,id,name,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ getProject(db,id,resolvedTenantId);
+ db.prepare('UPDATE command_projects SET name=?,updated_at=? WHERE id=? AND tenant_id=?').run(cleanProjectName(name),new Date().toISOString(),id,resolvedTenantId);
+ return getProject(db,id,resolvedTenantId);
+}
+export function archiveProject(db,id,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ getProject(db,id,resolvedTenantId);
+ const now=new Date().toISOString();
+ db.prepare('UPDATE command_projects SET archived_at=?,updated_at=? WHERE id=? AND tenant_id=?').run(now,now,id,resolvedTenantId);
+ // Chats stay available - they just leave the archived project.
+ db.prepare('UPDATE command_conversations SET project_id=NULL WHERE project_id=? AND tenant_id=?').run(id,resolvedTenantId);
+ return {archived:true};
+}
+export function moveConversation(db,id,projectId,tenantId=null) {
+ const resolvedTenantId=tenantId||resolveActiveTenantId(db);
+ getConversation(db,id,resolvedTenantId);
+ if(projectId)getProject(db,projectId,resolvedTenantId);
+ db.prepare('UPDATE command_conversations SET project_id=?,updated_at=? WHERE id=? AND tenant_id=?').run(projectId||null,new Date().toISOString(),id,resolvedTenantId);
  return getConversation(db,id,resolvedTenantId);
 }
 export function archiveConversation(db,id,tenantId=null) {
