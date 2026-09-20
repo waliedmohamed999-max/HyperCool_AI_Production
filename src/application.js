@@ -740,7 +740,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         auth.resetPassword(userId,input.password); // also invalidates every existing session for this user (Part 27)
         recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'PASSWORD_RESET_COMPLETED',itemId:userId,actorId:userId,at:new Date().toISOString()});
         const user=store.db.prepare('SELECT email,preferred_locale FROM users WHERE id=?').get(userId);
-        if(user?.email)await sendSecurityNotice({db:store.db,env,fetcher},{to:user.email,locale:user.preferred_locale||'ar',message:user.preferred_locale==='en'?'Your HyperCool account password was just reset. If this was not you, contact your workspace owner immediately.':'تم للتو إعادة تعيين كلمة مرور حسابك على HyperCool. إن لم يكن هذا أنت، تواصل فورًا مع مالك منشأتك.'}).catch(()=>{});
+        if(user?.email)await sendSecurityNotice({db:store.db,env,fetcher},{to:user.email,locale:user.preferred_locale||'ar',message:user.preferred_locale==='en'?'Your Frost account password was just reset. If this was not you, contact your workspace owner immediately.':'تم للتو إعادة تعيين كلمة مرور حسابك على Frost. إن لم يكن هذا أنت، تواصل فورًا مع مالك منشأتك.'}).catch(()=>{});
         return send(200,{ok:true});
       }
       if(url.pathname.startsWith('/api/')) {

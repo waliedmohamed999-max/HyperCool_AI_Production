@@ -82,7 +82,7 @@ export function installCRM(db){
 const string=(value,max=200)=>typeof value==='string'?value.trim().slice(0,max):'';
 function required(value,label,max=200){if(typeof value!=='string'||!value.trim()||value.length>max)fail(400,`الحقل مطلوب أو طويل: ${label}`);return value.trim();}
 function iso(value,label){if(typeof value!=='string'||!/(Z|[+-]\d{2}:\d{2})$/.test(value)||!Number.isFinite(Date.parse(value)))fail(400,`تاريخ غير صالح: ${label}`);return new Date(value).toISOString();}
-function link(value,storeOnly=false){let url;try{url=new URL(value);}catch{fail(400,'رابط غير صالح');}if(url.protocol!=='https:'||url.username||url.password||(storeOnly&&url.hostname!=='hyper-cool.com'))fail(400,'استخدم رابط HTTPS صحيحًا'+(storeOnly?' من متجر HyperCool':''));return url.href;}
+function link(value,storeOnly=false){let url;try{url=new URL(value);}catch{fail(400,'رابط غير صالح');}if(url.protocol!=='https:'||url.username||url.password||(storeOnly&&url.hostname!=='hyper-cool.com'))fail(400,'استخدم رابط HTTPS صحيحًا'+(storeOnly?' من نطاق hyper-cool.com المعتمد':''));return url.href;}
 function audit(db,action,id,user,tenantId=null){recordAudit(db,{id:randomUUID(),action,itemId:id,actorId:user.id,actorName:user.name,actorRole:user.role,at:new Date().toISOString()},tenantId);}
 function writeLead(db,lead){db.prepare('UPDATE crm_leads SET json=? WHERE id=?').run(JSON.stringify(lead),lead.id);}
 // `tenantId` defaults to the one real tenant that exists today (see installCRM's docblock

@@ -78,28 +78,28 @@ const L=(locale,ar,en)=>locale==='en'?en:ar;
 
 export function renderVerificationEmail(locale,{verifyUrl}) {
  return {
-  subject:L(locale,'تأكيد بريدك الإلكتروني — HyperCool','Verify your email — HyperCool'),
+  subject:L(locale,'تأكيد بريدك الإلكتروني — Frost','Verify your email — Frost'),
   text:L(locale,`لتأكيد بريدك الإلكتروني، افتح هذا الرابط خلال 45 دقيقة:\n${verifyUrl}\n\nإن لم تطلب هذا فتجاهل هذه الرسالة.`,`To verify your email, open this link within 45 minutes:\n${verifyUrl}\n\nIf you did not request this, ignore this message.`),
   html:`<p>${L(locale,'لتأكيد بريدك الإلكتروني، افتح هذا الرابط خلال 45 دقيقة:','To verify your email, open this link within 45 minutes:')}</p><p><a href="${verifyUrl}">${verifyUrl}</a></p><p>${L(locale,'إن لم تطلب هذا فتجاهل هذه الرسالة.','If you did not request this, ignore this message.')}</p>`
  };
 }
 export function renderPasswordResetEmail(locale,{resetUrl}) {
  return {
-  subject:L(locale,'إعادة تعيين كلمة المرور — HyperCool','Reset your password — HyperCool'),
+  subject:L(locale,'إعادة تعيين كلمة المرور — Frost','Reset your password — Frost'),
   text:L(locale,`لإعادة تعيين كلمة المرور، افتح هذا الرابط خلال 30 دقيقة:\n${resetUrl}\n\nإن لم تطلب هذا فتجاهل هذه الرسالة — كلمة مرورك لن تتغيّر.`,`To reset your password, open this link within 30 minutes:\n${resetUrl}\n\nIf you did not request this, ignore this message — your password will not change.`),
   html:`<p>${L(locale,'لإعادة تعيين كلمة المرور، افتح هذا الرابط خلال 30 دقيقة:','To reset your password, open this link within 30 minutes:')}</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>${L(locale,'إن لم تطلب هذا فتجاهل هذه الرسالة — كلمة مرورك لن تتغيّر.','If you did not request this, ignore this message — your password will not change.')}</p>`
  };
 }
 export function renderInvitationEmail(locale,{workspaceName,acceptUrl,role}) {
  return {
-  subject:L(locale,`دعوة للانضمام إلى ${workspaceName} على HyperCool`,`Invitation to join ${workspaceName} on HyperCool`),
+  subject:L(locale,`دعوة للانضمام إلى ${workspaceName} على Frost`,`Invitation to join ${workspaceName} on Frost`),
   text:L(locale,`تمت دعوتك للانضمام إلى "${workspaceName}" بدور ${role}. افتح هذا الرابط لقبول الدعوة:\n${acceptUrl}`,`You have been invited to join "${workspaceName}" as ${role}. Open this link to accept:\n${acceptUrl}`),
   html:`<p>${L(locale,`تمت دعوتك للانضمام إلى "${workspaceName}" بدور ${role}.`,`You have been invited to join "${workspaceName}" as ${role}.`)}</p><p><a href="${acceptUrl}">${acceptUrl}</a></p>`
  };
 }
 export function renderSecurityNoticeEmail(locale,{message}) {
  return {
-  subject:L(locale,'تنبيه أمني على حسابك — HyperCool','Security notice for your account — HyperCool'),
+  subject:L(locale,'تنبيه أمني على حسابك — Frost','Security notice for your account — Frost'),
   text:message,
   html:`<p>${message}</p>`
  };
