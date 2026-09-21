@@ -2979,7 +2979,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(url.pathname==='/sitemap.xml' && !origin)return send(404,{error:'Not found'});
         const text=url.pathname==='/robots.txt'
           ?`User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /partners/\nDisallow: /client/\nDisallow: /r/\nDisallow: /api/\n${origin?`Sitemap: ${origin}/sitemap.xml\n`:''}`
-          :`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${origin}/</loc></url><url><loc>${origin}/partners</loc></url></urlset>\n`;
+          :`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${origin}/</loc></url><url><loc>${origin}/partners</loc></url><url><loc>${origin}/client</loc></url></urlset>\n`;
         res.writeHead(200,{'Content-Type':url.pathname==='/robots.txt'?'text/plain; charset=utf-8':'application/xml; charset=utf-8','Cache-Control':'no-cache'});
         return res.end(text);
       }
