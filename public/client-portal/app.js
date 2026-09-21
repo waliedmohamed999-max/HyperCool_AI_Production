@@ -85,14 +85,14 @@ onLocaleChange(render);
 
 // ---- layouts -------------------------------------------------------------------------------------------------------------------
 const langSwitch = () => h('div', {class: 'lang-switch', role: 'group', 'aria-label': t('common.language')}, ['ar', 'en'].map(l => h('button', {type: 'button', class: getLocale() === l ? 'active' : '', 'aria-pressed': String(getLocale() === l), onClick: () => setLocale(l), text: l.toUpperCase()})));
-const brand = () => h('a', {class: 'brand', href: '/client', 'aria-label': t('c.brand')}, h('span', {class: 'brand-mark', text: 'F'}), h('span', {class: 'brand-word', dir: 'ltr', text: 'FROST'}), h('span', {class: 'brand-sub', text: t('c.merchants')}));
+const brand = (href = '/client') => h('a', {class: 'brand', href, 'aria-label': t('c.brand')}, h('span', {class: 'brand-mark', text: 'F'}), h('span', {class: 'brand-word', dir: 'ltr', text: 'FROST'}), h('span', {class: 'brand-sub', text: t('c.merchants')}));
 
 function publicLayout(content) {
  const nav = h('nav', {class: 'top-actions', 'aria-label': t('common.mainNav')},
   h('a', {class: 'link', href: '/', text: t('common.site')}),
   me && !me.noWorkspace ? h('a', {class: 'btn btn-secondary', href: ctx.homeFor(me), text: t('c.landing.openDashboard')}) : [h('a', {class: 'link', href: '/client/login', text: t('c.landing.login')}), h('a', {class: 'btn btn-primary', href: '/client/register', text: t('c.landing.start')})],
   langSwitch());
- return h('div', {class: 'public-shell client'}, h('a', {class: 'skip-link', href: '#main', text: t('common.skip')}), h('header', {class: 'public-header'}, brand(), nav), h('main', {id: 'main', tabindex: '-1'}, content), h('footer', {class: 'public-footer'}, h('span', {text: `© ${new Date().getFullYear()} Frost`}), h('a', {href: '/', text: t('common.site')})));
+ return h('div', {class: 'public-shell client'}, h('a', {class: 'skip-link', href: '#main', text: t('common.skip')}), h('header', {class: 'public-header'}, brand('/'), nav), h('main', {id: 'main', tabindex: '-1'}, content), h('footer', {class: 'public-footer'}, h('span', {text: `© ${new Date().getFullYear()} Frost`}), h('a', {href: '/', text: t('common.site')})));
 }
 
 function supportBar() {
