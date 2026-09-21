@@ -47,8 +47,23 @@ export function assertDeactivationAllowed(db,userId) {
  if(target.role!=='owner'||target.status!=='active')return;
  if(activeOwnerCount(db,userId)<1)fail(409,'لا يمكن ترك النظام بلا مالك نشط واحد على الأقل');
 }
-export function buildTeamDashboard(db,{auditEntries}) {
- const users=db.prepare('SELECT id,username,name,role,status,created_at,last_login_at FROM users ORDER BY name').all();
+/** Accounts that are (or were invited as) members of ONE workspace — never the platform-wide user directory. */
+export function listUsersForTenant(db,tenantId) {
+ return db.prepare(`SELECT u.id,u.username,u.name,COALESCE(tm.role,u.role) AS role,u.status,u.created_at,u.last_login_at
+  FROM users u JOIN tenant_memberships tm ON tm.user_id=u.id WHERE tm.tenant_id=? AND tm.status IN ('active','suspended') ORDER BY u.name`).all(tenantId);
+}
+/**
+ * A workspace owner may administer an account (reset its access, suspend or remove it) only when that account belongs to
+ * this workspace and to no other one: those actions change the ACCOUNT, so they would otherwise reach into every other
+ * workspace the person belongs to. Accounts of platform administrators are never manageable from a workspace.
+ */
+export function canManageUserFromTenant(db,tenantId,targetUserId,{isPlatformAdminUser=false}={}) {
+ if(isPlatformAdminUser)return false;
+ const memberships=db.prepare("SELECT tenant_id FROM tenant_memberships WHERE user_id=? AND status IN ('active','suspended')").all(targetUserId);
+ return memberships.length>0&&memberships.every(m=>m.tenant_id===tenantId);
+}
+export function buildTeamDashboard(db,{auditEntries,tenantId=null}) {
+ const users=tenantId?listUsersForTenant(db,tenantId):db.prepare('SELECT id,username,name,role,status,created_at,last_login_at FROM users ORDER BY name').all();
  const onlineIds=new Set(db.prepare('SELECT DISTINCT user_id FROM sessions WHERE expires>?').all(Date.now()).map(r=>r.user_id));
  const members=users.map(u=>({...u,hasActiveSession:onlineIds.has(u.id)}));
  const summary={

@@ -19,7 +19,7 @@ import {randomUUID} from 'node:crypto';
 export function installPlatformMail(db) {
  db.exec(`CREATE TABLE IF NOT EXISTS platform_mail_outbox (
   id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK(kind IN ('VERIFY_EMAIL','PASSWORD_RESET','INVITATION','SECURITY_NOTICE')),
+  kind TEXT NOT NULL CHECK(kind IN ('VERIFY_EMAIL','PASSWORD_RESET','INVITATION','SECURITY_NOTICE','PARTNER_NOTICE')),
   to_email TEXT NOT NULL,
   subject TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('SENT','FAILED')),

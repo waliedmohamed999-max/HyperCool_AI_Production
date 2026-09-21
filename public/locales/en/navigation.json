@@ -4,6 +4,8 @@
   "workflows": { "title": "Automation", "description": "Build real Workflows with a trigger and steps, activate them, and watch their live runs." },
   "marketing": { "title": "Marketing & Social", "description": "Campaigns, content, calendar, unified inbox, and performance — in one place." },
   "whatsapp": { "title": "WhatsApp", "description": "Connection, templates, WhatsApp campaigns, and follow-ups — in one place, controllable through Frost." },
+  "partnerships": { "title": "Partnerships", "description": "Manage partner applications, partners, plans, commissions, payouts and program settings." },
+  "customers": { "title": "Customers & Merchants", "description": "Manage merchant workspaces, plans, agent access, usage and secure support sessions." },
   "crm": { "title": "Customers & Sales", "description": "Follow your deals from the first conversation to close." },
   "planning": { "title": "Calendar & Scheduling", "description": "Plan content and review scheduled posts in one place." },
   "reports": { "title": "Weekly Report", "description": "This week's performance, opportunities, and data-driven decisions." },

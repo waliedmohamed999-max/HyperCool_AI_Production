@@ -33,7 +33,7 @@ const ownerPage = await ownerContext.newPage();
 ownerPage.on('pageerror', err => console.log('  [owner page error]', err.message));
 
 // --- Platform Admin signs up (first real user, matches the allowlist) ------------------------
-await adminPage.goto(base + '/');
+await adminPage.goto(base + '/app');
 await adminPage.waitForSelector('#auth-form [name=username]', { state: 'visible' });
 await adminPage.fill('#auth-form [name=name]', 'Platform Admin');
 await adminPage.fill('#auth-form [name=username]', 'platform_admin');
@@ -54,7 +54,7 @@ const ownerUser = auth.createUser({ username: ownerUsername, name: 'Tenant Owner
 createTenant(app.store.db, { name: 'Tenant Custom Co', slug: 'tc-e2e-' + Date.now() }, ownerUser.id);
 const ownerLogin = auth.login({ username: ownerUsername, password: 'a-long-test-password-123' }, '127.0.0.1');
 await ownerContext.addCookies([{ name: 'hc_session', value: ownerLogin.token, url: base }]);
-await ownerPage.goto(base + '/');
+await ownerPage.goto(base + '/app');
 await ownerPage.waitForSelector('#session-bar', { state: 'visible', timeout: 15000 });
 check('tenant owner logged in (separate session, separate tenant)', await ownerPage.isVisible('#session-bar'));
 

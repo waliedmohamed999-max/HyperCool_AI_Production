@@ -6,6 +6,7 @@ import {testXConnection} from '../runtime/x-publishing.js';
 import {testLinkedInConnection} from '../runtime/linkedin-publishing.js';
 import {getCredentialForRuntime} from './vault.js';
 import {checkConnectorHealth} from '../connectors/core/runtime.js';
+import {envForTenant,platformCredentialsAllowed} from '../runtime/credential-policy.js';
 
 // Connection Health — Multi-Tenant Phase 4A, Part 15/16/17. Reuses the EXACT same read-only,
 // side-effect-free test functions this codebase already had (connectors.js's
@@ -36,16 +37,25 @@ function normalize(raw) {
  */
 export async function testConnectionHealth(connection,{store,env,fetcher}) {
  const provider=connection.integrationDefinitionId;
+ const tenantId=connection.tenantId;
+ // A workspace other than the operator's is only ever tested with ITS OWN stored credential — never the server's env keys/tokens.
+ const scopedEnv=envForTenant(store.db,env,tenantId);
  try {
   if(provider==='salla') {
-   const credential=getCredentialForRuntime(store.db,env,connection.id,connection.tenantId);
-   return normalize(await testSallaConnection({env,fetcher,accessToken:credential?.payload?.accessToken||null}));
+   const credential=getCredentialForRuntime(store.db,env,connection.id,tenantId);
+   const accessToken=credential?.payload?.accessToken||null;
+   if(!accessToken&&!platformCredentialsAllowed(store.db,tenantId))return normalize({result:'NOT_CONFIGURED',code:'SALLA_NOT_CONFIGURED'});
+   return normalize(await testSallaConnection({env:scopedEnv,fetcher,accessToken}));
   }
-  if(provider==='anthropic')return normalize(await testAnthropicConnection({env,fetcher}));
-  if(provider==='openai')return normalize(await testOpenAIConnection({env,fetcher}));
-  if(provider==='whatsapp')return normalize(await testWhatsAppConnection({store,env,fetcher}));
-  if(provider==='meta')return normalize(resolveMetaAccessToken({store,env},'page',connection.tenantId)?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
-  if(provider==='microsoft365')return normalize(await testMicrosoftConnection({store,env,fetcher}));
+  if(provider==='anthropic'||provider==='openai') {
+   const apiKey=getCredentialForRuntime(store.db,env,connection.id,tenantId)?.payload?.apiKey||null;
+   const keyName=provider==='anthropic'?'ANTHROPIC_API_KEY':'OPENAI_API_KEY';
+   const testEnv=apiKey?{...env,[keyName]:apiKey}:platformCredentialsAllowed(store.db,tenantId)?env:{...env,[keyName]:undefined};
+   return normalize(await (provider==='anthropic'?testAnthropicConnection:testOpenAIConnection)({env:testEnv,fetcher}));
+  }
+  if(provider==='whatsapp')return normalize(await testWhatsAppConnection({store,env,fetcher},tenantId));
+  if(provider==='meta')return normalize(resolveMetaAccessToken({store,env},'page',tenantId)?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
+  if(provider==='microsoft365')return normalize(await testMicrosoftConnection({store,env,fetcher},tenantId));
   if(provider==='x')return normalize(await testXConnection({store,env,fetcher},connection.tenantId));
   if(provider==='linkedin')return normalize(await testLinkedInConnection({store,env,fetcher},connection.tenantId));
   // Universal Integration Platform (Phase 6D) — any connector NOT covered by the legacy,

@@ -101,6 +101,19 @@ export function resolveActiveTenantId(db) {
  if(n>1)throw Object.assign(new Error('TENANT_CONTEXT_REQUIRED'),{code:'TENANT_CONTEXT_REQUIRED',status:400});
  return tenantId;
 }
+/**
+ * The role a user holds INSIDE one workspace (tenant_memberships.role). `users.role` is a legacy, account-wide value that
+ * predates multi-tenancy: trusting it for authorization would let an owner of workspace A act as owner of workspace B just
+ * because they were invited there as an operator. Returns null when the user is not an active member.
+ */
+export function getActiveMemberRole(db,tenantId,userId) {
+ if(!tenantId||!userId)return null;
+ return db.prepare("SELECT role FROM tenant_memberships WHERE tenant_id=? AND user_id=? AND status='active'").get(tenantId,userId)?.role||null;
+}
+/** The platform operator's own workspace (the deployment's original single tenant). */
+export function isDefaultTenant(db,tenantId) {
+ return !!tenantId&&tenantId===ensureDefaultTenant(db);
+}
 // Phase 4C-1 — every membership/tenant-eligibility query below shares this one predicate:
 // the MEMBERSHIP itself must be 'active' (the column has existed since Phase 1 but nothing
 // ever set it to anything else, and nothing ever filtered on it — a revoked membership would

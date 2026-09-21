@@ -1,5 +1,6 @@
 import {randomBytes,createHash} from 'node:crypto';
 import {ConnectorError} from '../connectors.js';
+import {envForTenant} from './credential-policy.js';
 import {getCredentials,saveCredentials,clearCredentials,getCredentialsMeta,isExpiringSoon,credentialsConfigured} from './credentials.js';
 
 // X's (Twitter's) real OAuth 2.0 endpoints, per developer.x.com. X's API v2 OAuth 2.0
@@ -21,12 +22,15 @@ export function xOAuthConfigured(env) {
 // in this app (see meta-oauth.js/salla-oauth.js); nothing here needs to survive a restart.
 const pendingStates=new Map();
 function base64url(buffer){return buffer.toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
-export function createXAuthorizeUrl(env,userId) {
+// `externalState` (optional): a DB-backed, tenant-bound single-use state from integrations/oauth-state.js (used by the merchant
+// portal flow). When given, this function neither generates nor remembers an in-memory state.
+// `externalVerifier` is the PKCE verifier the caller keeps (encrypted) next to its own state.
+export function createXAuthorizeUrl(env,userId,externalState=null,externalVerifier=null) {
  if(!xOAuthConfigured(env))throw new ConnectorError('X_OAUTH_NOT_CONFIGURED');
- const state=base64url(randomBytes(24));
- const codeVerifier=base64url(randomBytes(32));
+ const state=externalState||base64url(randomBytes(24));
+ const codeVerifier=externalVerifier||base64url(randomBytes(32));
  const codeChallenge=base64url(createHash('sha256').update(codeVerifier).digest());
- pendingStates.set(state,{userId,codeVerifier,at:Date.now()});
+ if(!externalState)pendingStates.set(state,{userId,codeVerifier,at:Date.now()});
  const url=new URL(AUTHORIZE_URL);
  url.searchParams.set('response_type','code');
  url.searchParams.set('client_id',env.X_CLIENT_ID);
@@ -114,6 +118,7 @@ export function disconnectX(db,tenantId=null) {
  * only ever returns the OAuth token (or null), 'read' also accepts the static bearer.
  */
 export async function resolveXAccessToken({store,env,fetcher=fetch},kind='publish',tenantId=null) {
+ env=envForTenant(store.db,env,tenantId);
  if(credentialsConfigured(env)) {
   let creds;
   try {creds=getCredentials(store.db,env,'x',tenantId);} catch {creds=null;}

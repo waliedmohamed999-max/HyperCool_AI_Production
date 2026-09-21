@@ -63,7 +63,7 @@ async function connectX(call,owner) {
  assert.equal(callback.status,302);
 }
 async function publishRealTweetAndSync(call,owner) {
- const today=new Date().toISOString().slice(0,10);
+ const today=new Date(Date.now()+10800000).toISOString().slice(0,10);
  await call('/api/calendar',{startDate:today},owner);
  const draft=await call('/api/content',{title:'Perf test post',body:'Hyper cool tweet',platform:'X',date:today,url:'https://hyper-cool.com/p'},owner);
  await call(`/api/content/${draft.data.id}/review`,{reviewer:'QA',evidence:'checked',facts:true,claims:true,link:true},owner);

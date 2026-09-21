@@ -24,7 +24,7 @@ const failures = [];
 function check(label, cond) { if (cond) console.log('OK  -', label); else { console.log('FAIL-', label); failures.push(label); } }
 page.on('pageerror', err => console.log('  [page error]', err.message));
 
-await page.goto(base + '/');
+await page.goto(base + '/app');
 await page.waitForSelector('#auth-form [name=username]', { state: 'visible' });
 await page.fill('#auth-form [name=name]', 'Platform Admin');
 await page.fill('#auth-form [name=username]', 'platform_admin');

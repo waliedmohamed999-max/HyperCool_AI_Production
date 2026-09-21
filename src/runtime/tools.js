@@ -3,6 +3,7 @@ import {listLeads,listFollowups,leadDetail,getLead,createLead,updateLead,createF
 import {createContent} from '../domain.js';
 import {getContent,getContentOrNull,insertContent,writeContent} from '../content.js';
 import {resolveActiveTenantId} from '../tenancy.js';
+import {envForTenant} from './credential-policy.js';
 import {recordAudit} from '../audit.js';
 import {buildWeeklyReport,currentWeekStart} from '../reporting.js';
 import {createApproval} from './approvals.js';
@@ -28,16 +29,16 @@ import {recordConfigurationChange} from './configuration-history.js';
 import {listJobs,cancelJobs} from '../planning.js';
 import {createWorkflowDraft,listWorkflows,activateWorkflow,pauseWorkflow,startWorkflowRun,listWorkflowRuns,getRunWithSteps} from './workflow-engine.js';
 
-export function integrationStatus(env,db=null) {
+export function integrationStatus(env,db=null,tenantId=null) {
+ env=db?envForTenant(db,env,tenantId):env;
+ // Scoped to the caller's workspace: another tenant's OAuth connection must never make an integration look "configured" here.
+ const connected=provider=>{try{return !!(tenantId?db.prepare('SELECT 1 FROM integration_credentials WHERE provider=? AND tenant_id=?').get(provider,tenantId):db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get(provider));}catch{return false;}};
  // A Meta/WhatsApp OAuth connection (see runtime/meta-oauth.js) counts as configured too —
  // otherwise an agent that only needs whatsapp/meta would show WAITING_INTEGRATION forever
  // for anyone who connected via OAuth instead of the legacy static-token env vars.
  let metaConnected=false,microsoftConnected=false,xConnected=false,linkedinConnected=false;
  if(db){
-  try{metaConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('meta');}catch{metaConnected=false;}
-  try{microsoftConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('microsoft365');}catch{microsoftConnected=false;}
-  try{xConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('x');}catch{xConnected=false;}
-  try{linkedinConnected=!!db.prepare('SELECT 1 FROM integration_credentials WHERE provider=?').get('linkedin');}catch{linkedinConnected=false;}
+  metaConnected=connected('meta');microsoftConnected=connected('microsoft365');xConnected=connected('x');linkedinConnected=connected('linkedin');
  }
  return {
   whatsapp:{configured:!!env.WHATSAPP_ACCESS_TOKEN||metaConnected},

@@ -55,7 +55,7 @@ async function promoteAgent(call,owner,agentId,fromVersion=0) {
  await call(`/api/agents/${agentId}/autonomy`,{level:'L2',reason:'test promotion',expectedVersion:fromVersion+1},owner);
 }
 async function approvedContent(call,owner,{platform,body,englishCopy,assetUrl}) {
- const today=new Date().toISOString().slice(0,10);
+ const today=new Date(Date.now()+10800000).toISOString().slice(0,10);
  await call('/api/calendar',{startDate:today},owner);
  const draft=await call('/api/content',{title:'Analytics test post',body,englishCopy,assetUrl,platform,date:today,url:'https://hyper-cool.com/p'},owner);
  assert.equal(draft.status,201,JSON.stringify(draft.data));

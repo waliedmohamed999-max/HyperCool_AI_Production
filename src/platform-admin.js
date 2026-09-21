@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {fail} from './auth.js';
-import {getTenant,listActiveMembers,getTrialStatus,tenantOperationalBlockReason,setCustomConnectorLimit} from './tenancy.js';
+import {getTenant,listActiveMembers,getTrialStatus,tenantOperationalBlockReason,setCustomConnectorLimit,isDefaultTenant} from './tenancy.js';
 import {recordPlatformAudit} from './platform-identity.js';
 import {buildControlCenterSummary} from './runtime/control-center.js';
 import {listAuditLog} from './audit.js';
@@ -26,6 +26,19 @@ export function isPlatformAdmin(env,user) {
  if(!user)return false;
  const allowlist=String(env.PLATFORM_ADMIN_USERNAMES||'').split(',').map(u=>u.trim().toLowerCase()).filter(Boolean);
  return allowlist.includes(String(user.username||'').toLowerCase());
+}
+/**
+ * Routes that act on PLATFORM-GLOBAL state (the user directory, the agent registry, the runtime kill-switch, server env
+ * status, platform-wide cost) are for whoever operates the deployment: an allow-listed platform admin, or the owner of the
+ * operator's own (default) workspace. An owner of any other workspace — including every merchant — never qualifies.
+ */
+export function isPlatformOperator(db,env,session) {
+ if(!session)return false;
+ return isPlatformAdmin(env,session.user)||isDefaultTenant(db,session.tenantId);
+}
+export function requirePlatformOperator(db,env,session) {
+ if(!session)fail(401,'سجل الدخول أولًا');
+ if(!isPlatformOperator(db,env,session))fail(403,'هذا الإجراء متاح فقط لمشغّل المنصة');
 }
 export function requirePlatformAdmin(env,session) {
  if(!session)fail(401,'سجل الدخول أولًا');

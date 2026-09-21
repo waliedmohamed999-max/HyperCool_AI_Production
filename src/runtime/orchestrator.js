@@ -39,10 +39,10 @@ export function installOrchestrator(eventBus,runtime,db) {
  * exists (weekly report internals, escalations, autonomy) — it fabricates nothing
  * it cannot compute from real rows.
  */
-export function buildDailyBrief({store,db,listEscalations,listRuns,buildBriefFn}) {
- const openEscalations=listEscalations(db,{status:'OPEN'});
- const failedRuns=listRuns(db,{limit:50}).filter(run=>run.status==='FAILED');
- const contentBrief=buildBriefFn(store);
+export function buildDailyBrief({store,db,listEscalations,listRuns,buildBriefFn,tenantId=null}) {
+ const openEscalations=listEscalations(db,{status:'OPEN'},tenantId);
+ const failedRuns=listRuns(db,{limit:50},tenantId).filter(run=>run.status==='FAILED');
+ const contentBrief=buildBriefFn(store,undefined,tenantId);
  return {
   generatedAt:new Date().toISOString(),
   hotEscalations:openEscalations.filter(e=>['P0','P1'].includes(e.priority)),

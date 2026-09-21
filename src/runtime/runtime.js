@@ -133,7 +133,7 @@ export function isAiConfiguredForAgent(db,env,tenantId,agentId) {
  * differ only through agentId (prompt + payload schema + tool list), never through
  * bespoke code paths — this is the "runtime, not 12 snowflakes" requirement.
  */
-export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
+export function createAgentRuntime({store,env,fetcher=fetch,eventBus,runGate=null}) {
  const db=store.db;
  // `runtimeRef` breaks the construction-order circularity for the one tool
  // (run_followup_sweep, see tools.js) that itself needs to trigger a nested agent run — the
@@ -185,6 +185,10 @@ export function createAgentRuntime({store,env,fetcher=fetch,eventBus}) {
    // the same instant a trial expires is blocked here immediately, not one tick later.
    const blockReason=tenantOperationalBlockReason(tenant);
    if(blockReason)return finishTenantNotOperational(db,agentId,triggerType,triggerId,user,resolvedTenantId,blockReason,parentRunId);
+   // Merchant-portal layers (plan entitlement, admin overrides, account state, usage limits) hold for EVERY caller of the
+   // runtime - the scheduler, legacy /api/agents/:id/run and portal tasks alike. Tenants without a merchant account are unaffected.
+   const gateReason=runGate?runGate(resolvedTenantId,agentId):null;
+   if(gateReason)return finishTenantNotOperational(db,agentId,triggerType,triggerId,user,resolvedTenantId,gateReason,parentRunId);
    const level=effectiveLevel(levelOf(db,agentId,resolvedTenantId),env,tenant?.maxAgentLevel||null);
    // Phase 34 — readiness precheck BEFORE spending any AI tokens. Only a genuinely BLOCKED
    // REQUIRED TOOL short-circuits here with AGENT_NOT_READY (a required tool that is

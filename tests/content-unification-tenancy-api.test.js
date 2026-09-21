@@ -39,7 +39,10 @@ async function signupAndCreateWorkspace(call, app, {username, email, companyName
  await call('/api/workspaces', {companyName}, session);
  return session;
 }
-function futureIso(days) { return new Date(Date.now() + days * 86400000).toISOString(); }
+// Fixed noon-UTC instant N days ahead: its Riyadh (+3h) calendar date is the same as its UTC date, so
+// content.date and scheduledAt agree whatever time of day the suite runs (scheduleContent validates
+// the Riyadh date).
+function futureIso(days) { return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10) + 'T12:00:00.000Z'; }
 
 test('Tenant isolation (service/API level): Workspace B cannot review/approve/revise/reject/schedule/cancel Workspace A\'s legacy content by ID', async () => {
  const {call, app, cleanup} = await harness();

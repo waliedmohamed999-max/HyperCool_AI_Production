@@ -11,3 +11,9 @@ data/
 *.key
 *.pfx
 *.p12
+
+# Local scratch: screenshots and throwaway preview databases (never committed)
+output/
+_preview.mjs
+.tmp/
+frost-dev-preview/

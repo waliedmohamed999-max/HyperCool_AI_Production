@@ -16,7 +16,7 @@ await mkdir('artifacts/mobile',{recursive:true});
 try {
  const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
  page.on('pageerror',e=>errors.push(e.message));
- await page.goto(`http://127.0.0.1:${app.server.address().port}`);
+ await page.goto(`http://127.0.0.1:${app.server.address().port}/app`);
  assert.equal(await page.locator('.mobile-tabbar').isVisible(),false);
  for(const [name,value] of Object.entries({name:'فحص الموبايل',username:'mobile_owner',password:QA_PASSWORD}))await page.locator(`#auth-form [name=${name}]`).fill(value);
  await page.locator('#auth-form button').click();await page.locator('#overview-dashboard').waitFor();

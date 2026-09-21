@@ -1,6 +1,7 @@
 import {ConnectorError} from '../connectors.js';
 import {resolveMetaAccessToken} from './meta-oauth.js';
 import {resolveActiveTenantId} from '../tenancy.js';
+import {envForTenant} from './credential-policy.js';
 
 const GRAPH_VERSION='v21.0';
 const GRAPH_BASE='https://graph.facebook.com/'+GRAPH_VERSION;
@@ -25,7 +26,7 @@ function instagramAccountId(db,tenantId=null) {
  const row=db.prepare('SELECT metadata FROM integration_credentials WHERE provider=? AND tenant_id=?').get('meta',resolvedTenantId);
  return row?.metadata?JSON.parse(row.metadata)?.instagram?.id:null;
 }
-function pageId(db,env,tenantId=null) {
+function pageId(db,env,tenantId=null) { env=envForTenant(db,env,tenantId);
  if(env.META_PAGE_ID)return env.META_PAGE_ID;
  const resolvedTenantId=tenantId||resolveActiveTenantId(db);
  const row=db.prepare('SELECT external_account_id FROM integration_credentials WHERE provider=? AND tenant_id=?').get('meta',resolvedTenantId);

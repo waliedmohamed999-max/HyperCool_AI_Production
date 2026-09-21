@@ -1,4 +1,4 @@
-# HyperCool — Operations Runbook
+# Frost — Operations Runbook
 
 ## Incident Severity
 

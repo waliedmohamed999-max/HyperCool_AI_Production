@@ -1,5 +1,6 @@
 import {getTenantAgentConfig} from './agent-config.js';
 import {getTenant} from '../tenancy.js';
+import {envForTenant} from './credential-policy.js';
 import {getConnectionOrNull} from '../integrations/connections.js';
 import {hasCredential} from '../integrations/vault.js';
 import {getToolDefinition,listToolDefinitions} from './tool-definitions.js';
@@ -73,10 +74,10 @@ export function evaluateToolReadiness(db,env,{tenantId,agentId,toolSlug},legacyC
  }
  return {status:'READY',toolSlug};
 }
-function computeLegacyConfigured(env,db) {
- const status=integrationStatus(env,db);
- let sallaConfigured=!!env.SALLA_ACCESS_TOKEN;
- try{sallaConfigured=sallaConfigured||!!db.prepare("SELECT 1 FROM integration_connections WHERE integration_definition_id='salla' AND status NOT IN ('DISCONNECTED')").get();}catch{/* table may not exist in a bare fixture */}
+function computeLegacyConfigured(env,db,tenantId=null) {
+ const status=integrationStatus(env,db,tenantId);
+ let sallaConfigured=!!envForTenant(db,env,tenantId).SALLA_ACCESS_TOKEN;
+ try{sallaConfigured=sallaConfigured||!!(tenantId?db.prepare("SELECT 1 FROM integration_connections WHERE tenant_id=? AND integration_definition_id='salla' AND status NOT IN ('DISCONNECTED')").get(tenantId):db.prepare("SELECT 1 FROM integration_connections WHERE integration_definition_id='salla' AND status NOT IN ('DISCONNECTED')").get());}catch{/* table may not exist in a bare fixture */}
  return {whatsapp:status.whatsapp.configured,meta:status.meta.configured,x:status.x.configured,linkedin:status.linkedin.configured,microsoft365:status.microsoft365.configured,canva:status.canva.configured,salla:sallaConfigured};
 }
 function resolveAiReadiness(db,env,tenantId,agentId,tenantConfig) {
@@ -106,7 +107,7 @@ export function evaluateAgentReadiness(db,env,{tenantId,agentId}) {
  const config=getTenantAgentConfig(db,tenantId,agentId);
  if(config && !config.enabled)return {status:'DISABLED',required:{ai:'N/A',tools:'N/A'},optional_missing:[],blockers:['AGENT_DISABLED'],warnings:[]};
  const ai=resolveAiReadiness(db,env,tenantId,agentId,config);
- const legacyConfigured=computeLegacyConfigured(env,db);
+ const legacyConfigured=computeLegacyConfigured(env,db,tenantId);
  const required=requiredToolsFor(agentId).map(toolSlug=>evaluateToolReadiness(db,env,{tenantId,agentId,toolSlug},legacyConfigured));
  const optional=optionalToolsFor(agentId).map(toolSlug=>evaluateToolReadiness(db,env,{tenantId,agentId,toolSlug},legacyConfigured));
  const blockers=[];
@@ -124,6 +125,6 @@ export function evaluateAgentReadiness(db,env,{tenantId,agentId}) {
  };
 }
 export function evaluateAllToolsReadiness(db,env,{tenantId,agentId}) {
- const legacyConfigured=computeLegacyConfigured(env,db);
+ const legacyConfigured=computeLegacyConfigured(env,db,tenantId);
  return listToolDefinitions(db).filter(t=>!t.allowedAgents||t.allowedAgents.includes(agentId)).map(t=>evaluateToolReadiness(db,env,{tenantId,agentId,toolSlug:t.slug},legacyConfigured));
 }

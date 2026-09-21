@@ -24,6 +24,8 @@ import {installCommandCenter,renderCommandCenter} from './pages/command-center.j
 import {installWorkflowsPage,renderWorkflowsPage} from './pages/workflows.js';
 import {installMarketingPage,renderMarketingPage} from './pages/marketing.js';
 import {installWhatsAppPage,renderWhatsAppPage} from './pages/whatsapp.js';
+import {installPartnershipsPage,renderPartnershipsPage} from './pages/partnerships.js';
+import {installCustomersPage,renderCustomersPage} from './pages/customers.js';
 import {isInviteRoute,renderInvitePage} from './pages/invite.js';
 // Action/status codes stay the real enum values everywhere (DB, audit rows, data-status
 // attributes); only this lookup's *display* text is locale-aware, computed fresh on every
@@ -56,6 +58,8 @@ installCommandCenter();
 installWorkflowsPage();
 installMarketingPage();
 installWhatsAppPage();
+installPartnershipsPage();
+installCustomersPage();
 installCRMInteractions();
 installContentInteractions();
 installMemoryInteractions();
@@ -68,6 +72,8 @@ let accountLocaleApplied=false;
 function currentPage(){
   const id=location.hash.slice(1);
   if(id==='users' && auth.user?.role!=='owner')return 'overview';
+  if(id==='partnerships' && !auth.partner?.isManager)return 'overview';
+  if(id==='customers' && !auth.isPlatformAdmin)return 'overview';
   return pages.includes(id)?id:'overview';
 }
 function showPage(page){
@@ -94,6 +100,8 @@ function refetchPageIfNeeded(page){
   else if(page==='workflows')renderWorkflowsPage({api,auth}).catch(error=>message(error.message,'error'));
   else if(page==='marketing')renderMarketingPage({api,auth}).catch(error=>message(error.message,'error'));
   else if(page==='whatsapp')renderWhatsAppPage({api,auth}).catch(error=>message(error.message,'error'));
+  else if(page==='partnerships')renderPartnershipsPage({api,auth}).catch(error=>message(error.message,'error'));
+  else if(page==='customers')renderCustomersPage({api,auth}).catch(error=>message(error.message,'error'));
 }
 navLinks.forEach(a=>a.addEventListener('click',event=>{
   const page=a.getAttribute('href').slice(1);
@@ -147,6 +155,7 @@ async function render(){
   beforeWorkspaceRender();
   viewData=new Map();
   auth=await api('/api/auth');
+  if(auth.client?.isMerchant&&!auth.isPlatformAdmin&&!isInviteRoute()&&!isRecoveryRoute()){location.replace('/client/dashboard');return;}
   // Phase 4C-3 — the invitation-accept page lives OUTSIDE the normal auth-gated flow (an
   // invitee may have no session at all yet): handled first, short-circuiting the rest of
   // this render entirely, whether or not the visitor is currently authenticated.
@@ -208,7 +217,9 @@ async function render(){
   // them stuck on a page they have no authority to view instead of the real selection/creation
   // prompt (a real bug this phase's own suspend/reactivate journey testing surfaced).
   const page=currentPage();
-  const viewingWorkspaceIndependentPage=page==='account'||((page==='platform'||page==='integration-builder')&&auth.isPlatformAdmin);
+  const viewingWorkspaceIndependentPage=page==='account'||((page==='platform'||page==='integration-builder')&&auth.isPlatformAdmin)||(page==='partnerships'&&auth.partner?.isManager)||(page==='customers'&&auth.isPlatformAdmin);
+  // A partner with no workspace has nothing to do in the dashboard: send them to their portal.
+  if(!workspace.ready&&!viewingWorkspaceIndependentPage&&auth.partner?.isPartner&&!workspace.workspaces?.length){location.replace('/partners/dashboard');return;}
   $('#protected').hidden=!workspace.ready && !viewingWorkspaceIndependentPage;
   if(!workspace.ready && !viewingWorkspaceIndependentPage){
     renderWorkspaceGate(workspace,auth.csrf,()=>render().catch(error=>message(error.message,'error')),auth.user);
@@ -219,12 +230,16 @@ async function render(){
     showPage(currentPage());
     await renderAccountPage({api,auth});
     await renderPlatformPage({api,auth});
+    await renderPartnershipsPage({api,auth});
+    await renderCustomersPage({api,auth});
     return;
   }
   await renderWorkspaceSwitcher(workspace.workspace,auth.csrf,()=>render().catch(error=>message(error.message,'error')));
   $('#session-name').textContent=`${auth.user.name} · ${roles[auth.user.role]}`;
   $('#draft').hidden=auth.user.role==='reviewer';
   $('#nav-users').hidden=auth.user.role!=='owner';
+  $('#nav-partnerships').hidden=!auth.partner?.isManager;
+  $('#nav-customers').hidden=!auth.isPlatformAdmin;
   renderEmailBanner(auth);
   await renderAccountPage({api,auth});
   showPage(currentPage());
@@ -249,6 +264,8 @@ async function render(){
   await renderWorkflowsPage({api,auth});
   await renderMarketingPage({api,auth});
   await renderWhatsAppPage({api,auth});
+  await renderPartnershipsPage({api,auth});
+  await renderCustomersPage({api,auth});
   await renderOnboardingPage({api,auth});
   $('#items').querySelectorAll(':scope > article').forEach((card,index)=>addContentActions(card,state.content[index],auth,escape));
   await renderPlanning({api,auth,state,escape});

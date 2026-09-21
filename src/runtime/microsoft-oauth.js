@@ -1,5 +1,6 @@
 import {randomBytes} from 'node:crypto';
 import {ConnectorError} from '../connectors.js';
+import {envForTenant} from './credential-policy.js';
 import {getCredentials,saveCredentials,clearCredentials,getCredentialsMeta,isExpiringSoon,credentialsConfigured} from './credentials.js';
 
 // Microsoft identity platform (Azure AD / Entra ID) v2.0 endpoints. `tenant` is
@@ -24,10 +25,12 @@ export function requestedScopes(env) {
  return env.MICROSOFT_ENABLE_CALENDAR==='true'?[...DEFAULT_SCOPES,...CALENDAR_SCOPES]:DEFAULT_SCOPES;
 }
 const pendingStates=new Map();
-export function createMicrosoftAuthorizeUrl(env,userId) {
+// `externalState` (optional): a DB-backed, tenant-bound single-use state from integrations/oauth-state.js (used by the merchant
+// portal flow). When given, this function neither generates nor remembers an in-memory state.
+export function createMicrosoftAuthorizeUrl(env,userId,externalState=null) {
  if(!microsoftOAuthConfigured(env))throw new ConnectorError('MICROSOFT_OAUTH_NOT_CONFIGURED');
- const state=randomBytes(24).toString('base64url');
- pendingStates.set(state,{userId,at:Date.now()});
+ const state=externalState||randomBytes(24).toString('base64url');
+ if(!externalState)pendingStates.set(state,{userId,at:Date.now()});
  const url=new URL(authorizeUrl(tenant(env)));
  url.searchParams.set('client_id',env.MICROSOFT_CLIENT_ID);
  url.searchParams.set('redirect_uri',env.MICROSOFT_REDIRECT_URI);
@@ -84,19 +87,19 @@ export async function resolveConnectedProfile({env,fetcher,accessToken}) {
  const data=await requestJson(fetcher,`${graphBase(env)}/me?$select=id,displayName,mail,userPrincipalName`,{headers:{authorization:`Bearer ${accessToken}`}});
  return {accountId:data.id,displayName:data.displayName||null,email:data.mail||data.userPrincipalName||null};
 }
-export function saveMicrosoftConnection(db,env,{accessToken,refreshToken,expiresAt,scopes},profile,user) {
+export function saveMicrosoftConnection(db,env,{accessToken,refreshToken,expiresAt,scopes},profile,user,tenantId=null) {
  return saveCredentials(db,env,'microsoft365',{
   accessToken,refreshToken,expiresAt,scopes,externalAccountId:profile.accountId,
   metadata:{email:profile.email,displayName:profile.displayName,tenantId:env.MICROSOFT_TENANT_ID||'organizations',calendarEnabled:scopes.some(s=>s.toLowerCase().includes('calendars'))}
- },user);
+ },user,tenantId);
 }
-export function microsoftOAuthStatus(db) {
- const meta=getCredentialsMeta(db,'microsoft365');
+export function microsoftOAuthStatus(db,tenantId=null) {
+ const meta=getCredentialsMeta(db,'microsoft365',tenantId);
  if(!meta)return {connected:false};
  return {connected:true,expiresAt:meta.expiresAt,scopes:meta.scopes,email:meta.metadata?.email||null,displayName:meta.metadata?.displayName||null,tenantId:meta.metadata?.tenantId||null,calendarEnabled:!!meta.metadata?.calendarEnabled,connectedByName:meta.connectedByName,connectedAt:meta.connectedAt,tokenExpired:isExpiringSoon(meta.expiresAt,0)};
 }
-export function disconnectMicrosoft(db) {
- clearCredentials(db,'microsoft365');
+export function disconnectMicrosoft(db,tenantId=null) {
+ clearCredentials(db,'microsoft365',tenantId);
 }
 /**
  * Every Graph API call goes through here. Refreshes automatically when the stored token is
@@ -105,6 +108,7 @@ export function disconnectMicrosoft(db) {
  * returns null so callers can report TOKEN_EXPIRED/INTEGRATION_REQUIRED honestly.
  */
 export async function resolveMicrosoftAccessToken({store,env,fetcher=fetch},tenantId=null) {
+ env=envForTenant(store.db,env,tenantId);
  if(credentialsConfigured(env)) {
   let creds;
   try {creds=getCredentials(store.db,env,'microsoft365',tenantId);} catch {creds=null;}

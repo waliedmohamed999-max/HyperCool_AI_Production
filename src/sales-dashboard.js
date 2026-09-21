@@ -2,6 +2,7 @@ import {listLeads,listFollowups,listAllMessages,stages} from './crm.js';
 import {computeSalesFunnel,computePipeline} from './reporting.js';
 import {providerStatus} from './runtime/llmProvider.js';
 import {listAuditLog} from './audit.js';
+import {envForTenant} from './runtime/credential-policy.js';
 
 // SalesDashboardService. Every function is pure (arrays in, plain objects out) so it
 // stays testable without a database and never duplicates crm.js's own validation or
@@ -133,7 +134,7 @@ export function buildSalesDashboard(store,{agentRuns=[],env={},tenantId=null}={}
  const auditEntries=listAuditLog(store.db,{tenantId});
  const llm=providerStatus(env);
  return {
-  dataStatus:{crm:'LOCAL',whatsapp:env.WHATSAPP_ACCESS_TOKEN?'CONNECTED':'NOT_CONNECTED',salla:env.SALLA_ACCESS_TOKEN?'CONNECTED':'NOT_CONNECTED',aiSalesAgent:llm.configured?'ONLINE':'OFFLINE'},
+  dataStatus:{crm:'LOCAL',whatsapp:envForTenant(store.db,env,tenantId).WHATSAPP_ACCESS_TOKEN?'CONNECTED':'NOT_CONNECTED',salla:envForTenant(store.db,env,tenantId).SALLA_ACCESS_TOKEN?'CONNECTED':'NOT_CONNECTED',aiSalesAgent:llm.configured?'ONLINE':'OFFLINE'},
   kpis:computeKPIs(leads,followups),
   funnel:computeSalesFunnel(leads),
   pipeline:computePipelineBoard(leads),

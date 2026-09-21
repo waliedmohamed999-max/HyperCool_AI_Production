@@ -72,8 +72,8 @@ export function computeMemoryHealthIssues(entries,products) {
 // memory (search_brand_memory / get_competitor_data) and checks whether this key's entry
 // was actually present in what the agent got back. No table this function owns — it only
 // reads tables runtime/runtime.js already writes.
-export function computeMemoryUsage(db,key) {
- const rows=db.prepare(`SELECT t.tool,t.output,t.at,r.agent_id FROM agent_tool_calls t JOIN agent_runs r ON r.id=t.run_id WHERE t.tool IN ('search_brand_memory','get_competitor_data') AND t.status='OK' ORDER BY t.at DESC`).all();
+export function computeMemoryUsage(db,key,tenantId=null) {
+ const rows=db.prepare(`SELECT t.tool,t.output,t.at,r.agent_id FROM agent_tool_calls t JOIN agent_runs r ON r.id=t.run_id WHERE t.tool IN ('search_brand_memory','get_competitor_data') AND t.status='OK' ${tenantId?'AND r.tenant_id=?':''} ORDER BY t.at DESC`).all(...(tenantId?[tenantId]:[]));
  const byAgent=new Map();
  for(const row of rows) {
   if(byAgent.has(row.agent_id))continue;

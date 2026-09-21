@@ -3,7 +3,11 @@
 // found (safe to wire into a deploy pipeline); WARN items never fail the exit code, since
 // several are genuinely optional (mail, CAPTCHA) and the app boots and works without them.
 import {loadEnvFile} from 'node:process';
+import {existsSync} from 'node:fs';
+import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {DatabaseSync} from 'node:sqlite';
+import {countDevSeedAccounts} from '../src/security/demo-accounts.js';
 
 try { loadEnvFile(fileURLToPath(new URL('../.env', import.meta.url))); } catch (error) { if (error.code !== 'ENOENT') throw error; }
 const env = process.env;
@@ -40,6 +44,9 @@ if (captchaProvider) {
 const platformAdmins = String(env.PLATFORM_ADMIN_USERNAMES || '').split(',').map(s => s.trim()).filter(Boolean);
 warn('PLATFORM_ADMIN_USERNAMES set', platformAdmins.length > 0, platformAdmins.length ? `${platformAdmins.length} configured` : 'empty — #platform is unreachable for everyone; intentional only if this deployment does not need the platform dashboard yet');
 
+warn('PARTNER_BILLING_WEBHOOK_SECRET set (partner program)', !!env.PARTNER_BILLING_WEBHOOK_SECRET, env.PARTNER_BILLING_WEBHOOK_SECRET ? 'configured' : 'empty — partner commissions can only be recorded manually until a billing system posts signed payments to /api/webhooks/partner-billing');
+warn('INTEGRATION_ENCRYPTION_KEY set (partner payout details)', !!env.INTEGRATION_ENCRYPTION_KEY, env.INTEGRATION_ENCRYPTION_KEY ? 'configured' : 'empty — partners cannot save payout methods');
+info('SUPPORT_ACCESS_USERNAMES (support mode)', env.SUPPORT_ACCESS_USERNAMES ? env.SUPPORT_ACCESS_USERNAMES : 'all platform admins may open support sessions');
 info('ALLOW_PUBLIC_SIGNUP', env.ALLOW_PUBLIC_SIGNUP === 'false' ? 'false (invite-only accounts)' : 'true/default (open public signup)');
 info('ALLOW_SELF_SERVICE_WORKSPACE_CREATION', env.ALLOW_SELF_SERVICE_WORKSPACE_CREATION === 'false' ? 'false (no self-service workspace creation)' : 'true/default');
 info('TRIAL_DAYS', env.TRIAL_DAYS || '14 (default)');
@@ -118,7 +125,35 @@ info('Generic OAuth2 Framework (Phase 6G)', 'ready — each connector references
 // `expiresAt`, the existing audit log + webhook_events ledger) — nothing new to configure.
 info('Proactive Token Expiry UI + Platform Connector Analytics (Phase 6H)', 'ready — no configuration; both read exclusively from already-validated existing data');
 
-console.log('\n=== HyperCool Production Config Check ===\n');
+// Merchant portal OAuth: each provider needs its app id AND secret (both or neither), and the callback URL below must be registered
+// in that provider's console. A provider without credentials is simply shown to merchants as unavailable.
+for (const [slug, ids] of [['salla', ['SALLA_CLIENT_ID', 'SALLA_CLIENT_SECRET']], ['zid', ['ZID_CLIENT_ID', 'ZID_CLIENT_SECRET']], ['meta', ['META_APP_ID', 'META_APP_SECRET']], ['microsoft365', ['MICROSOFT_CLIENT_ID', 'MICROSOFT_CLIENT_SECRET']], ['x', ['X_CLIENT_ID', 'X_CLIENT_SECRET']], ['linkedin', ['LINKEDIN_CLIENT_ID', 'LINKEDIN_CLIENT_SECRET']]]) {
+ const present = ids.filter(v => !!env[v]);
+ if (present.length > 0 && present.length < ids.length) blocker(`Merchant OAuth ${slug} fully configured`, false, `partially set (${present.join(', ')}) — both ${ids.join(' and ')} are required`);
+ else info(`Merchant OAuth ${slug}`, present.length ? `configured — register ${env.PUBLIC_ORIGIN || '{PUBLIC_ORIGIN}'}/api/client/integrations/${slug}/callback in the provider console` : 'not configured — shown to merchants as unavailable');
+}
+
+// Local preview / investor-demo accounts must never exist in a production database. This is the one check that reads the database
+// (read-only, counts only - no row content is printed).
+{
+ const dbPath = resolve(env.DATA_DIR || fileURLToPath(new URL('../data/', import.meta.url)), 'hypercool.sqlite');
+ if (!existsSync(dbPath)) info('Demo / preview accounts', `no database at ${dbPath} yet — nothing to scan`);
+ else {
+  let db = null;
+  try {
+   db = new DatabaseSync(dbPath, {readOnly: true});
+   const devSeed = countDevSeedAccounts(db);
+   blocker('No local-preview accounts in this database', devSeed === 0, devSeed === 0 ? 'ok' : `${devSeed} account(s) created by scripts/dev-preview.mjs exist — this is not a production database`);
+   let investorDemo = 0;
+   try { investorDemo = db.prepare("SELECT (SELECT COUNT(*) FROM users WHERE username='investor_demo') + (SELECT COUNT(*) FROM tenants WHERE branding_settings LIKE '%HYPERCOOL_INVESTOR_DEMO_V1%') n").get().n; } catch { investorDemo = 0; }
+   blocker('No investor-demo data in this database', investorDemo === 0, investorDemo === 0 ? 'ok' : 'the investor demo user/tenants (npm run demo:seed) exist — run npm run demo:reset or use a separate demo environment');
+  } catch (error) {
+   warn('Demo / preview accounts scan', false, `could not open the database read-only (${error.code || error.message})`);
+  } finally { db?.close(); }
+ }
+}
+
+console.log('\n=== Frost Production Config Check ===\n');
 let hasBlocker = false;
 for (const r of results) {
  if (r.level === 'BLOCKER' && !r.ok) hasBlocker = true;

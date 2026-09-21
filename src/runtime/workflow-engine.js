@@ -580,6 +580,9 @@ export async function startWorkflowRun(deps,workflowId,{triggerType,triggerConte
  const tenant=getTenant(db,resolvedTenantId);
  const blockReason=tenantOperationalBlockReason(tenant);
  if(blockReason)fail(409,'المنشأة غير نشطة حاليًا: '+blockReason);
+ // Optional hook from the host application (the merchant portal): a workspace whose account is not operational starts no run at all.
+ const startGateReason=deps.startGate?.(resolvedTenantId);
+ if(startGateReason)fail(409,'حساب المنشأة لا يسمح بتشغيل Workflow حاليًا: '+startGateReason);
  const cap=limits(env);
  if(causationDepth>cap.MAX_AUTOMATION_DEPTH) {
   recordAudit(db,{id:randomUUID(),action:'WORKFLOW_LOOP_PROTECTION_TRIGGERED',itemId:workflowId,detail:{causationDepth},at:new Date().toISOString()},resolvedTenantId);
@@ -665,6 +668,7 @@ export async function tickWorkflowsForTenant(deps,tenantId,now=Date.now()) {
   resumed.push(await advanceWorkflowRun(deps,row.id));
  }
  const started=[];
+ if(deps.startGate?.(tenantId))return {resumed:resumed.length,started:0};
  const active=db.prepare("SELECT wd.id,wv.trigger_json FROM workflow_definitions wd JOIN workflow_versions wv ON wv.id=wd.active_version_id WHERE wd.tenant_id=? AND wd.status='ACTIVE'").all(tenantId);
  for(const row of active) {
   const trigger=JSON.parse(row.trigger_json);

@@ -43,7 +43,7 @@ const adminPage = await adminContext.newPage();
 adminPage.on('pageerror', err => console.log('  [admin page error]', err.message));
 
 // --- Platform Admin signs up ------------------------------------------------------------------
-await adminPage.goto(base + '/');
+await adminPage.goto(base + '/app');
 await adminPage.waitForSelector('#auth-form [name=username]', { state: 'visible' });
 await adminPage.fill('#auth-form [name=name]', 'Platform Admin');
 await adminPage.fill('#auth-form [name=username]', 'platform_admin');
@@ -211,7 +211,7 @@ if (agentRowButtons.length >= 3) {
  await connectorRowButtons[2].click(); // Connector cell's link (Platform Admin -> Builder wizard)
  await adminPage.waitForTimeout(600);
  const urlAfterConnectorClick = adminPage.url();
- check('clicking the Connector cell (Platform Admin) navigates to the Builder and opens the real definition', urlAfterConnectorClick.includes('#platform') && await adminPage.locator('dialog.drawer[open]').count() > 0);
+ check('clicking the Connector cell (Platform Admin) navigates to the Builder and opens the real definition', urlAfterConnectorClick.includes('#integration-builder') && await adminPage.locator('dialog.drawer[open]').count() > 0);
 }
 
 // This Escape targets a drawer opened via the cross-page openConnectorWizardBySlug() shortcut
@@ -232,7 +232,7 @@ const ownerUser = auth.createUser({ username: ownerUsername, name: 'Tenant Owner
 createTenant(app.store.db, { name: 'E2E 6H Tenant', slug: 'e2e6h-t-' + Date.now() }, ownerUser.id);
 const ownerLogin = auth.login({ username: ownerUsername, password: 'a-long-test-password-123' }, '127.0.0.1');
 await ownerContext.addCookies([{ name: 'hc_session', value: ownerLogin.token, url: base }]);
-await ownerPage.goto(base + '/');
+await ownerPage.goto(base + '/app');
 await ownerPage.waitForSelector('#session-bar', { state: 'visible', timeout: 15000 });
 check('tenant owner logged in (separate session/tenant)', await ownerPage.isVisible('#session-bar'));
 

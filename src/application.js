@@ -51,7 +51,7 @@ import {installCompliance,listComplianceChecks,listComplianceChecksSince,createC
 import {buildIntegrationsDashboard} from './integration-ops.js';
 import {buildContentWorkspace} from './content-ops.js';
 import {buildMemoryWorkspace,computeMemoryUsage} from './memory-ops.js';
-import {assertRoleChangeAllowed,assertDeactivationAllowed,buildTeamDashboard} from './team-ops.js';
+import {assertRoleChangeAllowed,assertDeactivationAllowed,buildTeamDashboard,listUsersForTenant,canManageUserFromTenant} from './team-ops.js';
 import {installAutonomy,currentAutonomy,setAutonomy,listAutonomyLog} from './autonomy.js';
 import {installReporting,buildExecutiveReport,saveWeeklyReport,listWeeklyReports,currentWeekStart} from './reporting.js';
 import {buildReportWorkbook,buildReportPdfBuffer} from './reportExport.js';
@@ -100,18 +100,24 @@ import {createScheduler} from './runtime/scheduler.js';
 import {installCredentials,saveCredentials,credentialsConfigured} from './runtime/credentials.js';
 import {installTenancy,ensureDefaultTenant,resolveTenantForUser,listTenants,listWorkspacesForUser,activateWorkspaceForUser,listActiveMembers,getMembership,updateMembershipRole,updateMembershipStatus,listSuspendedWorkspacesForUser} from './tenancy.js';
 import {installInvitations,createInvitation,listInvitations,resendInvitation,revokeInvitation,previewInvitation,acceptInvitation,roleForValidToken,checkInvitationRateLimit} from './invitations.js';
+import {installPartnerProgram} from './partners/index.js';
+import {installClientPortal,makeRunGate,makeWorkflowGate,createClientRoutes,isMerchantOnly} from './client/index.js';
+import {classifyRoute} from './security/route-policy.js';
+import {countDevSeedAccounts} from './security/demo-accounts.js';
+import {createPartnerRoutes,PORTAL_PAGES} from './partners/routes.js';
+import {attributeRegistration,markReferralQualified} from './partners/referrals.js';
+import {partnerContext} from './partners/access.js';
 import {installPlatformIdentity,getUserIdentity,requestEmailChange,resendEmailVerification,verifyEmailToken,requestPasswordReset,consumePasswordResetToken,checkForgotPasswordRateLimit,checkEmailVerificationRateLimit,recordPlatformAudit,registerPublicUser,checkSignupRateLimit} from './platform-identity.js';
 import {installPlatformMail,platformMailStatus,sendVerificationEmail,sendPasswordResetEmail,sendInvitationEmail,sendSecurityNotice} from './runtime/platform-mail.js';
 import {bootstrapWorkspaceForOwner,assertCanSelfCreateWorkspace,selfServicePolicy} from './workspace-provisioning.js';
-import {isPlatformAdmin,requirePlatformAdmin,buildPlatformOverview,listTenantDirectory,getTenantDetail,suspendTenantByPlatform,reactivateTenantByPlatform,extendTrialByPlatform,setCustomConnectorLimitByPlatform,listPlatformDeadLetterWebhooks,listTenantsWithUnhealthyIntegrations} from './platform-admin.js';
+import {isPlatformAdmin,isPlatformOperator,requirePlatformOperator,requirePlatformAdmin,buildPlatformOverview,listTenantDirectory,getTenantDetail,suspendTenantByPlatform,reactivateTenantByPlatform,extendTrialByPlatform,setCustomConnectorLimitByPlatform,listPlatformDeadLetterWebhooks,listTenantsWithUnhealthyIntegrations} from './platform-admin.js';
 import {checkGlobalSignupLimit,checkWorkspaceCreationIpLimit,checkTotalTrialWorkspacesLimit} from './runtime/pilot-limits.js';
 import {botProtectionStatus,captchaRequiredFor,verifyBotProtection} from './runtime/bot-protection.js';
-import {isTrialActive,getTrialDaysRemaining,countSelfCreatedWorkspaces} from './tenancy.js';
+import {isTrialActive,getTrialDaysRemaining,countSelfCreatedWorkspaces,getActiveMemberRole} from './tenancy.js';
 import {installContent,migrateUnifyContentItems,listContent,listContentFiltered,getContent,getContentOrNull,insertContent,writeContent,isCampaignShaped} from './content.js';
 import {installAuditLog,recordAudit,listAuditLog} from './audit.js';
 import {createAuthorizeUrl,consumeState,exchangeCodeForTokens,sallaOAuthStatus,disconnectSalla,resolveSallaAccessToken} from './runtime/salla-oauth.js';
-import {createZidAuthorizeUrl,exchangeZidCodeForTokens} from './runtime/zid-oauth.js';
-import {safeFetch} from './connectors/core/ssrf.js';
+import {createZidAuthorizeUrl,exchangeZidCodeForTokens,resolveZidIdentity} from './runtime/zid-oauth.js';
 import {installWebhookEvents,listWebhookEvents} from './runtime/webhook-events.js';
 import {resolveTenantForWhatsAppPhoneNumberId,resolveTenantForMicrosoftSubscription,resolveTenantForSallaMerchant,resolveTenantForMetaPageId} from './runtime/webhook-tenant-resolver.js';
 import {installIntegrationDefinitions,listIntegrationDefinitions,getIntegrationDefinition} from './integrations/definitions.js';
@@ -181,20 +187,6 @@ function validateEnv(env) {
 // authorize/token URL (Part 3: "No Generic Unsafe OAuth"). Adding a future approved OAuth2
 // connector means adding one more entry here, never widening the route itself to accept an
 // arbitrary provider.
-async function resolveZidIdentity({env,fetcher,accessToken}) {
- // docs.zid.sa/get-manager-profile — GET /v1/managers/account/profile, the same real,
- // read-only endpoint Zid's health check uses (Part 20/21) — resolves the real store id/name
- // right after a successful token exchange, through the SSRF-hardened transport, never the
- // bare `fetcher`.
- const response=await safeFetch('https://api.zid.sa/v1/managers/account/profile',{
-  method:'GET',headers:{authorization:`Bearer ${accessToken}`,'x-manager-token':accessToken},
-  timeoutMs:10000,maxResponseBytes:256*1024,allowedHosts:['api.zid.sa']
- });
- if(response.status!==200)return null;
- const profile=JSON.parse(response.body.toString('utf8')||'null');
- if(!profile?.store?.id)return null;
- return {externalAccountId:String(profile.store.id),externalAccountName:profile.store.title||null};
-}
 const GENERIC_OAUTH_PROVIDERS={
  salla:{createAuthorizeUrl,exchangeCodeForTokens,defaultConnectionName:'متجر سلة جديد',resolveIdentity:null},
  zid:{createAuthorizeUrl:createZidAuthorizeUrl,exchangeCodeForTokens:exchangeZidCodeForTokens,defaultConnectionName:'متجر زد جديد',resolveIdentity:resolveZidIdentity}
@@ -218,7 +210,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   installInvitations(store.db); // Multi-Tenant Phase 4C-3 — see docs/WORKSPACE_INVITATIONS.md
   installOnboarding(store.db); // Multi-Tenant Phase 4C-4 — see docs/WORKSPACE_ONBOARDING.md
   installPlatformIdentity(store.db); // Multi-Tenant Phase 4C-5 — see docs/PLATFORM_IDENTITY.md
-  installPlatformMail(store.db); // Multi-Tenant Phase 4C-5 — see docs/PLATFORM_EMAIL.md
+  installPlatformMail(store.db);
+  installPartnerProgram(store.db); // Frost Partners: additive tables + editable starter plans, see docs/PARTNERS.md // Multi-Tenant Phase 4C-5 — see docs/PLATFORM_EMAIL.md
   installContent(store.db); // migrates legacy state.content into a real tenant-scoped table — see docs/CONTENT_MIGRATION.md
   installAuditLog(store.db); // migrates legacy state.audit into a real tenant-scoped table — see docs/AUDIT_MIGRATION.md
   installKnowledge(store.db);
@@ -264,16 +257,18 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   // legacy enabled flag as its one-time migration default (Part 49/91: no data loss).
   installToolDefinitions(store.db);
   installTenantAgentConfigs(store.db);
+  installClientPortal(store.db);
+  if(env.NODE_ENV==='production'){const devSeed=countDevSeedAccounts(store.db);if(devSeed>0)console.error(JSON.stringify({level:'ERROR',message:'DEV_PREVIEW_ACCOUNTS_PRESENT_IN_PRODUCTION',count:devSeed}));} // Frost merchant portal: additive tables + editable starter plans, see docs/CLIENT_PORTAL.md
   installAgentToolAssignments(store.db);
   for(const {id:tenantId} of store.db.prepare('SELECT id FROM tenants').all())seedTenantAgentConfigs(store.db,tenantId);
   const eventBus=createEventBus(store.db);
-  const agentRuntime=createAgentRuntime({store,env,fetcher,eventBus});
+  const agentRuntime=createAgentRuntime({store,env,fetcher,eventBus,runGate:makeRunGate(store.db,env)});
   const {routes:orchestratorRoutes}=installOrchestrator(eventBus,agentRuntime,store.db);
   // Phase 7C — Native Workflow Engine. `workflowDeps` is passed to every workflow-engine.js
   // entry point instead of each one re-deriving store/env/fetcher/agentRuntime/toolRegistry —
   // the SAME real agentRuntime (and its SAME real toolRegistry) every agent run already uses,
   // never a second one built for workflows.
-  const workflowDeps={store,env,fetcher,agentRuntime,toolRegistry:agentRuntime.toolRegistry};
+  const workflowDeps={store,env,fetcher,agentRuntime,toolRegistry:agentRuntime.toolRegistry,startGate:makeWorkflowGate(store.db)};
   installWorkflowEventTriggers(eventBus,workflowDeps);
   function reportExtras(tenantId=null) {
     return {agents:listRegistryAgents(store.db),agentRuns:listRuns(store.db,{limit:2000},tenantId),escalations:listEscalations(store.db,{},tenantId),approvals:listApprovals(store.db,{},tenantId),env};
@@ -303,6 +298,68 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
   }
   // Webhook signature verification needs the exact raw bytes Salla signed — body() above
   // JSON-parses immediately and would lose that, so this is a separate, minimal reader.
+  const partnerRoutes=createPartnerRoutes({store,env,auth,fetcher,readJson:body,secureCookie});
+  const clientRoutes=createClientRoutes({store,env,auth,fetcher,agentRuntime,workflowDeps,readJson:body,secureCookie,applyApproval:(decided,ctx)=>applyApprovalDecision(decided,ctx)});
+  // Side effects of a decided approval (email send, tool resume, workflow resume, CRM stage change). Shared by the
+  // legacy /api/approvals route and the merchant portal so both behave identically.
+  async function applyApprovalDecision(decided,{user:actor,tenantId}) {
+    // Execution-on-approval, scoped to exactly one action type: an approved email send.
+    // This is the one place in the whole Approval Center where deciding APPROVED also
+    // performs the real side effect — every other approval type (memory, permission
+    // changes, etc.) stays decision-only, matching the existing pattern (spec Part O:
+    // "use existing Approval Center, don't duplicate logic" — this reuses it rather
+    // than inventing a parallel "pending email" queue).
+    if(decided.status==='APPROVED' && decided.action_type==='send_marketing_message') {
+      const proposed=JSON.parse(decided.proposed_output);
+      if(proposed?.to && proposed?.subject && proposed?.bodyHtml) {
+        try {
+         const sendResult=await sendMail({store,env,fetcher},{to:proposed.to,cc:proposed.cc,subject:proposed.subject,bodyHtml:proposed.bodyHtml},tenantId);
+         if(sendResult.status==='SENT' && proposed.leadId)recordChannelMessage(store,{leadId:proposed.leadId,channel:'Email',direction:'OUTBOUND',text:proposed.bodyHtml,subject:proposed.subject,cc:proposed.cc||null,messageType:'email'},actor,tenantId);
+         return {...decided,emailSendResult:sendResult};
+        } catch(error) {
+         return {...decided,emailSendResult:{status:'FAILED',errorDetail:error.message}};
+        }
+      }
+    }
+    // Multi-Tenant Phase 4B (Part 40-42) — the generic resume path for a connection-aware
+    // tool gated by ToolDefinition.requiresApprovalBelowLevel (today: whatsapp_send at
+    // L1). Re-validates the EXACT connection this approval was raised against is still
+    // available (never silently re-targets a different one — see
+    // runtime.js's resumeToolApproval) and re-invokes the SAME tool handler that would
+    // have run immediately at a higher permission level — no second execution path.
+    // Phase 7C — a `agent_tool_send` approval raised by a Workflow TOOL step (spec Part 15)
+    // shares the exact same action_type as a normal agent tool call (no new approval type
+    // needed for it) — distinguished only by whether its `run_id` is a real
+    // workflow_step_runs id, then routed through resumeWorkflowApproval so the workflow
+    // actually advances afterward (a bare agentRuntime.resumeToolApproval call would
+    // execute the write but leave the run stuck WAITING_APPROVAL forever).
+    const isWorkflowToolApproval=decided.action_type==='agent_tool_send' && !!store.db.prepare('SELECT 1 FROM workflow_step_runs WHERE id=?').get(decided.run_id);
+    if(decided.action_type==='workflow_step_approval'||isWorkflowToolApproval) {
+      const resumed=await resumeWorkflowApproval(workflowDeps,decided);
+      recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKFLOW_APPROVAL_DECIDED',itemId:decided.id,detail:{decision:decided.status,workflowRunId:resumed.id},actorId:actor.id,actorName:actor.name,at:new Date().toISOString()},tenantId);
+      return {...decided,workflowRun:resumed};
+    }
+    if(decided.status==='APPROVED' && decided.action_type==='agent_tool_send') {
+      const toolResult=await agentRuntime.resumeToolApproval(decided);
+      recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_TOOL_APPROVAL_EXECUTED',itemId:decided.id,toolSlug:decided.tool_slug,resultStatus:toolResult?.status||null,actorId:actor.id,actorName:actor.name,at:new Date().toISOString()},tenantId);
+      return {...decided,toolResult};
+    }
+    // Phase MKT-2, Part E — a sensitive CRM pipeline-stage change proposed by a real sales
+    // agent run, approved by a human. Applies through the exact same updateLead function a
+    // human editing the CRM form uses; a REJECTED decision simply leaves the lead unchanged
+    // (decideApproval above already recorded the rejection).
+    if(decided.status==='APPROVED' && decided.action_type==='marketing_crm_stage_update') {
+      const proposed=JSON.parse(decided.proposed_output);
+      try {
+       const lead=getLead(store.db,proposed.leadId,tenantId);
+       const updated=updateLead(store,proposed.leadId,{stage:proposed.toStage,temperature:lead.temperature,expectedVersion:lead.version,reason:`اعتماد بشري لاقتراح الوكيل ${decided.agent_id} (${decided.id})`,city:lead.city,productNeed:lead.productNeed,productUrl:lead.productUrl,quantity:lead.quantity,valueSAR:lead.valueSAR,timeline:lead.timeline,budgetBand:lead.budgetBand,nextCheckAt:lead.nextCheckAt,assignedTo:lead.assignedTo},actor,tenantId);
+       return {...decided,leadUpdateResult:{status:'APPLIED',lead:updated}};
+      } catch(error) {
+       return {...decided,leadUpdateResult:{status:'FAILED',errorDetail:error.message}};
+      }
+    }
+    return decided;
+  }
   async function rawBody(req,maxBytes=1000000) {
     const chunks=[];let size=0;
     for await(const chunk of req) {size+=chunk.length;if(size>maxBytes) fail(413,'الطلب كبير جدًا');chunks.push(chunk);}
@@ -426,7 +483,9 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       const url=earlyUrl;
       if(isPublicWidgetRoute)return handlePublicWidgetRoute(req,res,url,send,requestId,startedAt);
       // External links may open the public shell; API and embedded requests remain protected.
-      const publicNavigation=req.method==='GET' && url.pathname==='/' &&
+      const publicNavigation=req.method==='GET' && (url.pathname==='/' || url.pathname==='/partners' || url.pathname==='/client' || url.pathname==='/client/register' || /^\/r\/[A-Za-z0-9]{4,16}$/.test(url.pathname) ||
+        // an OAuth provider redirecting the browser back (cross-site by nature); the signed single-use state is its authority
+        /^\/api\/client\/integrations\/[a-z0-9]+\/callback$/.test(url.pathname)) &&
         req.headers['sec-fetch-mode']==='navigate' && req.headers['sec-fetch-dest']==='document';
       if(req.headers['sec-fetch-site']==='cross-site' && !publicNavigation) fail(403,'Cross-site request rejected');
       if(url.pathname.startsWith('/api/automation/')) {
@@ -555,7 +614,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const connectorActor={id:'connector:microsoft365',name:'موصل Microsoft 365',role:'automation'};
         for(const {messageId,tenantId:itemTenantId} of result.toFetch) {
           try {
-           const graphMessage=await getMessage({store,env,fetcher},messageId);
+           const graphMessage=await getMessage({store,env,fetcher},messageId,itemTenantId);
            if(!graphMessage||graphMessage.isDraft)continue; // never ingest our own drafts as if a customer sent them
            const fromAddress=graphMessage.from?.emailAddress?.address||null;
            if(!fromAddress)continue;
@@ -618,8 +677,10 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(session) {
        try{session.tenantId=resolveTenantForUser(store.db,session.user.id,session.activeTenantId);}
        catch(error){tenantResolutionError=error;}
+       // Authorization inside a workspace uses the role held IN that workspace, never the account-wide legacy users.role.
+       if(session.tenantId){const held=getActiveMemberRole(store.db,session.tenantId,session.user.id);if(held&&held!==session.user.role)session.user={...session.user,role:held};}
       }
-      if(req.method==='GET' && url.pathname==='/api/auth') return send(200,{needsSetup:auth.needsSetup(),user:session?.user||null,csrf:session?.csrf||null,isPlatformAdmin:isPlatformAdmin(env,session?.user)});
+      if(req.method==='GET' && url.pathname==='/api/auth') {const pc=session?partnerContext(store.db,env,session):null;return send(200,{needsSetup:auth.needsSetup(),user:session?.user||null,csrf:session?.csrf||null,isPlatformAdmin:isPlatformAdmin(env,session?.user),partner:pc?{isPartner:!!pc.profile,status:pc.profile?.status||null,isManager:pc.isManager,permissions:pc.permissions}:null,client:session?{isMerchant:isMerchantOnly(store.db,session.user.id)}:null});}
       // Multi-Tenant Phase 4C-7 — logout is a pure session action, never a workspace one.
       // Placed here (before the tenant-resolution throw below) because a session with NO
       // resolvable tenant is a real, valid state — a Platform Admin with zero workspaces of
@@ -670,6 +731,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         const locale=['ar','en'].includes(input.locale)?input.locale:'ar';
         const delivery=await sendVerificationEmail({db:store.db,env,fetcher},{to:normalizedEmail,locale,verifyUrl});
         recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'USER_REGISTERED',itemId:user.id,actorId:user.id,actorName:user.name,at:new Date().toISOString()});
+        attributeRegistration(store.db,env,{userId:user.id,email:normalizedEmail,visitorId:req.headers.cookie?.split(';').map(c=>c.trim()).find(c=>c.startsWith('frost_ref='))?.slice(10)||null,ip:(env.PUBLIC_ORIGIN?String(req.headers['x-forwarded-for']||'').split(',')[0].trim():'')||req.socket.remoteAddress});
         // A real, logged-in session from the moment of signup (Part 6) — but the account
         // remains "Account Created, Email Unverified" until the link above is actually
         // clicked; nothing here treats the account as verified or workspace-eligible yet.
@@ -711,6 +773,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         checkEmailVerificationRateLimit(req.socket.remoteAddress);
         const input=await body(req);
         const result=verifyEmailToken(store.db,input.token);
+        markReferralQualified(store.db,result.userId);
         recordPlatformAudit(store.db,{id:crypto.randomUUID(),action:'USER_EMAIL_VERIFIED',itemId:result.userId,actorId:result.userId,at:new Date().toISOString()});
         return send(200,{email:result.email});
       }
@@ -743,6 +806,15 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(user?.email)await sendSecurityNotice({db:store.db,env,fetcher},{to:user.email,locale:user.preferred_locale||'ar',message:user.preferred_locale==='en'?'Your Frost account password was just reset. If this was not you, contact your workspace owner immediately.':'تم للتو إعادة تعيين كلمة مرور حسابك على Frost. إن لم يكن هذا أنت، تواصل فورًا مع مالك منشأتك.'}).catch(()=>{});
         return send(200,{ok:true});
       }
+      if(await partnerRoutes(req,res,url,session,{send,baseUrl}))return;
+      if(await clientRoutes(req,res,url,session,{send,baseUrl}))return;
+      // Default deny: an /api path must be declared in src/security/route-policy.js (which also drives the merchant gate below
+      // and the role floor enforced after workspace resolution). The handlers keep their own checks as a second layer.
+      const routePolicy=url.pathname.startsWith('/api/')?classifyRoute(url.pathname):null;
+      if(url.pathname.startsWith('/api/') && !routePolicy)fail(404,'المسار غير موجود');
+      // Merchant accounts live in the client portal: the legacy workspace API is closed to them regardless of what each handler checks.
+      // Platform admins are exempt.
+      if(session && routePolicy && !routePolicy.merchantReachable && !isPlatformAdmin(env,session.user) && isMerchantOnly(store.db,session.user.id))fail(403,'MERCHANT_USE_CLIENT_PORTAL');
       if(url.pathname.startsWith('/api/')) {
         authorize(session,['owner','reviewer','operator']);
         if(req.method!=='GET' && req.headers['x-csrf-token']!==session.csrf) fail(403,'رمز حماية الجلسة غير صالح');
@@ -857,6 +929,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // or acting on a tenant they may not even be a member of obviously cannot go through
       // per-session tenant resolution. `requirePlatformAdmin` is the ONE real gate — never a
       // tenant owner's own role, however senior (Part 20/58).
+      if(url.pathname.startsWith('/api/platform/'))requirePlatformAdmin(env,session);
       if(url.pathname==='/api/platform/overview' && req.method==='GET') {
         requirePlatformAdmin(env,session);
         // Phase 7B — Platform Command Center (spec Part 24-28): scheduler.running() is the
@@ -1125,6 +1198,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // from before this phase (Part B Case 4: TENANT_SELECTION_REQUIRED remains the only
       // safe outcome for an unresolved multi-membership session on any non-workspace route).
       if(url.pathname.startsWith('/api/') && tenantResolutionError) throw tenantResolutionError;
+      if(routePolicy?.access==='platform_operator')requirePlatformOperator(store.db,env,session);
       // Workspace Invitations + Member Management (Phase 4C-3) — owner-only throughout,
       // matching the exact same bar /api/users already sets for every account-identity-
       // adjacent action in this codebase. `session.tenantId` (server-resolved above, never a
@@ -1201,8 +1275,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(url.pathname==='/api/users') {
         authorize(session,['owner']);
-        if(req.method==='GET') return send(200,auth.list());
+        // The user directory is platform-global: a workspace owner sees the accounts of THEIR workspace only, and creating a bare
+        // account is a platform-operator action (workspaces grow through invitations, see /api/workspaces/invitations).
+        if(req.method==='GET') return send(200,isPlatformOperator(store.db,env,session)?auth.list():listUsersForTenant(store.db,session.tenantId));
         if(req.method==='POST') {
+          requirePlatformOperator(store.db,env,session);
           const created=auth.createUser(await body(req));
           recordAudit(store.db,{id:crypto.randomUUID(),action:'USER_CREATED',itemId:created.id,actorId:session.user.id,actorName:session.user.name,actorRole:session.user.role,at:new Date().toISOString()},session.tenantId);
           return send(201,created);
@@ -1210,18 +1287,23 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(req.method==='GET' && url.pathname==='/api/team/dashboard') {
         authorize(session,['owner']);
-        return send(200,buildTeamDashboard(store.db,{auditEntries:listAuditLog(store.db,{tenantId:session.tenantId})}));
+        return send(200,buildTeamDashboard(store.db,{auditEntries:listAuditLog(store.db,{tenantId:session.tenantId}),tenantId:isPlatformOperator(store.db,env,session)?null:session.tenantId}));
       }
       const userAction=url.pathname.match(/^\/api\/users\/([\w-]+)\/(role|suspend|reactivate|remove|reset-access|revoke-sessions)$/);
       if(req.method==='POST' && userAction) {
         authorize(session,['owner']);
         const [,id,action]=userAction;
         if(!auth.get(id))fail(404,'العضو غير موجود');
+        // Account-level actions reach every workspace the person belongs to: outside the operator's own workspace they are
+        // limited to accounts that belong to this workspace alone, and a wrong-workspace id is indistinguishable from a missing one.
+        if(!isPlatformOperator(store.db,env,session)&&!canManageUserFromTenant(store.db,session.tenantId,id,{isPlatformAdminUser:isPlatformAdmin(env,auth.get(id))}))fail(404,'العضو غير موجود');
         const input=await body(req);
         let auditAction,itemName=auth.get(id).name;
         if(action==='role') {
           if(!['owner','reviewer','operator'].includes(input.role))fail(400,'دور غير صالح');
           assertRoleChangeAllowed(store.db,id,input.role);
+          const held=store.db.prepare("SELECT id FROM tenant_memberships WHERE tenant_id=? AND user_id=? AND status='active'").get(session.tenantId,id);
+          if(held)updateMembershipRole(store.db,session.tenantId,held.id,input.role); // the workspace role is what authorizes; keep it authoritative
           auth.setRole(id,input.role);auditAction='USER_ROLE_CHANGED';
         } else if(action==='suspend') {
           assertDeactivationAllowed(store.db,id);
@@ -1241,7 +1323,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(req.method==='GET' && url.pathname==='/api/agents') {
         const autonomy=currentAutonomy(store.db,session.tenantId);
-        const integrations=integrationStatus(env,store.db);
+        const integrations=integrationStatus(env,store.db,session.tenantId);
         const integrationNames={whatsapp:'واتساب',meta:'ميتا (Instagram/Facebook)',x:'X',linkedin:'لينكدإن',microsoft365:'Microsoft 365',canva:'Canva',salla_webhooks:'ويبهوكس سلة'};
         return send(200,agentDefinitions.map(agent=>{
           const registryRow=getAgent(store.db,agent.id);
@@ -1260,10 +1342,11 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
            runsTotal:recentRuns.length,lastRunAt:recentRuns[0]?.started_at||null,lastRunStatus:recentRuns[0]?.status||null};
         }));
       }
-      if(req.method==='POST' && url.pathname==='/api/agents/reseed') {authorize(session,['owner']);return send(200,seedRegistry(store.db));}
+      if(req.method==='POST' && url.pathname==='/api/agents/reseed') {authorize(session,['owner']);requirePlatformOperator(store.db,env,session);return send(200,seedRegistry(store.db));}
       const agentModelConfig=url.pathname.match(/^\/api\/agents\/([\w-]+)\/model-config$/);
       if(req.method==='POST' && agentModelConfig) {
         authorize(session,['owner']);
+        requirePlatformOperator(store.db,env,session); // the registry row is shared by every workspace (a workspace overrides via /config)
         const input=await body(req);
         const row=setModelConfig(store.db,agentModelConfig[1],{provider:input.provider,model:input.model,temperature:input.temperature,maxTokens:input.maxTokens});
         if(!row)fail(404,'وكيل غير موجود');
@@ -1272,7 +1355,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='GET' && url.pathname==='/api/agents/cost-summary') {
         authorize(session,['owner']);
         const since=url.searchParams.get('since')||new Date(Date.now()-30*86400000).toISOString();
-        const rows=store.db.prepare('SELECT agent_id,provider,model,COUNT(*) runs,SUM(tokens_input) tokens_input,SUM(tokens_output) tokens_output,SUM(estimated_cost) estimated_cost,SUM(used_fallback) fallback_runs FROM agent_runs WHERE started_at>=? GROUP BY agent_id,provider,model ORDER BY estimated_cost DESC').all(since);
+        const rows=store.db.prepare('SELECT agent_id,provider,model,COUNT(*) runs,SUM(tokens_input) tokens_input,SUM(tokens_output) tokens_output,SUM(estimated_cost) estimated_cost,SUM(used_fallback) fallback_runs FROM agent_runs WHERE started_at>=? AND (? IS NULL OR tenant_id=?) GROUP BY agent_id,provider,model ORDER BY estimated_cost DESC').all(since,...(()=>{const scope=isPlatformOperator(store.db,env,session)?null:session.tenantId;return [scope,scope];})());
         return send(200,{since,provider:providerStatus(env),rows});
       }
       const agentEnable=url.pathname.match(/^\/api\/agents\/([\w-]+)\/enabled$/);
@@ -1280,7 +1363,8 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner']);
         if(req.method==='POST'){
           const input=await body(req);
-          const row=setEnabled(store.db,agentEnable[1],!!input.enabled);
+          // Only the operator changes the shared registry default; a workspace toggles its own tenant config below.
+          const row=isPlatformOperator(store.db,env,session)?setEnabled(store.db,agentEnable[1],!!input.enabled):getAgent(store.db,agentEnable[1]);
           if(!row)fail(404,'وكيل غير موجود');
           // Multi-Tenant Phase 4B: `agent_registry.enabled` is now only the legacy default a
           // brand-new tenant's config is seeded from (Part 49) — the tenant-scoped
@@ -1482,62 +1566,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner']);
         const input=await body(req);
         const decided=decideApproval(store.db,approvalDecide[1],input.decision,session.user,session.tenantId);
-        // Execution-on-approval, scoped to exactly one action type: an approved email send.
-        // This is the one place in the whole Approval Center where deciding APPROVED also
-        // performs the real side effect — every other approval type (memory, permission
-        // changes, etc.) stays decision-only, matching the existing pattern (spec Part O:
-        // "use existing Approval Center, don't duplicate logic" — this reuses it rather
-        // than inventing a parallel "pending email" queue).
-        if(decided.status==='APPROVED' && decided.action_type==='send_marketing_message') {
-          const proposed=JSON.parse(decided.proposed_output);
-          if(proposed?.to && proposed?.subject && proposed?.bodyHtml) {
-            try {
-             const sendResult=await sendMail({store,env,fetcher},{to:proposed.to,cc:proposed.cc,subject:proposed.subject,bodyHtml:proposed.bodyHtml},session.tenantId);
-             if(sendResult.status==='SENT' && proposed.leadId)recordChannelMessage(store,{leadId:proposed.leadId,channel:'Email',direction:'OUTBOUND',text:proposed.bodyHtml,subject:proposed.subject,cc:proposed.cc||null,messageType:'email'},session.user,session.tenantId);
-             return send(200,{...decided,emailSendResult:sendResult});
-            } catch(error) {
-             return send(200,{...decided,emailSendResult:{status:'FAILED',errorDetail:error.message}});
-            }
-          }
-        }
-        // Multi-Tenant Phase 4B (Part 40-42) — the generic resume path for a connection-aware
-        // tool gated by ToolDefinition.requiresApprovalBelowLevel (today: whatsapp_send at
-        // L1). Re-validates the EXACT connection this approval was raised against is still
-        // available (never silently re-targets a different one — see
-        // runtime.js's resumeToolApproval) and re-invokes the SAME tool handler that would
-        // have run immediately at a higher permission level — no second execution path.
-        // Phase 7C — a `agent_tool_send` approval raised by a Workflow TOOL step (spec Part 15)
-        // shares the exact same action_type as a normal agent tool call (no new approval type
-        // needed for it) — distinguished only by whether its `run_id` is a real
-        // workflow_step_runs id, then routed through resumeWorkflowApproval so the workflow
-        // actually advances afterward (a bare agentRuntime.resumeToolApproval call would
-        // execute the write but leave the run stuck WAITING_APPROVAL forever).
-        const isWorkflowToolApproval=decided.action_type==='agent_tool_send' && !!store.db.prepare('SELECT 1 FROM workflow_step_runs WHERE id=?').get(decided.run_id);
-        if(decided.action_type==='workflow_step_approval'||isWorkflowToolApproval) {
-          const resumed=await resumeWorkflowApproval(workflowDeps,decided);
-          recordAudit(store.db,{id:crypto.randomUUID(),action:'WORKFLOW_APPROVAL_DECIDED',itemId:decided.id,detail:{decision:decided.status,workflowRunId:resumed.id},actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-          return send(200,{...decided,workflowRun:resumed});
-        }
-        if(decided.status==='APPROVED' && decided.action_type==='agent_tool_send') {
-          const toolResult=await agentRuntime.resumeToolApproval(decided);
-          recordAudit(store.db,{id:crypto.randomUUID(),action:'AGENT_TOOL_APPROVAL_EXECUTED',itemId:decided.id,toolSlug:decided.tool_slug,resultStatus:toolResult?.status||null,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
-          return send(200,{...decided,toolResult});
-        }
-        // Phase MKT-2, Part E — a sensitive CRM pipeline-stage change proposed by a real sales
-        // agent run, approved by a human. Applies through the exact same updateLead function a
-        // human editing the CRM form uses; a REJECTED decision simply leaves the lead unchanged
-        // (decideApproval above already recorded the rejection).
-        if(decided.status==='APPROVED' && decided.action_type==='marketing_crm_stage_update') {
-          const proposed=JSON.parse(decided.proposed_output);
-          try {
-           const lead=getLead(store.db,proposed.leadId,session.tenantId);
-           const updated=updateLead(store,proposed.leadId,{stage:proposed.toStage,temperature:lead.temperature,expectedVersion:lead.version,reason:`اعتماد بشري لاقتراح الوكيل ${decided.agent_id} (${decided.id})`,city:lead.city,productNeed:lead.productNeed,productUrl:lead.productUrl,quantity:lead.quantity,valueSAR:lead.valueSAR,timeline:lead.timeline,budgetBand:lead.budgetBand,nextCheckAt:lead.nextCheckAt,assignedTo:lead.assignedTo},session.user,session.tenantId);
-           return send(200,{...decided,leadUpdateResult:{status:'APPLIED',lead:updated}});
-          } catch(error) {
-           return send(200,{...decided,leadUpdateResult:{status:'FAILED',errorDetail:error.message}});
-          }
-        }
-        return send(200,decided);
+        return send(200,await applyApprovalDecision(decided,{user:session.user,tenantId:session.tenantId}));
       }
       if(req.method==='GET' && url.pathname==='/api/escalations')return send(200,listEscalations(store.db,{status:url.searchParams.get('status')||undefined},session.tenantId));
       const escalationResolve=url.pathname.match(/^\/api\/escalations\/([\w-]+)\/resolve$/);
@@ -2022,28 +2051,35 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='POST' && url.pathname==='/api/marketing/widget/regenerate') {authorize(session,['owner']);return send(200,regenerateWidgetId(store.db,session.user,session.tenantId));}
       if(req.method==='GET' && url.pathname==='/api/marketing/meta') return send(200,{contentChannels:CONTENT_CHANNELS,contentFormats:CONTENT_FORMATS,campaignStatuses:CAMPAIGN_STATUSES,contentStatuses:CONTENT_STATUSES});
 
-      if(req.method==='GET' && url.pathname==='/api/frost/daily-brief')return send(200,buildDailyBrief({store,db:store.db,listEscalations,listRuns,buildBriefFn:buildBrief}));
+      if(req.method==='GET' && url.pathname==='/api/frost/daily-brief')return send(200,buildDailyBrief({store,db:store.db,listEscalations,listRuns,buildBriefFn:buildBrief,tenantId:session.tenantId}));
       if(req.method==='GET' && url.pathname==='/api/frost/status')return send(200,{gate:getGateStatus(store.db),schedulerRunning:scheduler.running(),routes:orchestratorRoutes});
-      if(req.method==='POST' && url.pathname==='/api/frost/pause') {authorize(session,['owner']);const input=await body(req);return send(200,setPaused(store.db,true,session.user,typeof input.reason==='string'?input.reason.slice(0,1000):null));}
-      if(req.method==='POST' && url.pathname==='/api/frost/resume') {authorize(session,['owner']);return send(200,setPaused(store.db,false,session.user));}
-      if(req.method==='POST' && url.pathname==='/api/frost/run-now') {authorize(session,['owner']);return send(200,await scheduler.tick());}
+      if(req.method==='POST' && url.pathname==='/api/frost/pause') {authorize(session,['owner']);requirePlatformOperator(store.db,env,session);const input=await body(req);return send(200,setPaused(store.db,true,session.user,typeof input.reason==='string'?input.reason.slice(0,1000):null));}
+      if(req.method==='POST' && url.pathname==='/api/frost/resume') {authorize(session,['owner']);requirePlatformOperator(store.db,env,session);return send(200,setPaused(store.db,false,session.user));}
+      if(req.method==='POST' && url.pathname==='/api/frost/run-now') {authorize(session,['owner']);requirePlatformOperator(store.db,env,session);return send(200,await scheduler.tick());}
       const autonomyRoute=url.pathname.match(/^\/api\/agents\/([\w-]+)\/autonomy$/);
       if(autonomyRoute) {
         if(req.method==='GET')return send(200,listAutonomyLog(store.db,autonomyRoute[1],session.tenantId));
         if(req.method==='POST') {authorize(session,['owner']);return send(201,setAutonomy(store,autonomyRoute[1],await body(req),session.user,env,session.tenantId));}
       }
-      if(req.method==='GET' && url.pathname==='/api/connections') return send(200,connectionStatus(env));
+      if(req.method==='GET' && url.pathname==='/api/connections') {requirePlatformOperator(store.db,env,session);return send(200,connectionStatus(env));}
       if(req.method==='GET' && url.pathname==='/api/integrations/dashboard') return send(200,buildIntegrationsDashboard(store,{env,aiRuns:listAiRuns(store.db,50,session.tenantId),complianceRuns:listComplianceChecksSince(store.db,'1970-01-01T00:00:00.000Z',session.tenantId),agentRuns:listRuns(store.db,{limit:2000},session.tenantId),tenantId:session.tenantId}));
       const integrationTest=url.pathname.match(/^\/api\/integrations\/([\w-]+)\/test$/);
       if(req.method==='POST' && integrationTest) {
         authorize(session,['owner']);
         const id=integrationTest[1];
+        if(!isPlatformOperator(store.db,env,session)) {
+          // A workspace tests ITS OWN connection with ITS OWN credential — never the server's platform keys or tokens.
+          const own=getDefaultConnection(store.db,id,session.tenantId);
+          if(!own)return send(200,{result:'NOT_CONFIGURED'});
+          const health=await testConnectionHealth(own,{store,env,fetcher});
+          return send(200,{result:health.status==='CONNECTED'?'OK':health.status,code:health.errors?.[0]||null});
+        }
         if(id==='anthropic')return send(200,await testAnthropicConnection({env,fetcher}));
         if(id==='openai')return send(200,await testOpenAIConnection({env,fetcher}));
-        if(id==='salla'){const resolved=await resolveSallaAccessToken({store,env,fetcher});return send(200,await testSallaConnection({env,fetcher,accessToken:resolved?.token}));}
-        if(id==='whatsapp')return send(200,await testWhatsAppConnection({store,env,fetcher}));
+        if(id==='salla'){const resolved=await resolveSallaAccessToken({store,env,fetcher},session.tenantId);return send(200,await testSallaConnection({env,fetcher,accessToken:resolved?.token}));}
+        if(id==='whatsapp')return send(200,await testWhatsAppConnection({store,env,fetcher},session.tenantId));
         if(id==='meta')return send(200,resolveMetaAccessToken({store,env},'page',session.tenantId)?{result:'OK'}:{result:'NOT_CONFIGURED',code:'META_NOT_CONFIGURED'});
-        if(id==='microsoft365')return send(200,await testMicrosoftConnection({store,env,fetcher}));
+        if(id==='microsoft365')return send(200,await testMicrosoftConnection({store,env,fetcher},session.tenantId));
         if(id==='x')return send(200,await testXConnection({store,env,fetcher},session.tenantId));
         if(id==='linkedin')return send(200,await testLinkedInConnection({store,env,fetcher},session.tenantId));
         return send(200,{result:'NOT_IMPLEMENTED'});
@@ -2052,7 +2088,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // an ownership-level decision, same bar as any other integration credential).
       if(req.method==='GET' && url.pathname==='/api/integrations/salla/oauth/status') {
         authorize(session,['owner']);
-        return send(200,sallaOAuthStatus(store.db,env));
+        return send(200,sallaOAuthStatus(store.db,env,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/salla/oauth/start') {
         authorize(session,['owner']);
@@ -2064,13 +2100,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(!code||!state)fail(400,'استجابة ربط سلة ناقصة (code/state)');
         consumeState(state,session.user.id);
         const tokens=await exchangeCodeForTokens({env,fetcher,code});
-        saveCredentials(store.db,env,'salla',tokens,session.user);
+        saveCredentials(store.db,env,'salla',tokens,session.user,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_OAUTH_CONNECTED',itemId:'salla',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
       if(req.method==='POST' && url.pathname==='/api/integrations/salla/disconnect') {
         authorize(session,['owner']);
-        disconnectSalla(store.db);
+        disconnectSalla(store.db,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_OAUTH_DISCONNECTED',itemId:'salla',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
@@ -2139,7 +2175,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // Microsoft 365 OAuth (owner only, same bar as Salla/Meta above).
       if(req.method==='GET' && url.pathname==='/api/integrations/microsoft/oauth/status') {
         authorize(session,['owner']);
-        return send(200,microsoftOAuthStatus(store.db));
+        return send(200,microsoftOAuthStatus(store.db,session.tenantId));
       }
       if(req.method==='GET' && url.pathname==='/api/integrations/microsoft/oauth/start') {
         authorize(session,['owner']);
@@ -2152,7 +2188,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         consumeMicrosoftState(oauthState,session.user.id);
         const tokens=await exchangeMicrosoftCodeForTokens({env,fetcher,code});
         const profile=await resolveConnectedProfile({env,fetcher,accessToken:tokens.accessToken});
-        saveMicrosoftConnection(store.db,env,tokens,profile,session.user);
+        saveMicrosoftConnection(store.db,env,tokens,profile,session.user,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'MICROSOFT_CONNECTED',itemId:'microsoft365',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         res.writeHead(302,{Location:'/app#integrations'});return res.end();
       }
@@ -2160,9 +2196,9 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner']);
         // Delete the webhook subscription first (best-effort) so a disconnected mailbox
         // doesn't keep sending notifications this app can no longer act on.
-        const meta=getCredentialsMeta(store.db,'microsoft365');
-        if(meta?.metadata?.mailSubscription?.id)await deleteMailSubscription({store,env,fetcher},meta.metadata.mailSubscription.id);
-        disconnectMicrosoft(store.db);
+        const meta=getCredentialsMeta(store.db,'microsoft365',session.tenantId);
+        if(meta?.metadata?.mailSubscription?.id)await deleteMailSubscription({store,env,fetcher},meta.metadata.mailSubscription.id,session.tenantId);
+        disconnectMicrosoft(store.db,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'MICROSOFT_DISCONNECTED',itemId:'microsoft365',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
@@ -2174,7 +2210,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         if(!env.MICROSOFT_WEBHOOK_SECRET)fail(400,'أضف MICROSOFT_WEBHOOK_SECRET في إعدادات الخادم أولًا');
         if(!publicUrl)fail(400,'يتطلب اشتراك الويبهوك نطاقًا عامًا (PUBLIC_ORIGIN) — لا يقبل Graph عناوين محلية');
         const notificationUrl=new URL('/api/webhooks/microsoft/mail',publicUrl).href;
-        const subscription=await createMailSubscription({store,env,fetcher},{notificationUrl,clientState:env.MICROSOFT_WEBHOOK_SECRET});
+        const subscription=await createMailSubscription({store,env,fetcher},{notificationUrl,clientState:env.MICROSOFT_WEBHOOK_SECRET},session.tenantId);
         updateCredentialsMetadata(store.db,'microsoft365',{mailSubscription:{id:subscription.subscriptionId,expiresAt:subscription.expiresAt,resource:subscription.resource,createdAt:new Date().toISOString()}},session.tenantId,env);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'MICROSOFT_SUBSCRIPTION_CREATED',itemId:subscription.subscriptionId,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,subscription);
@@ -2753,7 +2789,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       }
       if(req.method==='GET' && url.pathname==='/api/memory') return send(200,listMemory(store.db,session.tenantId));
       if(req.method==='GET' && url.pathname==='/api/memory/dashboard') return send(200,buildMemoryWorkspace(store,{pendingApprovals:listApprovals(store.db,{status:'PENDING'},session.tenantId).filter(a=>a.action_type==='memory_policy_change')}));
-      if(req.method==='GET' && url.pathname==='/api/memory/usage') return send(200,computeMemoryUsage(store.db,url.searchParams.get('key')||''));
+      if(req.method==='GET' && url.pathname==='/api/memory/usage') return send(200,computeMemoryUsage(store.db,url.searchParams.get('key')||'',session.tenantId));
       if(req.method==='POST' && url.pathname==='/api/memory') {
         authorize(session,['owner']);
         const input=await body(req);
@@ -2768,7 +2804,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner']);
         if(syncing)fail(409,'مزامنة سلة قيد التنفيذ');
         syncing=true;
-        try{const resolved=await resolveSallaAccessToken({store,env,fetcher});const products=await importSalla({env,fetcher,accessToken:resolved?.token});store.mutate(()=>{replaceProducts(store.db,products,false,session.tenantId);recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_CATALOG_SYNCED',itemId:'catalog',count:products.length,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);});return send(200,{count:products.length,syncedAt:new Date().toISOString()});}
+        try{const resolved=await resolveSallaAccessToken({store,env,fetcher},session.tenantId);const products=await importSalla({env,fetcher,accessToken:resolved?.token});store.mutate(()=>{replaceProducts(store.db,products,false,session.tenantId);recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_CATALOG_SYNCED',itemId:'catalog',count:products.length,actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);});return send(200,{count:products.length,syncedAt:new Date().toISOString()});}
         catch(error){recordAudit(store.db,{id:crypto.randomUUID(),action:'SALLA_CATALOG_SYNC_FAILED',itemId:'catalog',errorCode:error instanceof ConnectorError?error.code:'UNKNOWN',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);throw error;}
         finally{syncing=false;}
       }
@@ -2788,7 +2824,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       if(req.method==='GET' && url.pathname==='/api/state') return send(200,{...store.read(),content:listContent(store.db,session?.tenantId).filter(item=>!isCampaignShaped(item)),audit:listAuditLog(store.db,{tenantId:session?.tenantId})});
       if(url.pathname.startsWith('/api/crm')) {
         authorize(session,['owner','operator']);
-        if(req.method==='GET' && url.pathname==='/api/crm')return send(200,{leads:listLeads(store.db,session.tenantId),followups:listFollowups(store.db,session.tenantId),sequences:Object.entries(sequences).map(([id,sequence])=>({id,name:sequence.name,stages:sequence.stages})),staff:store.db.prepare("SELECT id,name,role FROM users WHERE role IN ('owner','operator') ORDER BY name").all(),channelsConnected:false});
+        if(req.method==='GET' && url.pathname==='/api/crm')return send(200,{leads:listLeads(store.db,session.tenantId),followups:listFollowups(store.db,session.tenantId),sequences:Object.entries(sequences).map(([id,sequence])=>({id,name:sequence.name,stages:sequence.stages})),staff:store.db.prepare("SELECT u.id,u.name,tm.role AS role FROM users u JOIN tenant_memberships tm ON tm.user_id=u.id WHERE tm.tenant_id=? AND tm.status='active' AND tm.role IN ('owner','operator') ORDER BY u.name").all(session.tenantId),channelsConnected:false});
         if(req.method==='GET' && url.pathname==='/api/crm/dashboard')return send(200,buildSalesDashboard(store,{agentRuns:listRuns(store.db,{limit:2000},session.tenantId),env,tenantId:session.tenantId}));
         if(req.method==='GET' && url.pathname==='/api/crm/search')return send(200,searchLeads(store.db,url.searchParams.get('q'),20,session.tenantId));
         if(req.method==='POST' && url.pathname==='/api/crm/leads'){const lead=createLead(store,await body(req),session.user,session.tenantId);eventBus.emit('LEAD_CREATED',{leadId:lead.id,customerType:lead.customerType,sourceType:lead.sourceType,tenantId:session.tenantId});return send(201,lead);}
@@ -2822,7 +2858,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         fail(404,'مسار CRM غير موجود');
       }
       if(req.method==='GET' && url.pathname==='/api/planning') {
-        const publishingIntegrations=integrationStatus(env,store.db);
+        const publishingIntegrations=integrationStatus(env,store.db,session.tenantId);
         // Phase 4C-1 dangerous-pattern audit (Part Q) found this query with NO tenant_id
         // filter at all, despite `daily_briefs` being a real per-tenant table (Phase 3) —
         // a genuine cross-tenant leak, unreachable before a second tenant existed, exactly
@@ -2917,16 +2953,45 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       // 12 call sites — rather than guessed).
       const files={'/favicon.svg':'favicon.svg','/':'home.html','/styles.css':'styles.css','/agent-network.js':'agent-network.js','/assets/screenshots/hero-marketing-overview.png':'assets/screenshots/hero-marketing-overview.png','/assets/screenshots/feature-command-center.png':'assets/screenshots/feature-command-center.png','/assets/screenshots/feature-crm.png':'assets/screenshots/feature-crm.png','/app':'index.html','/app.js':'app.js','/knowledge.js':'knowledge.js','/planning.js':'planning.js','/crm.js':'crm.js','/compliance.js':'compliance.js','/autonomy.js':'autonomy.js','/reporting.js':'reporting.js','/format.js':'format.js','/content.js':'content.js','/memory.js':'memory.js','/integrations.js':'integrations.js','/team.js':'team.js','/style.css':'style.css','/site.webmanifest':'site.webmanifest','/i18n.js':'i18n.js','/icons/icon-192.png':'icons/icon-192.png','/icons/icon-512.png':'icons/icon-512.png','/icons/icon-maskable-512.png':'icons/icon-maskable-512.png','/icons/apple-touch-icon.png':'icons/apple-touch-icon.png'};
       for(const file of ['components/ui/index.js','components/layout/app-shell.js','components/workspace-switcher.js','pages/workspace.js','pages/control-center.js','pages/invite.js','pages/onboarding.js','pages/account.js','pages/recovery.js','pages/new-workspace.js','pages/platform.js','pages/command-center.js','pages/workflows.js','pages/marketing.js','pages/whatsapp.js',...['fonts','tokens','base','components','layout','pages'].map(name=>'styles/'+name+'.css')])files['/'+file]=file;
-      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter','workflows','marketing','whatsapp'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
+      for(const loc of ['ar','en'])for(const domain of ['common','navigation','overview','sales','calendar','weeklyReport','content','agents','memory','integrations','operationsLog','team','forms','validation','statuses','errors','workspace','controlCenter','invitations','onboarding','account','platform','commandCenter','workflows','marketing','whatsapp','partnerships','customers'])files[`/locales/${loc}/${domain}.json`]=`locales/${loc}/${domain}.json`;
       // Website AI Chat Widget embed script (spec Part 87) — served publicly, unauthenticated,
       // exactly like /app.js already is; the ONE file a tenant embeds on their OWN external
       // website. Carries no secret — only the public, non-secret widget id the tenant pastes
       // into its own data attribute.
       files['/widget-embed.js']='widget-embed.js';
+      for(const page of PORTAL_PAGES)files[page]='partners.html';
+      for(const file of ['app','api','ui','i18n','pages-public','pages-partner'])files[`/partner-portal/${file}.js`]=`partner-portal/${file}.js`;
+      files['/partner-portal/portal.css']='partner-portal/portal.css';
+      for(const loc of ['ar','en'])files[`/partner-portal/i18n/${loc}.json`]=`partner-portal/i18n/${loc}.json`;
+      files['/pages/partnerships.js']='pages/partnerships.js';
+      files['/pages/customers.js']='pages/customers.js';
+      for(const file of ['app','pages','pages-work','pages-account','kit'])files[`/client-portal/${file}.js`]=`client-portal/${file}.js`;
+      files['/client-portal/client.css']='client-portal/client.css';
+      for(const loc of ['ar','en'])files[`/client-portal/i18n/${loc}.json`]=`client-portal/i18n/${loc}.json`;
+      if(req.method==='GET' && (url.pathname==='/client' || url.pathname.startsWith('/client/')))files[url.pathname]='client.html';
+      files['/site-nav.js']='site-nav.js';
+      files['/assets/og-frost.png']='assets/og-frost.png';
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
+      if(req.method==='GET' && (url.pathname==='/robots.txt'||url.pathname==='/sitemap.xml')) {
+        // Crawlers: the marketing page is indexable, the dashboard and API are not. The sitemap
+        // needs an absolute URL, so it only exists once PUBLIC_ORIGIN is configured.
+        const origin=publicOriginOf(env);
+        if(url.pathname==='/sitemap.xml' && !origin)return send(404,{error:'Not found'});
+        const text=url.pathname==='/robots.txt'
+          ?`User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /partners/\nDisallow: /client/\nDisallow: /r/\nDisallow: /api/\n${origin?`Sitemap: ${origin}/sitemap.xml\n`:''}`
+          :`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>${origin}/</loc></url><url><loc>${origin}/partners</loc></url></urlset>\n`;
+        res.writeHead(200,{'Content-Type':url.pathname==='/robots.txt'?'text/plain; charset=utf-8':'application/xml; charset=utf-8','Cache-Control':'no-cache'});
+        return res.end(text);
+      }
       if(req.method==='GET' && files[url.pathname]) {
         const file=files[url.pathname];
-        const contents=await readFile(new URL('../public/'+file,import.meta.url));
+        let contents=await readFile(new URL('../public/'+file,import.meta.url));
+        if(file==='home.html') {
+          // Social/SEO tags need absolute URLs: fill them from PUBLIC_ORIGIN when set, otherwise
+          // fall back to root-relative URLs and omit the canonical link (never a guessed domain).
+          const origin=publicOriginOf(env);
+          contents=Buffer.from(contents.toString('utf8').replaceAll('{{ORIGIN}}',origin).replace('{{CANONICAL}}',origin?`<link rel="canonical" href="${origin}/">`:''));
+        }
         const type=file.endsWith('.svg')?'image/svg+xml':file.endsWith('.js')?'text/javascript; charset=utf-8':file.endsWith('.css')?'text/css; charset=utf-8':file.endsWith('.woff2')?'font/woff2':file.endsWith('.webmanifest')?'application/manifest+json':file.endsWith('.png')?'image/png':file.endsWith('.json')?'application/json; charset=utf-8':'text/html; charset=utf-8';
         // `img-src` explicitly allows `data:` alongside `'self'` — a real, existing feature
         // (a content item's optional `assetUrl`, src/domain.js) can be a self-contained inline
@@ -2946,9 +3011,13 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         return res.end(contents);
       }
       send(404,{error:'Not found'});
-    } catch(error) {send(error instanceof ConnectorError?502:error.status||400,{error:error.message});}
+    } catch(error) {send(error instanceof ConnectorError?502:error.status||400,{error:error.message,...(error.details?{details:error.details}:{})});}
   });
   return {server,store,scheduler};
+}
+// PUBLIC_ORIGIN normalised to a bare origin (no path/trailing slash), or '' when unset/invalid.
+function publicOriginOf(env) {
+  try{return env?.PUBLIC_ORIGIN?new URL(env.PUBLIC_ORIGIN).origin:'';}catch{return '';}
 }
 export async function startServer() {
   console.log('HyperCool: initializing application');

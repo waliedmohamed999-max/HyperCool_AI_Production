@@ -67,7 +67,7 @@ async function confirmActionPrompt() {
 }
 
 // --- Login as the real investor demo account --------------------------------------------------
-await page.goto(base + '/');
+await page.goto(base + '/app');
 await page.waitForSelector('#auth-form [name=username]', { state: 'visible' });
 await page.fill('#auth-form [name=username]', 'investor_demo');
 await page.fill('#auth-form [name=password]', DEMO_PASSWORD);

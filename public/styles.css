@@ -219,7 +219,7 @@ h1, h2, h3 {
 .section.tint { background: var(--color-mist-violet); }
 .section-head { text-align: center; max-width: 640px; margin: 0 auto 48px; }
 .section-head .pill { margin-bottom: 16px; }
-.section-head h2 { font-size: var(--text-heading); }
+.section-head :is(h1, h2) { font-size: var(--text-heading); }
 .section-head p { color: var(--color-slate); font-size: 16px; margin-top: 16px; }
 
 /* --- Feature grid + icon tiles --- */
@@ -317,7 +317,7 @@ h1, h2, h3 {
    navbar already carries the HyperCool logo), no page-corner-anchored floating cards. */
 .ann-hero { position: relative; z-index: 1; margin-bottom: 20px; }
 .ann-hero-headline { max-width: 800px; margin: 0 auto; }
-.ann-hero-headline h2 { font-size: 52px; line-height: 1.22; }
+.ann-hero-headline :is(h1, h2) { font-size: 52px; line-height: 1.22; }
 .ann-hero-headline p { max-width: 620px; margin-inline: auto; font-size: 18px; line-height: 1.6; }
 /* First DOM child of a flex row lands at the PHYSICAL RIGHT in this RTL page — the status
    card is written first so it renders right, the event card second so it renders left. */
@@ -661,7 +661,7 @@ footer::before {
   background: linear-gradient(90deg, transparent, var(--color-mist) 25%, var(--color-mist) 75%, transparent);
 }
 .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 32px; margin-bottom: 48px; position: relative; z-index: 1; }
-footer h4 { font-size: var(--text-body-sm); font-weight: 700; color: var(--color-deep-iris); margin-bottom: 16px; }
+footer h3 { font-size: var(--text-body-sm); font-weight: 700; color: var(--color-deep-iris); margin-bottom: 16px; }
 footer a, footer p { color: var(--color-slate); font-size: var(--text-body-sm); }
 footer ul a { display: inline-flex; transition: color .15s ease; }
 footer ul a:hover { color: var(--color-royal-amethyst); }
@@ -682,7 +682,6 @@ footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-directi
   .feature-grid, .footer-grid { grid-template-columns: 1fr; }
   .stats-strip { grid-template-columns: 1fr 1fr; gap: 20px 16px; padding: 28px 20px; }
   .stats-strip .stat:nth-child(3)::before { display: none; }
-  .site-nav nav { display: none; }
   .cta-banner { margin: 0 16px; padding: 40px 24px; }
 }
 
@@ -696,7 +695,7 @@ footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-directi
 .showcase-title { font-size: 28px; margin-bottom: 16px; }
 .subhead-32 { font-size: 32px; margin: 16px 0; }
 .footer-brand-copy { margin-top: 16px; max-width: 320px; }
-.caption-note { color: var(--color-ash); font-size: 13px; margin-top: 12px; }
+.caption-note { color: var(--color-slate); font-size: 13px; margin-top: 12px; }
 
 /* Wider content container reserved for these three storytelling sections — the site's
    normal .wrap (1200px) reads too narrow for large mockups/visual composition at these
@@ -1072,3 +1071,22 @@ footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-directi
 .pricing-features li { font-size: var(--text-body-sm); color: var(--color-charcoal); padding-inline-start: 22px; position: relative; }
 .pricing-features li::before { content: '✓'; position: absolute; inset-inline-start: 0; color: var(--color-deep-iris); font-weight: 700; }
 .pricing-card .btn { margin-top: auto; text-align: center; }
+
+/* --- Accessibility + responsive navigation (public site) --- */
+.skip-link { position: absolute; inset-inline-start: 12px; top: -60px; z-index: 100; padding: 10px 16px; background: var(--color-deep-iris); color: #fff; border-radius: 10px; font-size: 14px; }
+.skip-link:focus { top: 12px; }
+.nav-toggle { display: none; width: 42px; height: 42px; padding: 0; border: 1px solid var(--color-mist); border-radius: 12px; background: var(--color-canvas); cursor: pointer; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
+.nav-toggle span { display: block; width: 18px; height: 2px; border-radius: 2px; background: var(--color-deep-iris); transition: transform .2s ease, opacity .2s ease; }
+.site-nav.menu-open .nav-toggle span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.site-nav.menu-open .nav-toggle span:nth-child(2) { opacity: 0; }
+.site-nav.menu-open .nav-toggle span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+@media (max-width: 760px) {
+  .site-nav { flex-wrap: wrap; row-gap: 0; }
+  .nav-toggle { display: inline-flex; order: 3; }
+  .site-nav .nav-actions { order: 2; margin-inline-start: auto; }
+  .site-nav nav { display: none; order: 4; flex-basis: 100%; flex-direction: column; align-items: stretch; gap: 4px; padding: 12px 0 6px; margin-top: 10px; border-top: 1px solid var(--color-mist); }
+  .site-nav.menu-open nav { display: flex; }
+  .site-nav nav .pill-nav-btn { padding: 12px 14px; }
+}
+@media (max-width: 420px) { .site-nav .nav-actions .btn-ghost { display: none; } }
+.ann-workflow-head h2 { font-size: var(--text-subheading); }

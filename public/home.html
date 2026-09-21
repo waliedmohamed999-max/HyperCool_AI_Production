@@ -7,20 +7,34 @@
 <meta name="description" content="منصة Frost تجمع وكلاء ذكاء اصطناعي متخصصين في التسويق والمبيعات والمحتوى والتشغيل، وتديرهم كنظام عمل واحد تحت سيطرتك.">
 <title>Frost | فريق ذكاء اصطناعي متكامل لإدارة أعمالك</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="application-name" content="Frost">
+<meta name="theme-color" content="#1F2A3D">
+<meta name="robots" content="index,follow">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=frost1">
+{{CANONICAL}}
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="Frost">
 <meta property="og:title" content="Frost | فريق ذكاء اصطناعي متكامل لإدارة أعمالك">
 <meta property="og:description" content="منصة Frost تجمع وكلاء ذكاء اصطناعي متخصصين في التسويق والمبيعات والمحتوى والتشغيل، وتديرهم كنظام عمل واحد تحت سيطرتك.">
 <meta property="og:locale" content="ar_AR">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="{{ORIGIN}}/assets/og-frost.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Frost — فريقك الذكي لإدارة العمل">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Frost | فريق ذكاء اصطناعي متكامل لإدارة أعمالك">
 <meta name="twitter:description" content="منصة Frost تجمع وكلاء ذكاء اصطناعي متخصصين في التسويق والمبيعات والمحتوى والتشغيل، وتديرهم كنظام عمل واحد تحت سيطرتك.">
+<meta name="twitter:image" content="{{ORIGIN}}/assets/og-frost.png">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Frost","applicationCategory":"BusinessApplication","operatingSystem":"Web","inLanguage":"ar","description":"منصة Frost تجمع وكلاء ذكاء اصطناعي متخصصين في التسويق والمبيعات والمحتوى والتشغيل، وتديرهم كنظام عمل واحد تحت سيطرتك.","url":"{{ORIGIN}}/","image":"{{ORIGIN}}/assets/og-frost.png"}</script>
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+<a class="skip-link" href="#main">انتقل إلى المحتوى</a>
 
-<div class="site-nav wrap">
+<header class="site-nav wrap" id="site-header">
   <a href="#agents" class="brand-lockup"><span class="brand-mark">F</span><span dir="ltr" class="wordmark-bold">FROST</span></a>
-  <nav>
+  <button class="nav-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="site-menu" aria-label="القائمة"><span></span><span></span><span></span></button>
+  <nav id="site-menu" aria-label="التنقل الرئيسي">
     <a class="pill-nav-btn" href="#features">المميزات</a>
     <a class="pill-nav-btn" href="#agents">الوكلاء</a>
     <a class="pill-nav-btn" href="#channels">القنوات</a>
@@ -31,7 +45,9 @@
     <a class="btn btn-ghost btn-sm" href="/app#overview">تسجيل الدخول</a>
     <a class="btn btn-filled btn-sm" href="/app#overview">ابدأ الآن</a>
   </div>
-</div>
+</header>
+
+<main id="main">
 
 <section class="section agent-network-section" id="agents">
   <span class="ann-bg-accent" aria-hidden="true"></span>
@@ -41,7 +57,7 @@
     <div class="ann-hero">
       <div class="section-head ann-hero-headline">
         <span class="pill"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="12" height="12"><path d="M12 3l1.6 5.4L19 10l-5.4 1.6L12 17l-1.6-5.4L5 10l5.4-1.6L12 3Z"/></svg>فريق كامل، بعقل واحد</span>
-        <h2>12 وكيل ذكاء اصطناعي،<br>يديرهم <span class="ann-frost-highlight">Frost</span> كفريق واحد</h2>
+        <h1>12 وكيل ذكاء اصطناعي،<br>يديرهم <span class="ann-frost-highlight">Frost</span> كفريق واحد</h1>
         <p>أخبر Frost بالهدف، وهو يخطط ويوزّع المهام على الوكلاء المناسبين، يراجع التنفيذ ويعرض عليك القرارات الحساسة قبل اعتمادها.</p>
       </div>
 
@@ -88,7 +104,7 @@
     <div class="ann-workflow" id="ann-workflow">
       <div class="section-head ann-workflow-head">
         <span class="pill">مثال حي</span>
-        <h3>شاهد كيف يعمل الفريق</h3>
+        <h2>شاهد كيف يعمل الفريق</h2>
         <p>مثال واحد من الفكرة إلى النشر والتحسين.</p>
       </div>
       <ol class="ann-workflow-track" id="ann-workflow-track"></ol>
@@ -525,6 +541,8 @@
   </div>
 </section>
 
+</main>
+
 <footer class="wrap">
   <div class="footer-grid">
     <div>
@@ -532,7 +550,7 @@
       <p class="footer-brand-copy">مركز تشغيل واحد للتسويق والمبيعات وخدمة العملاء، بوكلاء ذكاء اصطناعي حقيقيين واعتماد بشري إلزامي.</p>
     </div>
     <div>
-      <h4>المنتج</h4>
+      <h3>المنتج</h3>
       <ul>
         <li><a href="#features">المميزات</a></li>
         <li><a href="#agents">الوكلاء</a></li>
@@ -542,14 +560,15 @@
       </ul>
     </div>
     <div>
-      <h4>الحساب</h4>
+      <h3>الحساب</h3>
       <ul>
         <li><a href="/app#overview">تسجيل الدخول</a></li>
         <li><a href="/app#overview">إنشاء حساب</a></li>
+        <li><a href="/partners">برنامج الشركاء</a></li>
       </ul>
     </div>
     <div>
-      <h4>تواصل معنا</h4>
+      <h3>تواصل معنا</h3>
       <ul>
         <li><a href="/app#overview">لوحة التحكم</a></li>
       </ul>
@@ -562,5 +581,6 @@
 </footer>
 
 <script defer src="/agent-network.js"></script>
+<script defer src="/site-nav.js"></script>
 </body>
 </html>

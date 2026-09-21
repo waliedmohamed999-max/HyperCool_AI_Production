@@ -48,7 +48,7 @@ page.on('pageerror', err => { console.log('  [page error]', err.message); failur
 // like tests/marketing.test.js's own signupAndCreateWorkspace helper, just driven from a page
 // context instead of node-fetch so the same cookie jar backs the rest of this real browser
 // session.)
-await page.goto(base + '/');
+await page.goto(base + '/app');
 await page.waitForSelector('#auth-form [name=username]', { state: 'visible' });
 const signupResult = await page.evaluate(async () => {
   const res = await fetch('/api/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'مالك تجريبي', username: 'mkt_journey_owner', email: 'mkt_journey_owner@example.com', password: 'a-long-test-password-999' }) });
@@ -76,7 +76,7 @@ check('real workspace created', wsResult.status === 201);
 // server-side state) — it needs a real reload to run its render() cycle again and discover
 // the now-resolved session + workspace, exactly like a person refreshing after signing up in
 // another tab would.
-await page.goto(base + '/#marketing');
+await page.goto(base + '/app#marketing');
 await page.reload();
 await page.waitForSelector('#session-bar', { state: 'visible', timeout: 15000 });
 await page.waitForSelector('#marketing #mkt-health', { state: 'visible', timeout: 15000 });

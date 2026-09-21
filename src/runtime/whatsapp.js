@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {ConnectorError} from '../connectors.js';
 import {resolveMetaAccessToken,connectedWhatsAppPhoneNumberId} from './meta-oauth.js';
 import {resolveActiveTenantId} from '../tenancy.js';
+import {envForTenant} from './credential-policy.js';
 import {getLead,listLeads,stages,recordChannelMessage} from '../crm.js';
 import {recordAudit} from '../audit.js';
 
@@ -89,9 +90,9 @@ export async function sendWhatsAppMessage({store,env,fetcher=fetch},{to,text,tem
  if(!externalMessageId)return {status:'FAILED',errorClass:'OTHER',errorDetail:'No message id in provider response'};
  return {status:'SENT',externalMessageId};
 }
-export async function testWhatsAppConnection({store,env,fetcher=fetch}) {
- const resolved=resolveMetaAccessToken({store,env},'whatsapp');
- const phoneNumberId=connectedWhatsAppPhoneNumberId(store.db,env);
+export async function testWhatsAppConnection({store,env,fetcher=fetch},tenantId=null) {
+ const resolved=resolveMetaAccessToken({store,env},'whatsapp',tenantId);
+ const phoneNumberId=connectedWhatsAppPhoneNumberId(store.db,env,tenantId);
  if(!resolved||!phoneNumberId)return {result:'NOT_CONFIGURED',code:'WHATSAPP_NOT_CONFIGURED'};
  const {ok,status,data}=await requestJson(fetcher,`${GRAPH_BASE}/${phoneNumberId}?fields=display_phone_number,verified_name`,{headers:{authorization:`Bearer ${resolved.token}`}});
  if(!ok)return {result:classifySendError(status,data)==='AUTH'?'AUTH_FAILED':'NETWORK_ERROR',code:data?.error?.message||'WHATSAPP_TEST_FAILED'};
@@ -104,9 +105,9 @@ export async function testWhatsAppConnection({store,env,fetcher=fetch}) {
  */
 export async function syncWhatsAppTemplates({store,env,fetcher=fetch},tenantId=null) {
  const resolvedTenantId=tenantId||resolveActiveTenantId(store.db);
- const resolved=resolveMetaAccessToken({store,env},'whatsapp');
- const meta=store.db.prepare('SELECT metadata FROM integration_credentials WHERE provider=?').get('meta');
- const businessAccountId=env.WHATSAPP_BUSINESS_ACCOUNT_ID||(meta?.metadata?JSON.parse(meta.metadata)?.whatsapp?.businessAccountId:null);
+ const resolved=resolveMetaAccessToken({store,env},'whatsapp',resolvedTenantId);
+ const meta=store.db.prepare('SELECT metadata FROM integration_credentials WHERE provider=? AND tenant_id=?').get('meta',resolvedTenantId);
+ const businessAccountId=envForTenant(store.db,env,resolvedTenantId).WHATSAPP_BUSINESS_ACCOUNT_ID||(meta?.metadata?JSON.parse(meta.metadata)?.whatsapp?.businessAccountId:null);
  if(!resolved||!businessAccountId)throw new ConnectorError('WHATSAPP_NOT_CONFIGURED');
  const {ok,status,data}=await requestJson(fetcher,`${GRAPH_BASE}/${businessAccountId}/message_templates?limit=100`,{headers:{authorization:`Bearer ${resolved.token}`}});
  if(!ok)throw new ConnectorError(classifySendError(status,data)==='AUTH'?'CREDENTIALS_REJECTED':'PROVIDER_ERROR');

@@ -15,10 +15,13 @@ function mapError(code) {
  }[code]||CONNECTOR_ERROR_CODE.REMOTE_SERVER_ERROR;
 }
 
+// A connection is tested/used with ITS OWN credential only: the server's static SALLA_ACCESS_TOKEN belongs to the operator's
+// workspace and must never stand in for another tenant's missing or revoked credential.
+const ownCredentialOnly=env=>({...env,SALLA_ACCESS_TOKEN:undefined});
 export const sallaAdapter={
  async healthCheck({env,fetcher,credential}) {
   const accessToken=credential?.payload?.accessToken||null;
-  const result=await testSallaConnection({env,fetcher,accessToken});
+  const result=await testSallaConnection({env:ownCredentialOnly(env),fetcher,accessToken});
   if(result.result==='OK')return {status:'OK'};
   return {status:result.result,errorCode:mapError(result.code)};
  },
@@ -26,7 +29,7 @@ export const sallaAdapter={
   const accessToken=credential?.payload?.accessToken||null;
   if(action.slug!=='sync_products')return {status:'ERROR',errorCode:CONNECTOR_ERROR_CODE.CAPABILITY_MISSING};
   try {
-   const products=await importSalla({env,fetcher,accessToken});
+   const products=await importSalla({env:ownCredentialOnly(env),fetcher,accessToken});
    return {status:'OK',output:{count:products.length,products}};
   } catch(error) {
    const code=error instanceof ConnectorError?error.code:'NETWORK_OR_TIMEOUT';

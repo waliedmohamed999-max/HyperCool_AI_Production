@@ -6,6 +6,7 @@ import {listAutonomyChanges} from './autonomy.js';
 import {listLeads,listFollowups} from './crm.js';
 import {currentMemory} from './knowledge.js';
 import {resolveActiveTenantId} from './tenancy.js';
+import {envForTenant} from './runtime/credential-policy.js';
 import {listContent} from './content.js';
 import {listAuditLog,recordAudit} from './audit.js';
 
@@ -204,7 +205,7 @@ export function buildExecutiveReport(store,weekStart,{agents=[],agentRuns=[],esc
  return {
   ...base,
   period:{start:base.weekStart,end:base.weekEnd,previousStart:previousBase.weekStart,previousEnd:previousBase.weekEnd},
-  dataStatus:{crmConnected:true,socialConnected:false,storeConnected:!!env.SALLA_ACCESS_TOKEN,aiConfigured:!!(env.ANTHROPIC_API_KEY&&env.ANTHROPIC_MODEL)},
+  dataStatus:{crmConnected:true,socialConnected:false,storeConnected:!!envForTenant(store.db,env,tenantId).SALLA_ACCESS_TOKEN,aiConfigured:!!(env.ANTHROPIC_API_KEY&&env.ANTHROPIC_MODEL)},
   kpis,funnel,pipeline,agents:agentMetrics,approvalsAndRisks,market,nextWeekPlan,quickSummary
  };
 }

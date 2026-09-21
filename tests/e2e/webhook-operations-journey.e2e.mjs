@@ -26,7 +26,7 @@ page.on('pageerror', err => console.log('  [page error]', err.message));
 function sign(body, secret) { return 'sha256=' + createHmac('sha256', secret).update(body).digest('hex'); }
 function orderPayload(id) { return JSON.stringify({ event: 'order.created', id, data: { order: { id: 'ord_1', total: 42 } } }); }
 
-await page.goto(base + '/');
+await page.goto(base + '/app');
 await page.waitForSelector('#auth-form [name=username]', { state: 'visible' });
 await page.fill('#auth-form [name=name]', 'Platform Admin');
 await page.fill('#auth-form [name=username]', 'platform_admin');

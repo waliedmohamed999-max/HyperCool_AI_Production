@@ -1,5 +1,6 @@
 import {randomBytes} from 'node:crypto';
 import {ConnectorError} from '../connectors.js';
+import {envForTenant} from './credential-policy.js';
 import {getCredentials,saveCredentials,clearCredentials,getCredentialsMeta,isExpiringSoon,credentialsConfigured} from './credentials.js';
 
 // Meta's real OAuth 2.0 (Facebook Login for Business) endpoints and Graph API base, per
@@ -18,10 +19,12 @@ export function metaOAuthConfigured(env) {
  return !!(env.META_APP_ID && env.META_APP_SECRET && env.META_REDIRECT_URI);
 }
 const pendingStates=new Map();
-export function createMetaAuthorizeUrl(env,userId) {
+// `externalState` (optional): a DB-backed, tenant-bound single-use state from integrations/oauth-state.js (used by the merchant
+// portal flow). When given, this function neither generates nor remembers an in-memory state.
+export function createMetaAuthorizeUrl(env,userId,externalState=null) {
  if(!metaOAuthConfigured(env))throw new ConnectorError('META_OAUTH_NOT_CONFIGURED');
- const state=randomBytes(24).toString('base64url');
- pendingStates.set(state,{userId,at:Date.now()});
+ const state=externalState||randomBytes(24).toString('base64url');
+ if(!externalState)pendingStates.set(state,{userId,at:Date.now()});
  const url=new URL(AUTHORIZE_URL);
  url.searchParams.set('client_id',env.META_APP_ID);
  url.searchParams.set('redirect_uri',env.META_REDIRECT_URI);
@@ -114,6 +117,7 @@ export function disconnectMeta(db,tenantId=null) {
  * worked breaks. Returns null (never throws) when nothing is usable.
  */
 export function resolveMetaAccessToken({store,env},kind='page',tenantId=null) {
+ env=envForTenant(store.db,env,tenantId);
  if(credentialsConfigured(env)) {
   let creds;
   try {creds=getCredentials(store.db,env,'meta',tenantId);} catch {creds=null;}
@@ -129,6 +133,7 @@ export function resolveMetaAccessToken({store,env},kind='page',tenantId=null) {
  return staticToken?{token:staticToken,source:'static',metadata:null}:null;
 }
 export function connectedWhatsAppPhoneNumberId(db,env,tenantId=null) {
+ env=envForTenant(db,env,tenantId);
  if(env.WHATSAPP_PHONE_NUMBER_ID)return env.WHATSAPP_PHONE_NUMBER_ID;
  const meta=getCredentialsMeta(db,'meta',tenantId);
  return meta?.metadata?.whatsapp?.phoneNumberId||null;

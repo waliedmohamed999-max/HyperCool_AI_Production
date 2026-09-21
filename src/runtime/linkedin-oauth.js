@@ -1,5 +1,6 @@
 import {randomBytes} from 'node:crypto';
 import {ConnectorError} from '../connectors.js';
+import {envForTenant} from './credential-policy.js';
 import {getCredentials,saveCredentials,clearCredentials,getCredentialsMeta,updateCredentialsMetadata,isExpiringSoon,credentialsConfigured} from './credentials.js';
 
 // LinkedIn's real OAuth 2.0 endpoints per the LinkedIn Developer docs. Confirm against your
@@ -21,10 +22,12 @@ export function linkedInOAuthConfigured(env) {
  return !!(env.LINKEDIN_CLIENT_ID && env.LINKEDIN_CLIENT_SECRET && env.LINKEDIN_REDIRECT_URI);
 }
 const pendingStates=new Map();
-export function createLinkedInAuthorizeUrl(env,userId) {
+// `externalState` (optional): a DB-backed, tenant-bound single-use state from integrations/oauth-state.js (used by the merchant
+// portal flow). When given, this function neither generates nor remembers an in-memory state.
+export function createLinkedInAuthorizeUrl(env,userId,externalState=null) {
  if(!linkedInOAuthConfigured(env))throw new ConnectorError('LINKEDIN_OAUTH_NOT_CONFIGURED');
- const state=randomBytes(24).toString('base64url');
- pendingStates.set(state,{userId,at:Date.now()});
+ const state=externalState||randomBytes(24).toString('base64url');
+ if(!externalState)pendingStates.set(state,{userId,at:Date.now()});
  const url=new URL(AUTHORIZE_URL);
  url.searchParams.set('response_type','code');
  url.searchParams.set('client_id',env.LINKEDIN_CLIENT_ID);
@@ -57,6 +60,18 @@ export async function exchangeCodeForTokens({env,fetcher=fetch,code}) {
   body:new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:env.LINKEDIN_REDIRECT_URI,client_id:env.LINKEDIN_CLIENT_ID,client_secret:env.LINKEDIN_CLIENT_SECRET}).toString()
  });
  if(!data.access_token)throw new ConnectorError('INVALID_PROVIDER_RESPONSE');
+ return normalizeTokenResponse(data);
+}
+// Refresh is only possible when LinkedIn issued a refresh_token; the caller keeps the old one if the response carries none.
+async function refreshTokens({env,fetcher=fetch,refreshToken}) {
+ const data=await requestJson(fetcher,TOKEN_URL,{
+  method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},
+  body:new URLSearchParams({grant_type:'refresh_token',refresh_token:refreshToken,client_id:env.LINKEDIN_CLIENT_ID,client_secret:env.LINKEDIN_CLIENT_SECRET}).toString()
+ });
+ if(!data.access_token)throw new ConnectorError('INVALID_PROVIDER_RESPONSE');
+ return normalizeTokenResponse(data);
+}
+function normalizeTokenResponse(data) {
  return {
   accessToken:data.access_token,
   // A refresh_token is only ever returned to apps LinkedIn has enrolled in "Programmatic
@@ -121,11 +136,19 @@ function organizationIdFromMeta(db,env,tenantId=null) {
  * LINKEDIN_ACCESS_TOKEN + LINKEDIN_ORGANIZATION_ID pair for a manually-issued token.
  */
 export async function resolveLinkedInAccessToken({store,env,fetcher=fetch},tenantId=null) {
+ env=envForTenant(store.db,env,tenantId);
  if(credentialsConfigured(env)) {
   let creds;
   try {creds=getCredentials(store.db,env,'linkedin',tenantId);} catch {creds=null;}
   if(creds) {
    if(!isExpiringSoon(creds.expiresAt))return {token:creds.accessToken,organizationId:organizationIdFromMeta(store.db,env,tenantId),source:'oauth'};
+   if(creds.refreshToken) {
+    try {
+     const refreshed=await refreshTokens({env,fetcher,refreshToken:creds.refreshToken});
+     saveCredentials(store.db,env,'linkedin',{...refreshed,refreshToken:refreshed.refreshToken||creds.refreshToken,externalAccountId:creds.externalAccountId,metadata:undefined},null,tenantId);
+     return {token:refreshed.accessToken,organizationId:organizationIdFromMeta(store.db,env,tenantId),source:'oauth'};
+    } catch { /* fall through: reauthorization required */ }
+   }
    return env.LINKEDIN_ACCESS_TOKEN?{token:env.LINKEDIN_ACCESS_TOKEN,organizationId:env.LINKEDIN_ORGANIZATION_ID||null,source:'static'}:null;
   }
  }

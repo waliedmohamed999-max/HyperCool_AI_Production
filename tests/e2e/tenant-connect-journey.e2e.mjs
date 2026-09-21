@@ -25,7 +25,7 @@ page.on('pageerror', err => console.log('  [page error]', err.message));
 // The first real signup is both the tenant Owner AND (matching the allowlist) the Platform
 // Admin — this journey uses ONE session for both roles, exactly as a real small-team pilot
 // deployment's very first user genuinely would.
-await page.goto(base + '/');
+await page.goto(base + '/app');
 await page.waitForSelector('#auth-form [name=username]', { state: 'visible' });
 await page.fill('#auth-form [name=name]', 'Platform Admin');
 await page.fill('#auth-form [name=username]', 'platform_admin');

@@ -163,7 +163,7 @@ const { setAutonomy } = await import('../../src/autonomy.js');
 setAutonomy(app.store, 'frost_commander', { level: 'L1', reason: 'E2E test promotion', expectedVersion: 0 }, { id: 'seed', name: 'Seed', role: 'owner' }, {}, tenantRow.id);
 
 // --- Real browser login ----------------------------------------------------------------------
-await page.goto(base + '/');
+await page.goto(base + '/app');
 await page.waitForSelector('#auth-form [name=username]', { state: 'visible' });
 await page.fill('#auth-form [name=username]', 'owner');
 await page.fill('#auth-form [name=password]', 'test-password-long');

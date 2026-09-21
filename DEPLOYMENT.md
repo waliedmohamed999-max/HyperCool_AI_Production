@@ -1,4 +1,4 @@
-# HyperCool — Deployment Guide
+# Frost — Deployment Guide
 
 ## 1. Architecture (as it actually exists in this codebase)
 

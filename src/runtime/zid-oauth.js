@@ -1,4 +1,5 @@
 import {ConnectorError} from '../connectors.js';
+import {safeFetch} from '../connectors/core/ssrf.js';
 
 // Phase 6E — Zid's real OAuth 2.0 endpoints per the official Zid Developers documentation
 // (docs.zid.sa/authorization, reviewed 2026-09-12 — see docs/ZID_CONNECTOR.md for the full
@@ -66,4 +67,19 @@ function normalizeZidTokenResponse(data) {
   expiresAt:Number.isFinite(data.expires_in)?new Date(Date.now()+data.expires_in*1000).toISOString():null,
   scopes:typeof data.scope==='string'?data.scope.split(' '):[]
  };
+}
+
+export async function resolveZidIdentity({env,fetcher,accessToken}) {
+ // docs.zid.sa/get-manager-profile — GET /v1/managers/account/profile, the same real,
+ // read-only endpoint Zid's health check uses (Part 20/21) — resolves the real store id/name
+ // right after a successful token exchange, through the SSRF-hardened transport, never the
+ // bare `fetcher`.
+ const response=await safeFetch('https://api.zid.sa/v1/managers/account/profile',{
+  method:'GET',headers:{authorization:`Bearer ${accessToken}`,'x-manager-token':accessToken},
+  timeoutMs:10000,maxResponseBytes:256*1024,allowedHosts:['api.zid.sa']
+ });
+ if(response.status!==200)return null;
+ const profile=JSON.parse(response.body.toString('utf8')||'null');
+ if(!profile?.store?.id)return null;
+ return {externalAccountId:String(profile.store.id),externalAccountName:profile.store.title||null};
 }

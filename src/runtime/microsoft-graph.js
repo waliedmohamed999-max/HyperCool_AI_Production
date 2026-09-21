@@ -31,8 +31,8 @@ async function authHeaders({store,env,fetcher},tenantId=null) {
  if(!resolved)return null;
  return {authorization:`Bearer ${resolved.token}`};
 }
-export async function testMicrosoftConnection({store,env,fetcher=fetch}) {
- const headers=await authHeaders({store,env,fetcher});
+export async function testMicrosoftConnection({store,env,fetcher=fetch},tenantId=null) {
+ const headers=await authHeaders({store,env,fetcher},tenantId);
  if(!headers)return {result:'NOT_CONFIGURED',code:'MICROSOFT_NOT_CONFIGURED'};
  const {ok,status,data}=await requestJson(fetcher,`${graphBase(env)}/me?$select=displayName,mail,userPrincipalName`,{headers});
  if(!ok)return {result:classifyError(status,data)==='AUTH'?'AUTH_FAILED':'NETWORK_ERROR',code:data?.error?.code||'MICROSOFT_TEST_FAILED'};
@@ -78,15 +78,15 @@ export async function findRecentSentMessage({store,env,fetcher=fetch},{subject,t
  const match=data.value.find(m=>m.toRecipients?.some(r=>r.emailAddress?.address?.toLowerCase()===String(to).toLowerCase()))||data.value[0];
  return match?{externalMessageId:match.id,internetMessageId:match.internetMessageId,externalThreadId:match.conversationId}:null;
 }
-export async function getMessage({store,env,fetcher=fetch},messageId) {
- const headers=await authHeaders({store,env,fetcher});
+export async function getMessage({store,env,fetcher=fetch},messageId,tenantId=null) {
+ const headers=await authHeaders({store,env,fetcher},tenantId);
  if(!headers)return null;
  const {ok,data}=await requestJson(fetcher,`${graphBase(env)}/me/messages/${messageId}?$select=id,internetMessageId,conversationId,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,hasAttachments,isDraft`,{headers});
  return ok?data:null;
 }
 // --- Webhook subscriptions (Graph change notifications) ---------------------------------
-export async function createMailSubscription({store,env,fetcher=fetch},{notificationUrl,clientState}) {
- const headers=await authHeaders({store,env,fetcher});
+export async function createMailSubscription({store,env,fetcher=fetch},{notificationUrl,clientState},tenantId=null) {
+ const headers=await authHeaders({store,env,fetcher},tenantId);
  if(!headers)throw new ConnectorError('MICROSOFT_NOT_CONFIGURED');
  // 4230 minutes (~70.5 hours) is Graph's real maximum for a mail resource subscription —
  // this is why renewal (runtime/scheduler.js) exists, not an oversight.
@@ -108,8 +108,8 @@ export async function renewMailSubscription({store,env,fetcher=fetch},subscripti
  if(!ok)throw new ConnectorError(classifyError(status,data)==='AUTH'?'CREDENTIALS_REJECTED':'PROVIDER_ERROR');
  return {subscriptionId:data.id,expiresAt:data.expirationDateTime};
 }
-export async function deleteMailSubscription({store,env,fetcher=fetch},subscriptionId) {
- const headers=await authHeaders({store,env,fetcher});
+export async function deleteMailSubscription({store,env,fetcher=fetch},subscriptionId,tenantId=null) {
+ const headers=await authHeaders({store,env,fetcher},tenantId);
  if(!headers)return;
  await requestJson(fetcher,`${graphBase(env)}/subscriptions/${subscriptionId}`,{method:'DELETE',headers}).catch(()=>{});
 }

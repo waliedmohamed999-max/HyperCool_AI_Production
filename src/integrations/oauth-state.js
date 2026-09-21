@@ -60,7 +60,9 @@ export function consumeOAuthState(db,token,{userId,integrationDefinitionId},env=
  if(!row)fail(400,'انتهت صلاحية طلب الربط أو أنه غير معروف؛ ابدأ من جديد');
  if(row.used_at)fail(400,'تم استخدام طلب الربط هذا بالفعل؛ ابدأ من جديد');
  if(Date.parse(row.expires_at)<Date.now())fail(400,'انتهت صلاحية طلب الربط (أكثر من 10 دقائق)؛ ابدأ من جديد');
- if(row.user_id!==userId)fail(403,'طلب الربط بدأه مستخدم مختلف');
+ // `userId` undefined = the caller has no session to compare (a provider redirect that arrives without the Strict session cookie):
+ // the state row itself then names the initiating user and the caller re-authorizes that user against the workspace.
+ if(userId!==undefined&&row.user_id!==userId)fail(403,'طلب الربط بدأه مستخدم مختلف');
  if(row.integration_definition_id!==integrationDefinitionId)fail(400,'طلب الربط لا يطابق نوع التكامل');
  db.prepare('UPDATE oauth_states SET used_at=? WHERE id=?').run(new Date().toISOString(),row.id);
  let pkceVerifier=null;
@@ -69,6 +71,11 @@ export function consumeOAuthState(db,token,{userId,integrationDefinitionId},env=
   pkceVerifier=key?decrypt(key,row.pkce_verifier_enc):null;
  }
  return {tenantId:row.tenant_id,userId:row.user_id,integrationDefinitionId:row.integration_definition_id,connectionId:row.connection_id,pkceVerifier,returnUrl:row.return_url};
+}
+/** Reads a state row WITHOUT consuming it (to verify its signature before consuming). Never returns the PKCE verifier. */
+export function peekOAuthState(db,token) {
+ const row=db.prepare('SELECT tenant_id,user_id,integration_definition_id,connection_id,expires_at,used_at,return_url FROM oauth_states WHERE state_token_hash=?').get(hashToken(token));
+ return row?{tenantId:row.tenant_id,userId:row.user_id,integrationDefinitionId:row.integration_definition_id,connectionId:row.connection_id,expiresAt:row.expires_at,usedAt:row.used_at,returnUrl:row.return_url}:null;
 }
 /** Housekeeping only — expired rows are already refused by consumeOAuthState; this just keeps the table from growing forever. Safe to call opportunistically (e.g. from installOAuthStates callers), never required for correctness. */
 export function pruneExpiredOAuthStates(db) {

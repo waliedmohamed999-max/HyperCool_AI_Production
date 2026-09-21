@@ -1,0 +1,50 @@
+/* Merchant portal additions on top of partner-portal/portal.css (same Frost tokens, logical properties, no inline styles). */
+.client .workspace-card{display:grid;gap:8px;padding:12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-2)}
+.client .workspace-card strong{overflow-wrap:anywhere}
+.client .brand-sub{background:var(--accent-soft);color:var(--accent-strong);border-color:transparent}
+
+/* status tones for agent/task/connection/support pills */
+.pill[data-status=connected],.pill[data-status=completed],.pill[data-status=low],.pill[data-status=trial]{background:var(--good-soft);color:var(--good)}
+.pill[data-status=available]{background:var(--info-soft);color:var(--info)}
+.pill[data-status=running],.pill[data-status=queued],.pill[data-status=medium],.pill[data-status=setup_required],.pill[data-status=waiting_for_integration],.pill[data-status=waiting_for_approval],.pill[data-status=paused],.pill[data-status=draft],.pill[data-status=past_due],.pill[data-status=limited]{background:var(--warn-soft);color:var(--warn)}
+.pill[data-status=failed],.pill[data-status=degraded],.pill[data-status=high],.pill[data-status=unavailable],.pill[data-status=disabled_by_admin],.pill[data-status=suspended],.pill[data-status=cancelled],.pill[data-status=archived]{background:var(--critical-soft);color:var(--critical)}
+.pill[data-status=locked_by_plan],.pill[data-status=info],.pill[data-status=pending]{background:var(--surface-3);color:var(--neutral-status)}
+
+.agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--space-4)}
+.agent-card.is-locked,.agent-option.is-locked{opacity:.75;background:var(--surface-2)}
+.agent-card h3 a{color:var(--ink);text-decoration:none}.agent-card h3 a:hover{color:var(--accent-strong)}
+.agent-mini p{font-size:var(--text-sm)}
+.reasons{list-style:none;padding:0;display:grid;gap:4px;font-size:var(--text-sm);color:var(--warn)}
+.reasons li::before{content:'• '}
+.chips-col{list-style:none;padding:0;display:flex;gap:6px;flex-wrap:wrap}
+.warn{color:var(--warn)}.accent{color:var(--accent-strong)}
+.back-link{display:inline-block;margin-block-end:var(--space-3);text-decoration:none}
+.check-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:var(--space-3)}
+.plan-pick{display:grid;gap:var(--space-3)}
+.plan-radio{display:flex;gap:var(--space-3);align-items:flex-start;padding:var(--space-3);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;background:var(--surface)}
+.plan-radio:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.plan-radio input{margin-block-start:5px;inline-size:auto;min-block-size:0}
+.agent-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:var(--space-3)}
+.agent-option{display:flex;gap:var(--space-3);align-items:flex-start;cursor:pointer}
+.agent-option input{inline-size:18px;block-size:18px;min-block-size:0;margin-block-start:5px}
+.onboarding.wide{max-inline-size:980px}
+.dot-btn{display:flex;gap:var(--space-2);align-items:center;background:none;border:0;cursor:pointer;color:inherit;padding:0}
+.meter{display:grid;gap:6px;margin-block:var(--space-3)}
+progress{inline-size:100%;block-size:10px;accent-color:var(--accent)}
+progress.warm{accent-color:#d99a00}progress.hot{accent-color:var(--critical)}
+.list-row.unread{background:var(--accent-soft)}
+.approval{gap:var(--space-3)}
+.bell-link{position:relative}
+.gate{margin-block:var(--space-8)}
+.integration .facts{grid-template-columns:1fr}
+
+/* support-mode bar: unmistakable, always visible */
+.support-bar{position:sticky;inset-block-start:0;z-index:60;display:flex;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap;align-items:center;padding:var(--space-3) var(--space-5);background:#7a1f3d;color:#fff;box-shadow:var(--shadow-overlay)}
+.support-bar .btn-secondary{background:#fff;color:var(--ink)}
+.support-text{display:flex;gap:var(--space-2);align-items:center}.support-actions{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap}
+.support-time strong{font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
+@media (max-width:960px){.support-bar{padding:var(--space-2) var(--space-3)}}
+
+.support-wrap{--support-h:56px}
+.support-wrap .sidebar{inset-block-start:var(--support-h);block-size:calc(100vh - var(--support-h))}
+.support-wrap .topbar{inset-block-start:var(--support-h)}

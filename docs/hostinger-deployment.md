@@ -1,4 +1,4 @@
-# تشغيل HyperCool على Hostinger
+# تشغيل Frost على Hostinger
 
 يعالج هذا التحديث خطأ `ERR_REQUIRE_ASYNC_MODULE`: مشغل LiteSpeed يستخدم `require()`، لذلك نقطة الدخول هي `app.cjs` التي تستورد التطبيق بواسطة `import()` ثم تبدأ السيرفر صراحة. لا تختَر `src/server.js` كنقطة دخول للاستضافة.
 
