@@ -86,7 +86,7 @@ function renderHealth(overview) {
  const m=overview.marketing;
  $('#mkt-health').innerHTML=[
   metric(t('marketing.kpiLeads'),overview.kpis.leadsCreated.value,t('marketing.kpiThisWeek'),'users'),
-  metric(t('marketing.kpiConversion'),overview.kpis.conversionRate.value+'%',t('marketing.kpiThisWeek'),'chart'),
+  metric(t('marketing.kpiConversion'),(overview.kpis.conversionRate.value==null?'—':overview.kpis.conversionRate.value+'%'),t('marketing.kpiThisWeek'),'chart'),
   metric(t('marketing.kpiActiveCampaigns'),m.campaigns.active,t('marketing.kpiRightNow'),'calendar'),
   metric(t('marketing.kpiScheduledContent'),m.content.scheduled,t('marketing.kpiRightNow'),'file'),
   metric(t('marketing.kpiPendingApproval'),m.content.pendingApproval,t('marketing.kpiRightNow'),'file'),

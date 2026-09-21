@@ -13,3 +13,4 @@ dialog{color:var(--ink);background:var(--surface);border:0;box-shadow:var(--shad
 .workspace-select-item{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
 .workspace-select-item strong{display:block;font-size:15px}
 .workspace-select-item span{font-size:12px;color:var(--ink-muted)}
+.table-scroll{max-inline-size:100%;overflow-x:auto}

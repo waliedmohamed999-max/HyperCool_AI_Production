@@ -35,6 +35,14 @@ export const svg = (tag, attrs = {}, ...children) => {
 };
 export const clear = node => { node.replaceChildren(); return node; };
 
+// The native replaceChildren/append/prepend print "null"/"false" for a skipped conditional child; drop those (and flatten arrays) so every page can pass `cond ? node : null`.
+for (const method of ['replaceChildren', 'append', 'prepend']) {
+ const native = Element.prototype[method];
+ Element.prototype[method] = function (...children) {
+  return native.apply(this, children.flat(Infinity).filter(child => child !== null && child !== undefined && child !== false));
+ };
+}
+
 const ICONS = {
  grid: 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z', users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M20 21v-2a4 4 0 0 0-3-3.87 M16 3a4 4 0 0 1 0 8',
  link: 'M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1 M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1', wallet: 'M3 7h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M3 7l2-3h12v3 M16 14h.01',

@@ -262,13 +262,13 @@ function renderDirectory(directory){
  const host=$('#pf-directory');
  if(!directory.length){host.innerHTML=`<h3>${escape(t('platform.directoryTitle'))}</h3>`+empty(t('common.noResults'));return;}
  host.innerHTML=`<h3>${escape(t('platform.directoryTitle'))}</h3>
-  <table><thead><tr>
+  <div class="table-scroll" tabindex="0" role="region"><table><thead><tr>
    <th>${escape(t('platform.table.name'))}</th><th>${escape(t('platform.table.status'))}</th>
    <th>${escape(t('platform.table.trial'))}</th><th>${escape(t('platform.table.owner'))}</th>
    <th>${escape(t('platform.table.onboarding'))}</th><th>${escape(t('platform.table.agents'))}</th>
    <th>${escape(t('platform.table.connections'))}</th><th>${escape(t('platform.table.pilotStatus'))}</th>
    <th>${escape(t('platform.table.actions'))}</th>
-  </tr></thead><tbody>${directory.map(rowHtml).join('')}</tbody></table>`;
+  </tr></thead><tbody>${directory.map(rowHtml).join('')}</tbody></table></div>`;
  for(const tenant of directory) {
   const manage=host.querySelector(`[data-manage="${CSS.escape(tenant.id)}"]`);
   if(manage)manage.onclick=()=>openTenantDetail(tenant);
