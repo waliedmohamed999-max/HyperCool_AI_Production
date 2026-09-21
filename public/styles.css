@@ -139,6 +139,7 @@ h1, h2, h3 {
   color: var(--color-royal-amethyst);
 }
 .pill-nav-btn {
+  white-space: nowrap;
   border-radius: var(--radius-pill);
   padding: 8px 16px;
   font-size: var(--text-body-sm);
@@ -1080,7 +1081,8 @@ footer ul { list-style: none; padding: 0; margin: 0; display: flex; flex-directi
 .site-nav.menu-open .nav-toggle span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
 .site-nav.menu-open .nav-toggle span:nth-child(2) { opacity: 0; }
 .site-nav.menu-open .nav-toggle span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-@media (max-width: 760px) {
+/* the header now carries eight links (incl. the merchant and partner portals): collapse to the menu button before they wrap */
+@media (max-width: 1080px) {
   .site-nav { flex-wrap: wrap; row-gap: 0; }
   .nav-toggle { display: inline-flex; order: 3; }
   .site-nav .nav-actions { order: 2; margin-inline-start: auto; }

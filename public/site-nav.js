@@ -11,5 +11,5 @@
   toggle.addEventListener('click', function () { setOpen(!header.classList.contains('menu-open')); });
   header.querySelectorAll('nav a').forEach(function (link) { link.addEventListener('click', function () { setOpen(false); }); });
   document.addEventListener('keydown', function (event) { if (event.key === 'Escape') { setOpen(false); toggle.focus(); } });
-  window.addEventListener('resize', function () { if (window.innerWidth > 760) setOpen(false); });
+  window.addEventListener('resize', function () { if (window.innerWidth > 1080) setOpen(false); });
 })();
