@@ -176,6 +176,21 @@ The per-method role requirement stays in each handler (`authorize(session,[…])
 
 Known limit (pre-existing, not changed here): the dashboard's own per-provider OAuth callbacks (`/api/integrations/<provider>/oauth/callback`) were designed around a session cookie and a same-site request; a real provider redirect is cross-site (blocked by the `Sec-Fetch-Site` guard and by `SameSite=Strict`). The merchant flow above handles this explicitly; the dashboard flows have only ever been exercised with direct calls in tests and should be re-verified with a real provider before relying on them.
 
+### Merchant OAuth: verification status per provider
+
+Status flags: `implemented` (code, UI, audit, tests exist) · `synthetic_e2e_verified` (the whole flow was exercised over HTTP against a scripted provider: signed state, callback navigation without a session, exchange, verification, storage, reconnect/disconnect, replay/expiry/tamper/tenant-mismatch/role/plan/support cases) · `real_provider_unverified` (never run against the provider's live consoles/accounts) · `production_callback_required` (the callback URL below must be registered in the provider's console before anything can work).
+
+| Provider | implemented | synthetic_e2e_verified | real_provider_unverified | production_callback_required | Notes |
+|---|:-:|:-:|:-:|:-:|---|
+| `salla` | yes | yes (also in a real browser with a scripted provider redirect) | **yes** | **yes** | multiple stores per workspace |
+| `meta` (also WhatsApp) | yes | yes | **yes** | **yes** | needs a Page or a WhatsApp account; long-lived token, no refresh |
+| `microsoft365` | yes | yes | **yes** | **yes** | refresh token honoured |
+| `x` | yes | yes (PKCE verifier checked) | **yes** | **yes** | refresh token honoured |
+| `linkedin` | yes | yes (refresh checked) | **yes** | **yes** | identity-only login (no company page) is refused as unverified |
+| `zid` | yes | **no** — only availability, start and state handling; the store-profile check goes through the SSRF-hardened transport to Zid's real host and is not scripted | **yes** | **yes** | multiple stores per workspace |
+
+None of these providers is production-ready. A provider's status must not be raised until a separate real-account test has been run against it and recorded here.
+
 ## Plans → agents (seven layers, first failure wins)
 
 `platform availability → admin per-workspace override → plan entitlement → account state → onboarding/AI/integration readiness → usage limits → approval policy`.
