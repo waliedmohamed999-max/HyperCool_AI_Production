@@ -85,7 +85,7 @@ onLocaleChange(render);
 
 // ---- layouts -------------------------------------------------------------------------------------------------------------------
 const langSwitch = () => h('div', {class: 'lang-switch', role: 'group', 'aria-label': t('common.language')}, ['ar', 'en'].map(l => h('button', {type: 'button', class: getLocale() === l ? 'active' : '', 'aria-pressed': String(getLocale() === l), onClick: () => setLocale(l), text: l.toUpperCase()})));
-const brand = (href = '/client') => h('a', {class: 'brand', href, 'aria-label': t('c.brand')}, h('span', {class: 'brand-mark', text: 'F'}), h('span', {class: 'brand-word', dir: 'ltr', text: 'FROST'}), h('span', {class: 'brand-sub', text: t('c.merchants')}));
+const brand = (href = '/') => h('a', {class: 'brand', href, 'aria-label': t('c.brand')}, h('span', {class: 'brand-mark', text: 'F'}), h('span', {class: 'brand-word', dir: 'ltr', text: 'FROST'}), h('span', {class: 'brand-sub', text: t('c.merchants')}));
 
 function publicLayout(content) {
  const nav = h('nav', {class: 'top-actions', 'aria-label': t('common.mainNav')},
