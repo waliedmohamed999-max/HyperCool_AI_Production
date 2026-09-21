@@ -2970,6 +2970,7 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
       for(const loc of ['ar','en'])files[`/client-portal/i18n/${loc}.json`]=`client-portal/i18n/${loc}.json`;
       if(req.method==='GET' && (url.pathname==='/client' || url.pathname.startsWith('/client/')))files[url.pathname]='client.html';
       files['/site-nav.js']='site-nav.js';
+      files['/portal-brand.css']='portal-brand.css';
       files['/assets/og-frost.png']='assets/og-frost.png';
       for(const weight of [400,500,600,700])for(const subset of ['arabic','latin'])files[`/fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`]=`fonts/ibm-plex-sans-arabic-${weight}-${subset}.woff2`;
       if(req.method==='GET' && (url.pathname==='/robots.txt'||url.pathname==='/sitemap.xml')) {

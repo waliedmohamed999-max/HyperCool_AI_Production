@@ -1,0 +1,141 @@
+/* Frost brand skin for the partner and merchant portals.
+   Loaded after portal.css / client.css: it re-points the dashboard design tokens at the public site's palette (deep iris, amethyst,
+   mist violet) and restyles the public shell (floating pill header, gradient hero, cards, CTA banner, footer) so /partners and /client
+   look like the main site instead of like a separate product. CSS only: no inline styles, CSP-safe. */
+
+:root {
+  --brand-iris: #26114a;
+  --brand-plum: #312749;
+  --brand-amethyst: #3e0079;
+  --brand-mist: #edecff;
+  --brand-line: #e6e2e3;
+  --brand-slate: #615e6e;
+  --brand-glow: #b99aff;
+
+  --ground: #f6f7fa;
+  --surface-2: #f3f0ff;
+  --ink: var(--brand-plum);
+  --ink-muted: var(--brand-slate);
+  --border: var(--brand-line);
+  --accent: var(--brand-iris);
+  --accent-strong: var(--brand-amethyst);
+  --accent-soft: var(--brand-mist);
+  --on-accent: #fff;
+  --dark-surface: var(--brand-iris);
+  --sidebar-active: var(--brand-mist);
+  --info-soft: #f3f0ff;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 24px;
+  --shadow: 0 2px 4px rgba(18, 55, 105, .08), 0 1px 1px rgba(18, 55, 105, .04), 0 0 0 1px rgba(18, 55, 105, .06);
+  --shadow-overlay: 0 28px 56px -24px rgba(65, 40, 120, .35), 0 10px 24px -12px rgba(65, 40, 120, .18);
+  --shadow-soft: 0 36px 64px -28px rgba(65, 40, 120, .28), 0 12px 24px -12px rgba(65, 40, 120, .12);
+}
+
+body { background: var(--ground); color: var(--ink); }
+h1, h2, h3 { color: var(--brand-iris); }
+
+/* buttons: same weight as the main site (deep iris filled, white ghost) */
+.btn { border-radius: 12px; }
+.btn-primary { background: var(--brand-iris); color: #fff; box-shadow: 0 14px 28px -12px rgba(62, 0, 121, .45); }
+.btn-primary:hover { background: var(--brand-amethyst); color: #fff; }
+.btn-secondary { background: #fff; color: var(--brand-iris); border: 1px solid var(--brand-iris); }
+.btn-secondary:hover { background: var(--brand-mist); color: var(--brand-iris); }
+.btn-lg { padding: 14px 28px; font-size: 16px; }
+
+/* brand lockup: gradient mark like the main site */
+.brand-mark { background: linear-gradient(135deg, #b99aff, #7d43ff); color: #fff; box-shadow: 0 6px 14px -6px rgba(125, 67, 255, .6); }
+.brand-word { color: var(--brand-iris); }
+.brand-sub, .client .brand-sub { background: var(--brand-mist); color: var(--brand-amethyst); border-color: transparent; }
+
+/* ------------------------------------------------------------- public shell (landing, login, register, invite, verify) */
+.public-shell {
+  min-block-size: 100vh;
+  background:
+    radial-gradient(48% 34% at 88% 0%, rgba(251, 207, 232, .75), transparent 70%),
+    radial-gradient(44% 36% at 6% 12%, rgba(191, 219, 254, .7), transparent 70%),
+    linear-gradient(180deg, #f6f2ff 0, var(--ground) 460px);
+}
+.public-header {
+  position: sticky; inset-block-start: 12px; z-index: 30;
+  inline-size: calc(100% - 32px); max-inline-size: 1180px; margin: 12px auto 0;
+  padding: 10px 18px; border: 1px solid var(--brand-line); border-radius: 24px;
+  background: rgba(255, 255, 255, .92); backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-soft);
+}
+.public-header .link { padding: 8px 14px; border-radius: 999px; font-weight: 500; color: var(--brand-plum); white-space: nowrap; }
+.public-header .link:hover { background: var(--brand-mist); color: var(--brand-iris); }
+.public-header .btn { white-space: nowrap; }
+.public-header .top-actions { gap: 8px; flex-wrap: nowrap; }
+
+.public-shell main { max-inline-size: 1180px; }
+.hero { padding: 88px 0 72px; }
+.hero-copy { gap: 20px; max-inline-size: 820px; }
+.hero h1 { font-size: clamp(34px, 5.4vw, 60px); font-weight: 600; line-height: 1.2; color: var(--brand-iris); }
+.hero .lead, .lead { font-size: 19px; line-height: 1.8; color: var(--brand-slate); max-inline-size: 660px; }
+.eyebrow { display: inline-block; padding: 6px 16px; border-radius: 999px; background: var(--brand-mist); color: var(--brand-amethyst); font-weight: 600; letter-spacing: 0; }
+.cta-row { gap: 14px; margin-block-start: 8px; }
+
+.section { padding: 56px 0 24px; gap: 20px; }
+.section > h2 { text-align: center; font-size: clamp(26px, 3.4vw, 38px); font-weight: 600; color: var(--brand-iris); }
+.section > .muted, .section > p { text-align: center; max-inline-size: 640px; margin-inline: auto; color: var(--brand-slate); }
+
+.steps { gap: 20px; }
+.step, .card.agent-mini, .agent-mini {
+  border: 1px solid var(--brand-line); border-radius: 20px; background: #fff; padding: 22px;
+  box-shadow: var(--shadow); transition: transform .2s ease, box-shadow .2s ease;
+}
+.step:hover, .agent-mini:hover { transform: translateY(-3px); box-shadow: var(--shadow-overlay); }
+.step-n { background: linear-gradient(135deg, #7d43ff, var(--brand-amethyst)); box-shadow: 0 8px 16px -8px rgba(62, 0, 121, .6); }
+
+.plan-grid { gap: 22px; }
+.plan-card { border: 1px solid var(--brand-line); border-radius: 24px; padding: 30px 26px; background: #fff; box-shadow: var(--shadow); }
+.plan-card.is-featured { border: 2px solid #7d43ff; box-shadow: var(--shadow-overlay); background: linear-gradient(180deg, #faf7ff, #fff 42%); }
+.plan-flag { background: linear-gradient(135deg, #7d43ff, var(--brand-amethyst)); }
+.plan-rate strong { color: var(--brand-iris); }
+
+/* closing call to action: the same deep-iris banner as the main site */
+.final-cta {
+  margin-block: 56px 0; padding: 56px 32px; border-radius: 24px;
+  background: var(--brand-iris); color: #fff; justify-items: center;
+}
+.final-cta > h2 { color: #fff; }
+.final-cta .btn-primary { background: #fff; color: var(--brand-iris); box-shadow: none; }
+.final-cta .btn-primary:hover { background: var(--brand-mist); color: var(--brand-iris); }
+.final-cta .btn-secondary { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .55); }
+.final-cta .btn-secondary:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+
+.public-footer {
+  margin-block-start: 72px; border-block-start: 0; color: var(--brand-slate);
+  background: linear-gradient(180deg, transparent, rgba(237, 236, 255, .9));
+}
+.public-footer a { color: var(--brand-amethyst); }
+
+/* auth / onboarding cards */
+.auth-card { border-radius: 24px; border: 1px solid var(--brand-line); box-shadow: var(--shadow-soft); padding: 32px; }
+.auth-wrap { padding-block: 48px; }
+
+/* signed-in shell: same palette, calmer chrome */
+.sidebar { border-inline-end-color: var(--brand-line); }
+.nav-link { border-radius: 12px; }
+.nav-link.active { background: var(--brand-mist); color: var(--brand-amethyst); }
+.topbar { border-block-end-color: var(--brand-line); }
+.lang-switch { border-radius: 12px; }
+.lang-switch .active { background: var(--brand-iris); }
+.card, .metric { border-radius: 18px; }
+.banner-info, .notice { border: 1px solid #ddd3ff; border-radius: 14px; }
+.public-shell { display: flex; flex-direction: column; }
+.public-shell > main, .public-shell > .auth-wrap { flex: 1 0 auto; inline-size: 100%; margin-inline: auto; }
+.public-footer { padding: 24px 32px; }
+
+@media (max-width: 720px) {
+  .public-header { inset-block-start: 8px; inline-size: calc(100% - 20px); margin-block-start: 8px; padding: 8px 12px; border-radius: 20px; }
+  .public-header .top-actions .link { display: none; }
+  .hero { padding: 56px 0 40px; }
+  .final-cta { padding: 40px 20px; border-radius: 20px; }
+  .auth-card { padding: 22px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .step, .agent-mini { transition: none; }
+  .step:hover, .agent-mini:hover { transform: none; }
+}
