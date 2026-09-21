@@ -4,6 +4,9 @@ import {mkdtemp,mkdir,rm,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
+import {randomBytes} from 'node:crypto';
+const qaPassword=()=>`${randomBytes(12).toString('base64url')}-Aa1!`; // throwaway account in a temporary database, random per run
+const QA_PASSWORD=qaPassword();
 const dir=await mkdtemp(join(tmpdir(),'hc-mobile-'));
 const app=await createApp({dataDir:dir,env:{}});
 await new Promise(r=>app.server.listen(0,'127.0.0.1',r));
@@ -15,7 +18,7 @@ try {
  page.on('pageerror',e=>errors.push(e.message));
  await page.goto(`http://127.0.0.1:${app.server.address().port}`);
  assert.equal(await page.locator('.mobile-tabbar').isVisible(),false);
- for(const [name,value] of Object.entries({name:'فحص الموبايل',username:'mobile_owner',password:'mobile-test-password'}))await page.locator(`#auth-form [name=${name}]`).fill(value);
+ for(const [name,value] of Object.entries({name:'فحص الموبايل',username:'mobile_owner',password:QA_PASSWORD}))await page.locator(`#auth-form [name=${name}]`).fill(value);
  await page.locator('#auth-form button').click();await page.locator('#overview-dashboard').waitFor();
  await page.evaluate(()=>document.querySelector('#message').replaceChildren());
  await page.locator('.overview-shortcuts button').first().click();

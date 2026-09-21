@@ -5,7 +5,9 @@ import AxeBuilder from '@axe-core/playwright';
 import {mkdtemp,mkdir,readFile,readdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
+const qaPassword=()=>`${randomBytes(12).toString('base64url')}-Aa1!`; // throwaway account in a temporary database, random per run
+const QA_PASSWORD=qaPassword();
 const output='artifacts/handoff';await mkdir(output,{recursive:true});
 const inventory=[];
 async function scan(path){for(const entry of await readdir(path,{withFileTypes:true})){const file=path+'/'+entry.name;if(entry.isDirectory())await scan(file);else if(/\.(js|mjs|css|html|json|md)$/.test(file)){const contents=await readFile(file);inventory.push({path:file,bytes:contents.length,lines:contents.toString('utf8').split('\n').length,sha256:createHash('sha256').update(contents).digest('hex')});}}}
@@ -16,7 +18,7 @@ const result={capturedAt:new Date().toISOString(),node:process.version,inventory
 await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));let browser;
 try{
  browser=await chromium.launch({channel:'msedge',headless:true});const context=await browser.newContext(),page=await context.newPage();page.on('pageerror',e=>result.browserErrors.push(e.message));page.on('console',m=>{if(m.type()==='error')result.browserErrors.push(m.text());});
- const base=`http://127.0.0.1:${app.server.address().port}`;await page.goto(base);for(const [name,value] of Object.entries({name:'حساب فحص التسليم',username:'handoff_owner',password:'temporary-handoff-password'}))await page.locator(`#auth-form [name=${name}]`).fill(value);await page.locator('#auth-form button').click();await page.locator('#overview-dashboard').waitFor();
+ const base=`http://127.0.0.1:${app.server.address().port}`;await page.goto(base);for(const [name,value] of Object.entries({name:'حساب فحص التسليم',username:'handoff_owner',password:QA_PASSWORD}))await page.locator(`#auth-form [name=${name}]`).fill(value);await page.locator('#auth-form button').click();await page.locator('#overview-dashboard').waitFor();
  const auditContext=await browser.newContext({storageState:await context.storageState(),bypassCSP:true}),auditPage=await auditContext.newPage();await auditPage.goto(base);await auditPage.locator('#overview-dashboard').waitFor();
  for(const width of [1440,1920,768,390])for(const route of ['overview','crm','planning','reports','content','agents','knowledge','integrations','audit','users']){
   await page.setViewportSize({width,height:1000});await page.evaluate(route=>document.querySelector(`nav a[href="#${route}"]`).click(),route);await page.evaluate(()=>document.querySelector('#message').replaceChildren());await page.screenshot({path:`${output}/${route}-${width}.png`,fullPage:true});

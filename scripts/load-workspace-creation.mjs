@@ -9,6 +9,8 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createApp} from '../src/application.js';
+import {randomBytes} from 'node:crypto';
+const LOAD_TEST_PASSWORD=`${randomBytes(12).toString('base64url')}-Aa1!`; // throwaway accounts on a throwaway database, random per run
 
 const concurrency=Number(process.argv[2])||10;
 const dataDir=await mkdtemp(join(tmpdir(),'hypercool-load-'));
@@ -32,7 +34,7 @@ async function jsonFetch(path,input,cookie,csrf) {
 
 async function newVerifiedUser(i) {
  const email=`load-test-${i}-${Date.now()}@example.com`;
- const signup=await jsonFetch('/api/signup',{name:`Load Test ${i}`,username:`load_test_${i}_${Date.now()}`,email,password:'a-long-load-test-password'});
+ const signup=await jsonFetch('/api/signup',{name:`Load Test ${i}`,username:`load_test_${i}_${Date.now()}`,email,password:LOAD_TEST_PASSWORD});
  // A real, expected outcome at high concurrency from one source IP: checkSignupRateLimit
  // (20/15min) correctly rejects a burst beyond that — never a bug in the test itself; the
  // caller below simply excludes this user from the workspace-creation phase.

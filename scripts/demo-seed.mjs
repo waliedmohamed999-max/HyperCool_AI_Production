@@ -75,7 +75,7 @@ function addMembership(tenantId, userId, role, isOwner) {
 function ensureUser(spec) {
  const existing = db.prepare('SELECT id,username,name,role FROM users WHERE username=?').get(spec.username);
  if (existing) return existing;
- return auth.createUser({ username: spec.username, name: spec.name, password: 'demo-team-' + spec.username.slice(0, 6) + '-2024x' }, spec.role);
+ return auth.createUser({ username: spec.username, name: spec.name, password: DEMO_PASSWORD }, spec.role);
 }
 
 // --- Reusable seeding building blocks --------------------------------------------------------
