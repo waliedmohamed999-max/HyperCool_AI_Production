@@ -40,8 +40,8 @@ gate (`docs/WORKSPACE_SELECTION.md`) before ever reaching this page, unchanged.
   registry fallback `runtime.js` itself uses) and `status` from the real
   `evaluateAgentReadiness` (Phase 4B) — **never** `enabled=true => READY`. Counts:
   `total/enabled/ready/partial/blocked/disabled`.
-- **tools**: the real `ToolDefinition` catalog count (`available`/`unavailable` — only Canva is
-  honestly `unavailable`; `salla_syncOrders` is real), plus a live tally of every
+- **tools**: the real `ToolDefinition` catalog count (`available`/`unavailable` — every one of
+  the 51 real tools is implemented today, so `unavailable` is 0), plus a live tally of every
   `ToolReadinessService` status (`evaluateAllToolsReadiness`, Phase 4B.1) across all 12 agents
   — this is what "how many tool assignments have a capability/connection problem right now"
   actually means, since readiness is inherently per-`(agent, tool)`, not tool-global.
@@ -65,12 +65,15 @@ connections list) make their own real, on-demand calls only when actually opened
    traced to a real blocked agent, a real optional-tool gap, or a real unhealthy connection —
    never invented — each clickable to jump to the relevant tab/drawer.
 2. **Integrations** — one card per real `IntegrationDefinition`, honest `connectionMode` badge,
-   real per-provider connection list. "Add" is offered **only** where the backend genuinely
-   supports it today: Salla (real multi-store OAuth, `GET /api/integrations/oauth/salla/start`)
-   and Anthropic/OpenAI (real test-then-store API-key flow, `PUT /api/integrations/connections/
-   :id/credential`). A `SINGLE`-mode provider with an existing connection shows
-   "يدعم اتصالًا واحدًا حاليًا" / "Supports one connection currently", never an "Add another"
-   button; Canva shows "غير متاح حاليًا" / "Unavailable", never a connect flow.
+   real per-provider connection list. "Add" is offered where the backend genuinely supports it:
+   Salla/Zid (real multi-store OAuth, `GET /api/integrations/oauth/:slug/start`), Anthropic/
+   OpenAI (real test-then-store API-key flow, `PUT /api/integrations/connections/:id/
+   credential`), and X/LinkedIn/Microsoft 365/Canva (each a real, dedicated single-account
+   OAuth2 flow, `GET /api/integrations/:slug/oauth/start` — `DEDICATED_OAUTH_SLUGS` in
+   `public/pages/control-center.js`). Meta/WhatsApp share one connection with its own dedicated
+   button on the WhatsApp page instead. A `SINGLE`-mode provider with an existing connection
+   shows "يدعم اتصالًا واحدًا حاليًا" / "Supports one connection currently", never an "Add
+   another" button.
 3. **AI Providers** — real Anthropic/OpenAI connections for this tenant, with the real agents
    using each (via `TenantAgentConfig`).
 4. **Agent Connections** — all 12 real agents, filterable/searchable by real readiness status,
@@ -131,10 +134,10 @@ painted over the current workspace's DOM (Part 55).
 
 | Provider | Mode shown | "Add" offered |
 |---|---|---|
-| Salla | Multiple connections | Yes — real OAuth |
+| Salla / Zid | Multiple connections | Yes — real OAuth |
 | Anthropic / OpenAI | Multiple connections | Yes — real API-key flow |
-| WhatsApp / Meta / Microsoft 365 / X / LinkedIn | Single connection | No — manage existing only |
-| Canva | Unavailable | No — no connect flow shown at all |
+| X / LinkedIn / Microsoft 365 / Canva | Single connection | Yes — real dedicated OAuth2 start route |
+| WhatsApp / Meta | Single connection | No — manage existing only (dedicated button on the WhatsApp page) |
 
 ## Deferred / simplified in this pass
 

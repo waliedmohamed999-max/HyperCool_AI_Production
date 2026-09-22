@@ -21,7 +21,7 @@ because it exists").
 | `CONNECTION_REQUIRED` | `CONNECTION_NOT_FOUND`, `CONNECTION_PROVIDER_MISMATCH`, `CONNECTION_SELECTION_REQUIRED`, or the legacy static path is genuinely unconfigured |
 | `CONNECTION_UNHEALTHY` | An explicitly assigned connection exists but is not `CONNECTED`/`DEGRADED` |
 | `CONNECTION_CAPABILITY_MISSING` | *(Phase 4B.1)* The connection is the right provider and healthy, but its real granted OAuth scopes don't cover what this tool needs — see `docs/CONNECTION_AWARE_RUNTIME.md`'s capability enforcement section. Never folded into `CONNECTION_REQUIRED`: an operator needs to know "reconnect with more permissions" is different from "connect something at all" |
-| `DISABLED` | The tool's own assignment is disabled, or `ToolDefinition.isAvailable=false` (Canva only — `salla_syncOrders` is real) |
+| `DISABLED` | The tool's own assignment is disabled, or `ToolDefinition.isAvailable=false` (no real tool is in this state today — every one of the 51 tools is implemented) |
 | `PERMISSION_BLOCKED` | *(reserved — permission-level blocking is reported at the agent run level via `FORBIDDEN`/`WAITING_APPROVAL`, not duplicated here)* |
 
 ## AgentReadiness states
@@ -91,5 +91,6 @@ covers what the tool needs before an operator picks it, not just that it's the r
 
 `tests/agent-tool-mapping.test.js`: "Readiness: a disabled agent is DISABLED, never READY just
 because it exists"; "Readiness: an optional tool with no configured provider makes the agent
-PARTIAL, never BLOCKED"; "ToolReadiness: DISABLED for a not-implemented tool (Canva),
-regardless of tenant config".
+PARTIAL, never BLOCKED"; "ToolReadiness: DISABLED for any tool the registry marks
+not-implemented, regardless of tenant config" (simulated directly, since no real tool is
+currently in that state).

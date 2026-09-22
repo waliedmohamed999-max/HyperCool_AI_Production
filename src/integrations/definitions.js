@@ -69,14 +69,16 @@ export function installIntegrationDefinitions(db) {
 // - Canva (src/runtime/canva-oauth.js): a real OAuth2 (PKCE) authorization-code flow now
 //   exists, so this row is listed as available/OAUTH2 — an operator can genuinely connect a
 //   Canva account and have it health-checked. Only the identity call (GET /v1/users/me) has
-//   any real code path today; the design-generation capability the `canva_generateAsset`
-//   agent TOOL promises has no confirmed API to call (see src/connectors/canva/manifest.js's
-//   own comment and docs/CANVA_CONNECTOR.md) — that tool stays isAvailable:false in
-//   src/runtime/tools.js until it does. This row deliberately does not claim more than the
-//   connector itself can do.
+//   any real code path today; Canva's own connector declares zero content actions (see
+//   src/connectors/canva/manifest.js's own comment and docs/CANVA_CONNECTOR.md). The agent
+//   TOOL `generate_visual_asset` (src/runtime/tools.js) is provider-neutral and today
+//   resolves to OpenAI's real image-generation action instead — Canva becomes eligible for
+//   it automatically the moment its own connector ever adds one, zero code change needed.
 const DEFINITIONS=[
  {slug:'anthropic',nameAr:'Anthropic (Claude)',nameEn:'Anthropic (Claude)',category:'ai',descAr:'مزوّد الذكاء الاصطناعي الأساسي للوكلاء (Claude).',descEn:'Primary AI provider for agents (Claude).',authType:'API_KEY',iconKey:'anthropic',capabilities:['llm.generate','llm.tools','llm.structured'],isAvailable:1,adapterType:'AI_PROVIDER'},
- {slug:'openai',nameAr:'OpenAI',nameEn:'OpenAI',category:'ai',descAr:'مزوّد ذكاء اصطناعي احتياطي أو بديل للوكلاء.',descEn:'Backup or alternate AI provider for agents.',authType:'API_KEY',iconKey:'openai',capabilities:['llm.generate','llm.tools','llm.structured'],isAvailable:1,adapterType:'AI_PROVIDER'},
+ // 'design.generate' added alongside the real generate_image connector action (Images API) —
+ // an OpenAI connection now also powers the generate_visual_asset agent tool, not just chat/tools.
+ {slug:'openai',nameAr:'OpenAI',nameEn:'OpenAI',category:'ai',descAr:'مزوّد ذكاء اصطناعي احتياطي أو بديل للوكلاء، ويُستخدم أيضًا لتوليد الصور.',descEn:'Backup or alternate AI provider for agents — also used for image generation.',authType:'API_KEY',iconKey:'openai',capabilities:['llm.generate','llm.tools','llm.structured','design.generate'],isAvailable:1,adapterType:'AI_PROVIDER'},
  {slug:'salla',nameAr:'سلة',nameEn:'Salla',category:'ecommerce',descAr:'منصة المتجر الإلكتروني — كتالوج المنتجات والطلبات.',descEn:'E-commerce storefront platform — product catalog and orders.',authType:'OAUTH2',iconKey:'salla',capabilities:['products.read','stock.read','orders.read'],isAvailable:1,adapterType:'BUILT_IN'},
  {slug:'whatsapp',nameAr:'واتساب للأعمال',nameEn:'WhatsApp Business',category:'messaging',descAr:'إرسال واستقبال رسائل واتساب مع العملاء.',descEn:'Send and receive WhatsApp messages with customers.',authType:'OAUTH2',iconKey:'whatsapp',capabilities:['messages.receive','messages.send','templates.read'],isAvailable:1,adapterType:'BUILT_IN'},
  {slug:'meta',nameAr:'ميتا (فيسبوك/إنستغرام)',nameEn:'Meta (Facebook/Instagram)',category:'social',descAr:'نشر ومتابعة صفحات فيسبوك وإنستغرام.',descEn:'Publish to and manage Facebook Pages and Instagram.',authType:'OAUTH2',iconKey:'meta',capabilities:['publishing','messaging','analytics'],isAvailable:1,adapterType:'BUILT_IN'},

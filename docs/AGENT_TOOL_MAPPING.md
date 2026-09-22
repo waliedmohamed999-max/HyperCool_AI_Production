@@ -107,11 +107,16 @@ history is touched by this phase.
 
 ## I. Real tool inventory (from `TOOL_METADATA`, `src/runtime/tools.js`)
 
-28 tools total. `isAvailable:false` (honestly NOT_IMPLEMENTED, never faked): `canva_generateAsset`
-(no Canva connector exists). `salla_syncOrders` is real — it reads the Salla webhook ledger
-(order.created/order.status.updated/order.completed) through ConnectorRuntime; Salla's own
-order-list REST endpoint has no verified implementation here, so this is not a live poll.
-Categories: Commerce, CRM, Memory, Analytics, Content, Messaging, Social,
+28 tools total, every one of them real (`isAvailable:false` no longer applies to any tool).
+`salla_syncOrders` reads the Salla webhook ledger (order.created/order.status.updated/
+order.completed) through ConnectorRuntime; Salla's own order-list REST endpoint has no
+verified implementation here, so this is not a live poll. `generate_visual_asset` (formerly
+`canva_generateAsset`) is provider-neutral — it resolves ANY connected provider whose
+connector manifest grants `design.generate`, which today means OpenAI's real
+`POST /v1/images/generations` action (src/connectors/openai/adapter.js); Canva has a real
+OAuth2 connector too (src/connectors/canva/) but declares no content actions yet, so it
+becomes eligible for this same tool automatically the day it does — see
+docs/CANVA_CONNECTOR.md. Categories: Commerce, CRM, Memory, Analytics, Content, Messaging, Social,
 Email, Calendar (matches Phase 5's category list minus "Internal", which this codebase folds
 into CRM/Analytics rather than a separate bucket — no tool needed a distinct "Internal"
 category once the real inventory was listed).
@@ -122,7 +127,7 @@ category once the real inventory was listed).
 frost:       required none;                     optional none
 strategy:    required search_brand_memory;       optional get_competitor_data
 copy:        required search_brand_memory;       optional none
-creative:    required search_brand_memory;       optional canva_generateAsset (NOT_IMPLEMENTED)
+creative:    required search_brand_memory;       optional generate_visual_asset
 compliance:  required search_brand_memory;       optional none
 publishing:  required none;                      optional meta_publish, x_publish, linkedin_publish
 leads:       required create_lead, search_crm;   optional get_current_price, get_stock

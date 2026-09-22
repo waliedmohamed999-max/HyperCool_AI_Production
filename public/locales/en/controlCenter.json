@@ -55,6 +55,7 @@
  "actionFailed": "Failed: {code}",
  "statusLabel": "Status",
  "notAvailableNote": "Not available yet",
+ "goToWhatsAppPage": "Connect WhatsApp/Meta from the WhatsApp page",
  "singleConnectionNote": "Supports one connection currently",
  "unavailable": "Unavailable",
  "connectionMode": {

@@ -26,7 +26,7 @@
 
 مسودة/اقتراح (L0 — لا تُعد "إجراءً خارجيًا"، تُنشئ سجلًا معلّقًا للمراجعة البشرية بالضبط كما لو كتبه مشغّل بشري): `create_lead`, `update_lead`, `save_message`, `create_followup`, `create_content` (يُنشأ بحالة DRAFT دائمًا)، `propose_memory_update` (لا يكتب الذاكرة مباشرة — ينشئ طلب موافقة `memory_policy_change`).
 
-إجراءات خارجية (L1/L2 وتحتاج تكامل متصل، وإلا `INTEGRATION_REQUIRED` دائمًا بصرف النظر عن المستوى): `whatsapp_send`, `meta_publish`, `x_publish`, `linkedin_publish`, `microsoft_sendEmail`, `canva_generateAsset`, `salla_syncOrders`.
+إجراءات خارجية (L1/L2 وتحتاج تكامل متصل، وإلا `INTEGRATION_REQUIRED` دائمًا بصرف النظر عن المستوى): `whatsapp_send`, `meta_publish`, `x_publish`, `linkedin_publish`, `microsoft_sendEmail`, `generate_visual_asset`, `salla_syncOrders`.
 
 أسماء الأدوات تستخدم `_` لا `.` لأن Anthropic تشترط `^[a-zA-Z0-9_-]{1,128}$` لاسم الأداة.
 

@@ -3,9 +3,10 @@
 // no confirmed endpoint in this codebase for "generate a visual asset from a free-text brief"
 // — the closest real capability (Autofill: POST /v1/autofills) needs the merchant to already
 // own a Canva Brand Template with named fields, which is a different, narrower shape than the
-// canva_generateAsset tool promises. Rather than guess at a call that could silently fail (or
-// silently do the wrong thing) for a real merchant, this connector only ever proves identity
-// (healthCheck) — see docs/CANVA_CONNECTOR.md for exactly what's real vs. still missing.
+// generate_visual_asset tool promises (that tool resolves to OpenAI's real image action
+// instead today — src/connectors/openai/adapter.js). Rather than guess at a call that could
+// silently fail (or silently do the wrong thing) for a real merchant, this connector only ever
+// proves identity (healthCheck) — see docs/CANVA_CONNECTOR.md for exactly what's real vs. still missing.
 import {CONNECTOR_CATEGORY,CONNECTOR_AVAILABILITY,CONNECTION_MODE,AUTH_TYPE} from '../core/enums.js';
 import {validateManifest} from '../core/manifest.js';
 

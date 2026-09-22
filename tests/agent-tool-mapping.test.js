@@ -65,12 +65,13 @@ const salesDecision=(over={})=>({status:'OK',action:'REPLY',rationale:'ok',verif
 
 // --- ToolDefinition ----------------------------------------------------------------------
 
-test('ToolDefinition: seeded exclusively from the real Tool Registry — 51 tools, Canva honestly NOT_IMPLEMENTED, salla_syncOrders real',()=>{
+test('ToolDefinition: seeded exclusively from the real Tool Registry — 51 tools, generate_visual_asset and salla_syncOrders real',()=>{
  const {store}=fixture();try{
   const tools=listToolDefinitions(store.db);
   assert.equal(tools.length,51); // ...; Phase 7B added 5 more; Phase 7C added 6 Workflow Engine chat tools (create_workflow_draft, list_workflows, explain_workflow_failure, activate_workflow, run_workflow_now, pause_workflow_now); Phase MKT-2 Part I/J added meta_message_send; WhatsApp Hub added whatsapp_campaign_send
-  const canva=getToolDefinition(store.db,'canva_generateAsset');
-  assert.equal(canva.isAvailable,false);
+  const visual=getToolDefinition(store.db,'generate_visual_asset');
+  assert.equal(visual.isAvailable,true); // provider-neutral — resolves to OpenAI's real image action today
+  assert.equal(visual.integrationSlug,null);
   const salla=getToolDefinition(store.db,'salla_syncOrders');
   assert.equal(salla.isAvailable,true); // real handler now, reads the Salla webhook ledger through ConnectorRuntime
   const whatsapp=getToolDefinition(store.db,'whatsapp_send');
@@ -349,9 +350,13 @@ test('Readiness: an optional tool with no configured provider makes the agent PA
  }finally{store.close();}
 });
 
-test('ToolReadiness: DISABLED for a not-implemented tool (Canva), regardless of tenant config',()=>{
+test('ToolReadiness: DISABLED for any tool the registry marks not-implemented, regardless of tenant config',()=>{
  const {store,tenantA}=twoTenants();try{
-  const readiness=evaluateToolReadiness(store.db,env,{tenantId:tenantA,agentId:'creative',toolSlug:'canva_generateAsset'});
+  // Every one of the 51 real tools is implemented now — this proves the DISABLED/
+  // NOT_IMPLEMENTED mechanism itself (agent-readiness.js's isAvailable===false check) still
+  // works, by simulating the state directly the same way a future genuinely-unbuilt tool would.
+  store.db.prepare("UPDATE tool_definitions SET is_available=0 WHERE slug='generate_visual_asset'").run();
+  const readiness=evaluateToolReadiness(store.db,env,{tenantId:tenantA,agentId:'creative',toolSlug:'generate_visual_asset'});
   assert.equal(readiness.status,'DISABLED');assert.equal(readiness.reason,'NOT_IMPLEMENTED');
  }finally{store.close();}
 });
@@ -486,6 +491,38 @@ test('salla_syncOrders: a real agent run reads genuine order events already push
   assert.equal(call.output.count,2); // both o-A1 deliveries, never tenant B's, never the product event
   assert.ok(call.output.orders.every(o=>o.orderId==='o-A1'));
   assert.deepEqual(new Set(call.output.orders.map(o=>o.status)),new Set(['قيد التنفيذ','مكتمل']));
+ }finally{store.close();}
+});
+
+test('generate_visual_asset: a real agent run resolves the tenant\'s OpenAI connection and hits the write-shaped-action approval gate — never generates silently, agent or not',async()=>{
+ const {store,tenantA}=twoTenants();try{
+  setAutonomy(store,'sales',{level:'L1',reason:'promote',expectedVersion:0},user,env,tenantA);
+  const openai=createConnection(store.db,{integrationDefinitionId:'openai',name:'Design AI'},tenantA);
+  updateConnection(store.db,openai.id,{status:'CONNECTED'},tenantA);
+  upsertAssignment(store.db,tenantA,'sales','generate_visual_asset',{connectionId:openai.id});
+  const runtime=createAgentRuntime({store,env,fetcher:sequencedFetcher([toolUseTurn('generate_visual_asset',{brief:'a friendly robot mascot'}),textTurn(salesDecision())])});
+  const run=await runtime.run('sales',{triggerType:'TEST',input:{scenario:'price'},user,tenantId:tenantA});
+  const call=listToolCalls(store.db,run.id).find(c=>c.tool==='generate_visual_asset');
+  assert.ok(call,'generate_visual_asset must actually have run, not been skipped');
+  assert.equal(call.connection_id,openai.id);
+  // generate_image is EXTERNAL_SEND/MEDIUM risk -> requiresApprovalDefault -> a real Approval
+  // Engine entry is created and NOTHING is sent to OpenAI yet, whether an agent or a human
+  // operator asked for it (src/connectors/core/runtime.js's own connector-level gate).
+  assert.equal(call.output.status,'WAITING_APPROVAL');
+  assert.ok(call.output.approvalId);
+  const approval=listApprovals(store.db,{},tenantA).find(a=>a.id===call.output.approvalId);
+  assert.ok(approval,'a real, findable Approval Engine entry, not just a status string');
+ }finally{store.close();}
+});
+
+test('generate_visual_asset: with no connection assigned, fails closed as INTEGRATION_REQUIRED — never guesses which provider to use',async()=>{
+ const {store,tenantA}=twoTenants();try{
+  setAutonomy(store,'sales',{level:'L1',reason:'promote',expectedVersion:0},user,env,tenantA);
+  const runtime=createAgentRuntime({store,env,fetcher:sequencedFetcher([toolUseTurn('generate_visual_asset',{brief:'x'}),textTurn(salesDecision())])});
+  const run=await runtime.run('sales',{triggerType:'TEST',input:{scenario:'price'},user,tenantId:tenantA});
+  const call=listToolCalls(store.db,run.id).find(c=>c.tool==='generate_visual_asset');
+  assert.ok(call);
+  assert.equal(call.output.status,'INTEGRATION_REQUIRED');
  }finally{store.close();}
 });
 

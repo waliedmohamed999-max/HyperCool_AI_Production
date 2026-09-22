@@ -42,6 +42,11 @@ const isOAuth2Provider=provider=>!!provider.supportsGenericOAuth;
 // (not this list); X/LinkedIn/Microsoft 365 had no "Add" entry point anywhere in this dashboard
 // before Canva's connector needed one, so this closes that gap for all of them at once.
 const DEDICATED_OAUTH_SLUGS=['x','linkedin','microsoft365','canva'];
+// The real OAuth route slug is not always the same string as the connector/catalog slug —
+// Microsoft 365's dedicated routes are registered under /api/integrations/microsoft/oauth/...
+// (application.js), never .../microsoft365/oauth/... Every other dedicated slug's route matches
+// its connector slug exactly.
+const OAUTH_ROUTE_SLUG={microsoft365:'microsoft'};
 
 function statusBadge(status,map=AGENT_STATUS_VARIANT){return badge(t('controlCenter.status.'+status)||status,map[status]||status);}
 
@@ -443,7 +448,15 @@ function startAddConnection(provider){
   return;
  }
  if(DEDICATED_OAUTH_SLUGS.includes(provider.slug)){
-  window.location.href=`/api/integrations/${provider.slug}/oauth/start`;
+  window.location.href=`/api/integrations/${OAUTH_ROUTE_SLUG[provider.slug]||provider.slug}/oauth/start`;
+  return;
+ }
+ // Meta/WhatsApp share one connection and are connected from their own dedicated page (its
+ // button already calls the real /api/integrations/meta/oauth/start route) — send the operator
+ // there instead of a dead-end "not available" toast, which used to be honest but unhelpful.
+ if(['meta','whatsapp'].includes(provider.slug)){
+  showToast(t('controlCenter.goToWhatsAppPage'),'info');
+  location.hash='#whatsapp';
   return;
  }
  if(['anthropic','openai'].includes(provider.slug)){

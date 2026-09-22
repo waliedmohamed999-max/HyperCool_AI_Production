@@ -13,7 +13,7 @@ export const openaiManifest=validateManifest({
  availability:CONNECTOR_AVAILABILITY.AVAILABLE,
  connectionMode:CONNECTION_MODE.MULTI,
  auth:{type:AUTH_TYPE.API_KEY},
- capabilities:['ai.generate','ai.structured','ai.tools'],
+ capabilities:['ai.generate','ai.structured','ai.tools','design.generate'],
  actions:[{
   id:'openai.test_key',slug:'test_key',
   nameAr:'اختبار المفتاح',nameEn:'Test API Key',
@@ -23,6 +23,15 @@ export const openaiManifest=validateManifest({
   inputSchema:{type:'object',properties:{},additionalProperties:false},
   outputSchema:{type:'object',properties:{ok:{type:'boolean'}}},
   timeoutMs:15000
+ },{
+  id:'openai.generate_image',slug:'generate_image',
+  nameAr:'توليد صورة',nameEn:'Generate Image',
+  description:'Calls POST /v1/images/generations with a text prompt and returns one generated image as a data URI. Model is OPENAI_IMAGE_MODEL (default gpt-image-1) — this exact call has never been made from this codebase; verify against your own OpenAI account before relying on it (see docs/AI_IMAGE_GENERATION.md).',
+  method:'POST',requiredCapability:'design.generate',
+  riskLevel:RISK_LEVEL.MEDIUM,actionType:ACTION_TYPE.EXTERNAL_SEND,
+  inputSchema:{type:'object',properties:{prompt:{type:'string'},size:{type:'string'}},required:['prompt'],additionalProperties:false},
+  outputSchema:{type:'object',properties:{imageDataUri:{type:'string'},model:{type:'string'}}},
+  timeoutMs:60000
  }],
  triggers:[],
  webhooks:null,

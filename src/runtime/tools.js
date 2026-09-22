@@ -159,14 +159,15 @@ const TOOL_METADATA={
   category:'Calendar',riskLevel:'MEDIUM',actionType:'EXTERNAL_SEND',integrationSlug:'microsoft365',requiresConnection:false,isReadOnly:false,capability:'calendar.write'},
  get_calendar_availability:{description:'Check free/busy for one or more Microsoft 365 mailboxes to propose a meeting time.',inputSchema:obj({emails:{type:'array',items:string},start:string,end:string,timezone:string},['emails','start','end']),minLevel:'L0',allowedAgents:['frost','sales','followup'],
   category:'Calendar',riskLevel:'LOW',actionType:'READ',integrationSlug:'microsoft365',requiresConnection:false,isReadOnly:true,capability:'calendar.read'},
- // A real Canva OAuth2 connector now exists (src/connectors/canva/, src/runtime/canva-oauth.js)
- // — an operator can genuinely connect a Canva account and have it health-checked. This TOOL
- // still stays isAvailable:false: Canva's public Connect API has no confirmed endpoint for
- // "generate a visual asset from a free-text brief" (see docs/CANVA_CONNECTOR.md) — the
- // closest real capability, Autofill, fills named fields of a pre-existing Brand Template,
- // a different, narrower shape than `brief` promises. Never wired to a guessed call.
- canva_generateAsset:{description:'Generate a visual asset via Canva Connect.',inputSchema:obj({brief:string},['brief']),minLevel:'L1',
-  category:'Content',riskLevel:'LOW',actionType:'EXTERNAL_SEND',integrationSlug:'canva',requiresConnection:true,isReadOnly:false,capability:'design.generate',isAvailable:false},
+ // Provider-neutral, like get_invoices/get_orders/get_customers below: resolves ANY connected
+ // provider whose connector manifest grants 'design.generate' — today that is OpenAI's real
+ // POST /v1/images/generations action (src/connectors/openai/adapter.js); Canva's own OAuth2
+ // connector (src/connectors/canva/, src/runtime/canva-oauth.js) is real too but declares no
+ // content actions yet (see docs/CANVA_CONNECTOR.md) — the moment it ever does, this tool picks
+ // it up automatically, zero code change here. This call has never been made against a live
+ // OpenAI account from this codebase — see docs/AI_IMAGE_GENERATION.md before relying on it.
+ generate_visual_asset:{description:'Generate a visual asset (image) from a text brief, via whichever connected provider supports it.',inputSchema:obj({brief:string},['brief']),minLevel:'L1',
+  category:'Content',riskLevel:'MEDIUM',actionType:'EXTERNAL_SEND',integrationSlug:null,requiresConnection:true,isReadOnly:false,capability:'design.generate'},
  salla_syncOrders:{description:'List recent order events (created/updated/completed) this store has received via the Salla webhook — not a live poll of abandoned carts, since Salla has no verified order-list REST endpoint wired here.',inputSchema:obj({limit:{type:'number'}},[]),minLevel:'L1',
   category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:'salla',requiresConnection:true,isReadOnly:true,capability:'orders.read'},
  // Universal Integration Platform (Phase 6D, Part 59) — the real proof that a Tool can be
@@ -505,7 +506,18 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch,runtimeRef=n
    if(!configured)return blocked('microsoft365','get_availability');
    return getCalendarAvailability({store,env,fetcher},input,ctx.tenantId);
   },
-  canva_generateAsset:()=>blocked('canva','generate_asset'),
+  // Generic capability tool (see its TOOL_METADATA comment above) — the exact same pattern as
+  // get_invoices/get_orders/get_customers above: looks up THIS resolved connection's real
+  // connector slug and executes through the one ConnectorRuntime pipeline, no per-provider branch.
+  generate_visual_asset:async(input,ctx)=>{
+   if(!ctx.connectionId)return {status:'INTEGRATION_REQUIRED'};
+   const connection=getConnectionOrNull(db,ctx.connectionId,ctx.tenantId);
+   if(!connection)return {status:'INTEGRATION_REQUIRED'};
+   const actionId=connection.integrationDefinitionId==='openai'?'generate_image':null;
+   if(!actionId)return {status:'ERROR',errorCode:'CAPABILITY_MISSING'};
+   const result=await executeConnectorAction({db,env,fetcher,tenantId:ctx.tenantId,connectorSlug:connection.integrationDefinitionId,connectionId:connection.id,actionId,input:{prompt:input?.brief,size:input?.size},actor:ctx.actor});
+   return result.status==='OK'?result.output:result;
+  },
   // Reads the real, already-working Salla webhook ledger (order.created/order.status.updated/
   // order.completed deliveries) through the ConnectorRuntime pipeline — not a live REST poll,
   // since Salla's order-list endpoint has no verified implementation in this codebase (see the

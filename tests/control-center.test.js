@@ -59,7 +59,7 @@ test('Control Center summary: tool/integration/AI-provider counts reflect the re
  try{
   const summary=(await call('/api/control-center/summary',null,ownerA,{method:'GET'})).data;
   assert.equal(summary.tools.total,51); // ...; Phase 7B added 5 more; Phase 7C added 6 Workflow Engine chat tools; Phase MKT-2 Part I/J added meta_message_send; WhatsApp Hub added whatsapp_campaign_send
-  assert.equal(summary.tools.unavailable,1); // canva_generateAsset — honestly NOT_IMPLEMENTED (salla_syncOrders is now real)
+  assert.equal(summary.tools.unavailable,0); // every real tool is implemented now (generate_visual_asset and salla_syncOrders both real)
   assert.equal(summary.integrations.providers.length,10);
   assert.equal(summary.integrations.configuredProviders,0); // no connection created yet
   assert.equal(summary.aiProviders.length,0);

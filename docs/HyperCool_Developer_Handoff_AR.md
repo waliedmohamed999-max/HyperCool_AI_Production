@@ -292,7 +292,7 @@ DRAFT -> REVIEWED -> APPROVED
 
 أسماء الكتابة المحلية: create_lead، update_lead، save_message، create_followup، create_content، propose_memory_update.
 
-أسماء stubs (خارجية تحتاج تكامل متصل وإلا INTEGRATION_REQUIRED): whatsapp_send، meta_publish، x_publish، linkedin_publish، microsoft_sendEmail، canva_generateAsset (لا يوجد موصل Canva إطلاقًا). salla_syncOrders لم تعد stub — تقرأ سجل ويبهوك سلة الحقيقي عبر ConnectorRuntime.
+أسماء stubs (خارجية تحتاج تكامل متصل وإلا INTEGRATION_REQUIRED): whatsapp_send، meta_publish، x_publish، linkedin_publish، microsoft_sendEmail. salla_syncOrders لم تعد stub — تقرأ سجل ويبهوك سلة الحقيقي عبر ConnectorRuntime. generate_visual_asset (سابقًا canva_generateAsset) لم تعد stub أيضًا — أداة محايدة المزوّد تُنفَّذ اليوم عبر توليد صور OpenAI الحقيقي (POST /v1/images/generations)؛ موصل Canva حقيقي أيضًا (OAuth2) لكن بلا أي إجراء محتوى بعد.
 
 تحسب promotionEligibility فترة 14 يومًا ومؤشرات تشغيل حقيقية دون ترقية تلقائية. لكن `setAutonomy` لا يستدعي فحص الأهلية؛ يفرض خطوة ترقية واحدة وسببًا وexpectedVersion فقط. لذلك نص «يشترط 14 يومًا» في UI لا يمثل شرطًا مفروضًا في endpoint الترقية. يجب حسم السياسة وإضافة الربط واختباره إذا كان شرطًا إلزاميًا.
 

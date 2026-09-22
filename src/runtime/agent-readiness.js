@@ -32,7 +32,7 @@ const REQUIRED_TOOLS={
  frost_commander:[]
 };
 const OPTIONAL_TOOLS={
- frost:[],strategy:['get_competitor_data'],copy:[],creative:['canva_generateAsset'],compliance:[],
+ frost:[],strategy:['get_competitor_data'],copy:[],creative:['generate_visual_asset'],compliance:[],
  publishing:['meta_publish','x_publish','linkedin_publish'],leads:['get_current_price','get_stock'],
  sales:['get_product','get_current_price','get_stock','whatsapp_send','whatsapp_campaign_send','microsoft_sendEmail','create_calendar_event','get_calendar_availability'],
  followup:['whatsapp_send','whatsapp_campaign_send','microsoft_sendEmail'],intelligence:[],performance:[],memory:[],

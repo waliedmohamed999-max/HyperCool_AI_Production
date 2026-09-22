@@ -41,18 +41,23 @@ public documentation as recalled, not confirmed against a real request/response 
 this against your own Canva app before relying on it in production**, the same discipline
 `docs/SALLA_INTEGRATION_SETUP.md` already asks for Salla's webhook conventions.
 
-**The connector manifest declares zero content actions.** The `canva_generateAsset` agent
-tool (`src/runtime/tools.js`) still always returns `{status:'INTEGRATION_REQUIRED'}` —
-`ToolDefinition.isAvailable:false` — regardless of whether a Canva account is connected. This
-is deliberate, not an oversight: Canva's public Connect API has no confirmed endpoint for
-"generate a visual asset from a free-text brief." The closest real capability, the **Autofill
-API** (`POST /v1/autofills`), fills named fields of a Canva Brand Template the merchant must
-already own and design in Canva itself — a fundamentally different, narrower shape than a
-free-text `brief` input promises. Wiring `canva_generateAsset` to a guessed call risked either
-silently failing or silently doing the wrong thing for a real merchant; neither is acceptable,
-so it stays honestly blocked.
+**The connector manifest declares zero content actions.** Canva's public Connect API has no
+confirmed endpoint for "generate a visual asset from a free-text brief." The closest real
+capability, the **Autofill API** (`POST /v1/autofills`), fills named fields of a Canva Brand
+Template the merchant must already own and design in Canva itself — a fundamentally
+different, narrower shape than a free-text `brief` input promises. Wiring the agent tool to a
+guessed call risked either silently failing or silently doing the wrong thing for a real
+merchant; neither is acceptable, so this connector only ever proves identity.
 
-## To finish this connector for real design generation
+**The `generate_visual_asset` agent tool does NOT use Canva today.** It is provider-neutral
+(`src/runtime/tools.js`, `integrationSlug:null`, `capability:'design.generate'`) — it resolves
+to whichever connected provider's connector manifest grants that capability. Today that is
+**OpenAI's real image-generation action** (`POST /v1/images/generations`,
+`src/connectors/openai/adapter.js` — see `docs/AI_IMAGE_GENERATION.md`), not Canva. Canva
+becomes eligible for this same tool automatically the moment its own connector adds a real
+matching action — zero change needed to the tool itself.
+
+## To make Canva itself do real design generation
 
 1. Get a real Canva Developer Portal app and confirm the OAuth flow above actually works
    end-to-end against it (authorize → callback → `GET /v1/users/me`).
@@ -60,8 +65,9 @@ so it stays honestly blocked.
    and use the Autofill API with their real field names, or (b) find/confirm a different real
    Canva capability that matches "generate from a brief" more literally.
 3. Add the chosen action to `src/connectors/canva/manifest.js` (with the real, verified
-   `requiredCapability`) and its real HTTP call to `src/connectors/canva/adapter.js`'s
-   `executeAction`, following the same pattern as `src/connectors/zid/adapter.js`.
-4. Wire `canva_generateAsset`'s handler in `src/runtime/tools.js` to call it through
-   `executeConnectorAction`, matching `salla_syncOrders`'s handler as a template.
-5. Only then flip `isAvailable:false` → remove it (or `true`) for `canva_generateAsset`.
+   `requiredCapability:'design.generate'`) and its real HTTP call to
+   `src/connectors/canva/adapter.js`'s `executeAction`, following the same pattern as
+   `src/connectors/openai/adapter.js`'s `generate_image`.
+4. Nothing else changes — `generate_visual_asset`'s generic capability resolution
+   (`listCompatibleConnections`) picks up any tenant's connected Canva account automatically
+   the moment it grants `design.generate`, exactly like it already does for OpenAI.

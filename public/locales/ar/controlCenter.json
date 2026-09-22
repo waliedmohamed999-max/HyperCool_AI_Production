@@ -55,6 +55,7 @@
  "actionFailed": "فشل التنفيذ: {code}",
  "statusLabel": "الحالة",
  "notAvailableNote": "غير متاح حاليًا",
+ "goToWhatsAppPage": "اربط واتساب/ميتا من صفحة واتساب",
  "singleConnectionNote": "يدعم اتصالًا واحدًا حاليًا",
  "unavailable": "غير متاح",
  "connectionMode": {
