@@ -14,3 +14,14 @@ dialog{color:var(--ink);background:var(--surface);border:0;box-shadow:var(--shad
 .workspace-select-item strong{display:block;font-size:15px}
 .workspace-select-item span{font-size:12px;color:var(--ink-muted)}
 .table-scroll{max-inline-size:100%;overflow-x:auto}
+.integration-next{color:var(--accent-strong,#3e0079);font-weight:500;font-size:13px;margin:0}
+.guide{display:grid;gap:16px}
+.guide-state{display:flex;gap:12px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2,#f6f7fa)}.guide-state p{margin:0}
+.guide h4{margin:0}
+.guide-steps{margin:0;padding-inline-start:22px;display:grid;gap:8px}
+.guide-form{display:grid;gap:12px;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--surface,#fff)}
+.guide-field{display:grid;gap:6px;font-weight:500}
+.guide-result{margin:0;min-height:1.4em}.guide-result.is-ok{color:#0a7d3c}.guide-result.is-error{color:#b42318}
+.guide-connections{display:grid;gap:8px}.guide-none{color:var(--ink-muted);margin:0}
+.guide-connection{padding:10px 12px;border:1px solid var(--border);border-radius:12px}
+.guide-server{border:1px dashed var(--border);border-radius:12px;padding:10px 14px}.guide-server summary{cursor:pointer;font-weight:600;color:var(--ink-muted)}

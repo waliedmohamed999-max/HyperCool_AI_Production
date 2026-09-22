@@ -32,6 +32,8 @@
  "attentionOnboardingIncomplete": "This workspace's guided setup is not finished yet",
  "attentionAgentBlocked": "{agent} agent is blocked — {reason}",
  "attentionAgentPartial": "{agent} agent: {tool} is unavailable",
+ "attentionAgentsBlockedGroup": "{count} agents are blocked — {reason}",
+ "connectAiProvider": "Connect an AI provider",
  "attentionConnection": "{name} ({provider}) connection is {status}",
  "noIntegrations": "No integrations defined yet.",
  "noConnectionYet": "No connection yet.",

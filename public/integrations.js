@@ -4,7 +4,25 @@ const $=selector=>document.querySelector(selector);
 const categoryNames=new Proxy({},{get:(_,code)=>{const key='integrations.category'+code;const value=t(key);return value===key?undefined:value;}});
 const statusNames=new Proxy({},{get:(_,code)=>{const key='statuses.'+code;const value=t(key);return value===key?undefined:value;}});
 const errorLabels=new Proxy({},{get:(_,code)=>{const key='integrations.error'+code.split('_').map(p=>p.charAt(0)+p.slice(1).toLowerCase()).join('');const value=t(key);return value===key?undefined:value;}});
-let dashboard=null,apiClient=null,currentCategory='';
+let dashboard=null,apiClient=null,currentCategory='',workspaceProviders=new Map();
+const AI_PROVIDERS=['anthropic','openai'];
+function workspaceConnections(id){return workspaceProviders.get(id)||[];}
+// The dashboard status is derived from server-level env vars; a healthy connection the workspace added itself (Control Center) counts too.
+function applyWorkspaceStatus(){
+ for(const i of dashboard.integrations){
+  i.serverStatus=i.serverStatus||i.status;
+  i.status=i.serverStatus;
+  if(['NEEDS_SETUP','CONFIGURED_NO_CONNECTOR'].includes(i.status)&&workspaceConnections(i.id).some(c=>['CONNECTED','DEGRADED'].includes(c.status)))i.status='CONNECTED';
+ }
+ const list=dashboard.integrations,count=status=>list.filter(i=>i.status===status).length;
+ dashboard.summary={...dashboard.summary,connected:count('CONNECTED'),needsSetup:count('NEEDS_SETUP'),attentionRequired:count('CONFIGURED_NO_CONNECTOR'),errors:count('ERROR')};
+}
+function nextStepHint(i){
+ if(!i.connectorImplemented&&i.status==='NEEDS_SETUP')return t('integrations.next.notBuilt');
+ if(i.status==='NEEDS_SETUP')return AI_PROVIDERS.includes(i.id)?t('integrations.next.pasteKey'):t('integrations.next.useControlCenter');
+ if(i.status==='ERROR')return t('integrations.next.fixError');
+ return '';
+}
 function dateLocale(){return getLocale()==='en'?'en-US':'ar-SA';}
 
 function kpiCard(label,value,hint,filterStatus){
@@ -25,7 +43,7 @@ function renderCategoryFilters(){
  $('#integrations-category-filters').innerHTML=cats.map(c=>`<button type="button" class="tab${c===currentCategory?' active':''}" data-integration-category="${c}">${c?escape(categoryNames[c]):escape(t('integrations.categoryAll'))}<span class="count">${c?counts[c]||0:dashboard.integrations.length}</span></button>`).join('');
 }
 function statusFor(id){return dashboard.integrations.find(i=>i.id===id);}
-function primaryLabel(status){return status==='CONNECTED'?t('integrations.manage'):status==='ERROR'?t('integrations.reconnect'):status==='CONFIGURED_NO_CONNECTOR'?t('integrations.viewDetails'):status==='NOT_SUPPORTED'?t('integrations.notSupportedLabel'):t('integrations.connect');}
+function primaryLabel(status){return status==='CONNECTED'?t('integrations.manage'):status==='ERROR'?t('integrations.reconnect'):status==='CONFIGURED_NO_CONNECTOR'?t('integrations.viewDetails'):status==='NOT_SUPPORTED'?t('integrations.notSupportedLabel'):t('integrations.connectNow');}
 function healthLabel(i){
  if(!i.connectorImplemented)return t('integrations.healthNotMeasurable');
  if(i.status==='ERROR')return t('integrations.healthNeedsAttention');
@@ -39,11 +57,12 @@ function renderCards(){
  $('#integration-list').innerHTML=list.map(i=>`<article class="card integration-card">
   <div class="row-between"><span class="integration-logo" dir="ltr">${escape(i.name.slice(0,2))}</span>${badge(statusNames[i.status],i.status)}</div>
   <h3 dir="ltr">${escape(i.name)}</h3><p>${escape(i.description)}</p>
+  ${nextStepHint(i)?`<p class="integration-next">${escape(nextStepHint(i))}</p>`:''}
   <div class="integration-meta">
    <div><span>${i.id==='salla'?escape(t('integrations.lastSyncLabel')):escape(t('integrations.lastActivityLabel'))}</span><strong>${i.lastActivity?new Date(i.lastActivity.at).toLocaleDateString(locale,{timeZone:'Asia/Riyadh'}):escape(t('integrations.noneYet'))}</strong></div>
    <div><span>${escape(t('integrations.healthLabel'))}</span><strong>${escape(healthLabel(i))}</strong></div>
   </div>
-  <div class="row"><button type="button" data-integration-primary="${i.id}"${i.status==='NOT_SUPPORTED'?` disabled title="${escape(t('integrations.notSupportedTooltip'))}"`:''}>${escape(primaryLabel(i.status))}</button><button type="button" class="secondary" data-integration-details="${i.id}">${escape(t('integrations.viewDetails'))}</button></div>
+  <div class="row"><button type="button" class="${['NEEDS_SETUP','ERROR'].includes(i.status)&&i.connectorImplemented?'primary':''}" data-integration-primary="${i.id}"${i.status==='NOT_SUPPORTED'?` disabled title="${escape(t('integrations.notSupportedTooltip'))}"`:''}>${escape(!i.connectorImplemented&&i.status==='NEEDS_SETUP'?t('integrations.viewDetails'):primaryLabel(i.status))}</button><button type="button" class="secondary" data-integration-details="${i.id}">${escape(t('integrations.viewDetails'))}</button></div>
  </article>`).join('')||empty(t('integrations.noCategoryIntegrations'));
 }
 function renderSyncLog(){
@@ -66,8 +85,80 @@ function renderDependencyMap(){
 }
 function envGuidance(i){
  if(!i.envVars.length)return `<p>${escape(t('integrations.noEnvPath'))}</p>`;
- const rows=i.envVars.map(v=>`<p>${escape(v.name)}: ${badge(v.configured?t('integrations.envConfigured'):t('integrations.envNotConfigured'),v.configured?'CONNECTED':'NEEDS_SETUP')}</p>`).join('');
+ const rows=i.envVars.map(v=>`<p><code dir="ltr">${escape(v.name)}</code> ${badge(v.configured?t('integrations.envConfigured'):t('integrations.envNotConfigured'),v.configured?'CONNECTED':'NEEDS_SETUP')}</p>`).join('');
  return `${rows}<p><small>${escape(t('integrations.envManagedNote'))}</small></p>`;
+}
+function steps(items){const ol=document.createElement('ol');ol.className='guide-steps';for(const text of items){const li=document.createElement('li');li.textContent=text;ol.append(li);}return ol;}
+function field(label,input){const wrap=document.createElement('label');wrap.className='guide-field';wrap.append(document.createTextNode(label),input);return wrap;}
+function workspaceConnectionsList(i){
+ const list=workspaceConnections(i.id);
+ const host=document.createElement('div');host.className='guide-connections';
+ if(!list.length){host.innerHTML=`<p class="guide-none">${escape(t('integrations.guide.noConnections'))}</p>`;return host;}
+ host.innerHTML=`<h4>${escape(t('integrations.guide.workspaceConnections'))}</h4>`+list.map(c=>`<div class="row-between guide-connection"><strong>${escape(c.name)}</strong>${badge(statusNames[c.status]||c.status,c.status==='CONNECTED'?'CONNECTED':c.status==='DEGRADED'?'DEGRADED':'ERROR')}</div>`).join('');
+ return host;
+}
+async function refreshAfterConnect(){
+ try{await loadWorkspaceProviders();applyWorkspaceStatus();renderSummary();renderCategoryFilters();renderCards();}catch(error){console.error('integrations refresh failed:',error);}
+}
+function aiConnectForm(i,onDone){
+ const form=document.createElement('form');form.className='guide-form';form.setAttribute('data-own-submit','');
+ const name=document.createElement('input');name.name='name';name.required=true;name.maxLength=100;name.value=i.name;
+ const key=document.createElement('input');key.name='apiKey';key.type='password';key.required=true;key.autocomplete='off';key.dir='ltr';key.placeholder=i.id==='anthropic'?'sk-ant-…':'sk-…';
+ const submit=button(t('integrations.guide.saveAndTest'),{variant:'primary'});submit.type='submit';
+ const result=document.createElement('p');result.className='guide-result';result.setAttribute('role','status');
+ form.append(field(t('integrations.guide.connectionName'),name),field(t('integrations.guide.apiKey'),key),submit,result);
+ form.addEventListener('submit',async event=>{
+  event.preventDefault();if(!form.reportValidity())return;
+  submit.disabled=true;result.className='guide-result';result.textContent=t('integrations.guide.saving');
+  const apiKey=key.value;
+  let connection=null;
+  try{
+   connection=await apiClient('/api/integrations/connections',{integrationDefinitionId:i.id,name:name.value.trim()});
+   await apiClient(`/api/integrations/connections/${connection.id}/credential`,{apiKey},'PUT');
+   key.value='';
+   let tested=null;
+   try{tested=await apiClient(`/api/integrations/connections/${connection.id}/test`,{});}catch(error){tested={status:'ERROR'};}
+   const ok=tested&&['CONNECTED','DEGRADED'].includes(tested.status);
+   result.className='guide-result '+(ok?'is-ok':'is-error');
+   result.textContent=ok?t('integrations.guide.savedOk'):t('integrations.guide.savedTestFailed');
+   await onDone();
+  }catch(error){
+   // never leave a half-created connection (no accepted key) behind
+   if(connection)try{await apiClient(`/api/integrations/connections/${connection.id}/disconnect`,{});}catch{}
+   result.className='guide-result is-error';
+   result.textContent=/CREDENTIALS_REJECTED/.test(error.message)?t('integrations.guide.keyRejected'):error.message;
+  }
+  finally{submit.disabled=false;}
+ });
+ return form;
+}
+function openControlCenter(dialog){
+ dialog?.close();
+ location.hash='#control-center';
+ setTimeout(()=>document.querySelectorAll('#cc-tabs [role=tab]')[1]?.click(),350);
+}
+function setupPanel(i,getDialog){
+ const panel=document.createElement('div');panel.className='guide';
+ const state=document.createElement('div');state.className='guide-state';
+ const stateBadge=document.createElement('span');stateBadge.innerHTML=badge(statusNames[i.status],i.status);
+ const stateText=document.createElement('p');
+ const paintState=()=>{const fresh=statusFor(i.id)||i;stateBadge.innerHTML=badge(statusNames[fresh.status],fresh.status);stateText.textContent=fresh.status==='CONNECTED'?t('integrations.guide.stateConnected'):t('integrations.guide.stateNotConnected',{name:i.name});};
+ paintState();state.append(stateBadge,stateText);panel.append(state);
+ if(i.status!=='NOT_SUPPORTED'){
+  if(!i.connectorImplemented){
+   const note=document.createElement('p');note.className='guide-none';note.textContent=t('integrations.guide.notBuilt');panel.append(note);
+   return panel;
+  }
+  const heading=document.createElement('h4');heading.textContent=t('integrations.guide.title');panel.append(heading);
+  if(AI_PROVIDERS.includes(i.id)){
+   panel.append(steps([t('integrations.guide.aiStep1',{provider:i.name}),t('integrations.guide.aiStep2')]),aiConnectForm(i,async()=>{await refreshAfterConnect();panel.querySelector('.guide-connections')?.replaceWith(workspaceConnectionsList(i));paintState();}));
+  } else {
+   panel.append(steps([t('integrations.guide.oauthStep1'),t('integrations.guide.oauthStep2',{name:i.name}),t('integrations.guide.oauthStep3')]));
+   const open=button(t('integrations.guide.openControlCenter'),{variant:'primary',iconName:'plug'});open.onclick=()=>openControlCenter(getDialog());panel.append(open);
+  }
+  panel.append(workspaceConnectionsList(i));
+ }
+ return panel;
 }
 async function openDetail(id,initialTab=0){
  const i=statusFor(id);if(!i)return;
@@ -80,8 +171,12 @@ async function openDetail(id,initialTab=0){
   ${!i.lastActivity?`<p>${i.connectorImplemented?escape(t('integrations.noActivityYet')):escape(t('integrations.noRealConnectionNote'))}</p>`:''}
   <p>${escape(t('integrations.healthLine',{health:healthLabel(i)}))}</p>`;
 
- const config=document.createElement('div');
- config.innerHTML=envGuidance(i);
+ let dialog=null;
+ const config=setupPanel(i,()=>dialog);
+ const serverBox=document.createElement('details');serverBox.className='guide-server';
+ const serverSummary=document.createElement('summary');serverSummary.textContent=t('integrations.guide.serverTitle');
+ const serverBody=document.createElement('div');serverBody.innerHTML=envGuidance(i);
+ serverBox.append(serverSummary,serverBody);config.append(serverBox);
  if(i.connectorImplemented){
   const testBtn=button(t('integrations.testConnection'),{variant:'secondary'});
   const result=document.createElement('p');
@@ -108,15 +203,21 @@ async function openDetail(id,initialTab=0){
  const node=document.createElement('div');
  node.append(overview,config,permissions,history,usage,errors);
  tabs(node,[[t('integrations.overview'),overview],[t('integrations.setup'),config],[t('integrations.permissions'),permissions],[t('integrations.syncLog'),history],[t('integrations.usage'),usage],[t('integrations.errors'),errors]]);
- const dialog=drawer(i.name,node,{restore:true});
+ dialog=drawer(i.name,node,{restore:true});
  enhance(node);
  const tabButtons=dialog.querySelectorAll('.ui-tabs .tab');
  if(tabButtons[initialTab])tabButtons[initialTab].click();
+}
+async function loadWorkspaceProviders(){
+ workspaceProviders=new Map();
+ try{const summary=await apiClient('/api/control-center/summary');for(const p of summary.integrations?.providers||[])workspaceProviders.set(p.slug,p.connections||[]);}
+ catch(error){console.error('workspace connections failed to load:',error);}
 }
 export async function renderIntegrations({api}){
  apiClient=api;
  try{dashboard=await api('/api/integrations/dashboard');}catch(error){dashboard=null;console.error('integrations dashboard failed to load:',error);}
  if(!dashboard){$('#integration-list').innerHTML=empty(t('integrations.dashboardLoadFailed'));return;}
+ await loadWorkspaceProviders();applyWorkspaceStatus();
  renderSummary();renderCategoryFilters();renderCards();renderSyncLog();renderErrorsList();renderDependencyMap();
 }
 export function installIntegrationInteractions(){

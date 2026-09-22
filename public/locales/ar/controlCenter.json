@@ -32,6 +32,8 @@
  "attentionOnboardingIncomplete": "لم يكتمل الإعداد الموجّه لهذه المنشأة بعد",
  "attentionAgentBlocked": "وكيل {agent} متوقف — {reason}",
  "attentionAgentPartial": "وكيل {agent}: أداة {tool} غير متاحة",
+ "attentionAgentsBlockedGroup": "الوكلاء المتوقفون ({count}) — {reason}",
+ "connectAiProvider": "اربط مزوّد الذكاء الاصطناعي",
  "attentionConnection": "اتصال {name} ({provider}) بحالة {status}",
  "noIntegrations": "لا توجد تكاملات معرّفة بعد.",
  "noConnectionYet": "لا يوجد اتصال بعد.",

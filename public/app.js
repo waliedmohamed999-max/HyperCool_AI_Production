@@ -278,6 +278,7 @@ async function render(){
   shellData(auth,viewData,api);
 }
 document.addEventListener('submit',async event=>{
+  if(event.target.hasAttribute('data-own-submit'))return; // the form handles its own submit (e.g. the integrations connect guide)
   event.preventDefault();const form=event.target;const submitter=event.submitter;const button=submitter&&submitter.form===form?submitter:form.querySelector('button');if(!button)return;
   // FormData must be built before disabling the submitter — a disabled form control (the
   // button itself, once we disable it below) is excluded from its own form's data set.

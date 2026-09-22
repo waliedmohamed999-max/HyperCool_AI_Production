@@ -37,6 +37,10 @@ progress.warm{accent-color:#d99a00}progress.hot{accent-color:var(--critical)}
 .bell-link{position:relative}
 .gate{margin-block:var(--space-8)}
 .integration .facts{grid-template-columns:1fr}
+.conn-summary{gap:var(--space-4);flex-wrap:wrap}.conn-summary meter{inline-size:200px;max-inline-size:100%}
+.conn-next{gap:var(--space-4);flex-wrap:wrap;align-items:center}
+.conn-group{font-size:18px;margin:var(--space-2) 0 0}
+.conn-later>summary{cursor:pointer;font-size:18px;font-weight:600;margin-block-end:var(--space-4)}
 
 /* support-mode bar: unmistakable, always visible */
 .support-bar{position:sticky;inset-block-start:0;z-index:60;display:flex;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap;align-items:center;padding:var(--space-3) var(--space-5);background:#7a1f3d;color:#fff;box-shadow:var(--shadow-overlay)}

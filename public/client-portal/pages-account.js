@@ -11,7 +11,9 @@ const sup = ctx => (ctx.me.support ? {confirmSupport: true} : {});
 const OAUTH_REASONS = ['state_invalid', 'state_used', 'state_expired', 'denied', 'not_permitted', 'account_blocked', 'provider_error', 'verification_failed', 'limit_reached', 'session_mismatch', 'unknown_provider'];
 export async function integrationsPage(ctx) {
  const locked = gateEnt(ctx, 'client.integrations'); if (locked) return locked;
- const root = h('div'), grid = h('div', {class: 'agent-grid'}), banner = h('div');
+ const root = h('div'), grid = h('div', {class: 'stack'}), banner = h('div');
+ const ORDER = ['anthropic', 'openai', 'salla', 'zid', 'meta', 'whatsapp', 'microsoft365', 'linkedin', 'x', 'canva'];
+ const rank = i => { const k = ORDER.indexOf(i.slug); return k < 0 ? ORDER.length : k; };
  const canManage = ctx.can('integrations.manage');
  const canConnect = canManage && !ctx.me.support; // authorizing a third-party account is the customer's own act, never a support session's
  const BRAND = {salla: 'Salla', zid: 'Zid', meta: 'Meta', microsoft365: 'Microsoft 365', x: 'X', linkedin: 'LinkedIn'};
@@ -44,7 +46,7 @@ export async function integrationsPage(ctx) {
   grid.replaceChildren(skeleton(3));
   try {
    const r = await api.get('/api/client/integrations');
-   grid.replaceChildren(...r.items.map(i => {
+   const card = i => {
     const list = i.connections || [], state = i.availability.state;
     const pillText = list.length ? t(`c.conn.${list[0].status}`) : state === 'coming_soon' ? t('c.conn.COMING_SOON') : state === 'unavailable' ? t('c.conn.UNAVAILABLE') : t('c.conn.NONE');
     return h('article', {class: 'card integration', dataset: {provider: i.slug, availability: state}},
@@ -56,7 +58,23 @@ export async function integrationsPage(ctx) {
      canManage && state === 'available' && (!list.length || i.multiple) ? h('div', {class: 'row-actions'},
       i.method === 'api_key' && !list.length ? button(t('c.conn.connect'), {variant: 'primary', onClick: () => connectModal(i)}) : null,
       canConnect && i.method === 'oauth' ? button(list.length ? t('c.conn.addAnother') : t('c.conn.connectOauth'), {variant: list.length ? 'secondary' : 'primary', onClick: () => startOauth(i.connectVia)}) : null) : null);
-   }));
+   };
+   // connected first, then what can be connected right now (AI provider, then stores, then channels), then what is not available yet
+   const sorted = [...r.items].sort((a, b) => rank(a) - rank(b));
+   const linked = sorted.filter(i => (i.connections || []).length), rest = sorted.filter(i => !(i.connections || []).length);
+   const ready = rest.filter(i => i.availability.state === 'available'), later = rest.filter(i => i.availability.state !== 'available');
+   const okCount = sorted.filter(i => (i.connections || []).some(c => c.status === 'CONNECTED')).length;
+   const cards = list => h('div', {class: 'agent-grid'}, list.map(card));
+   const aiConnected = sorted.some(i => ['anthropic', 'openai'].includes(i.slug) && (i.connections || []).some(c => c.status === 'CONNECTED'));
+   const aiTarget = ready.find(i => i.slug === 'anthropic') || ready.find(i => i.slug === 'openai');
+   grid.replaceChildren(
+    h('div', {class: 'card conn-summary row-between'},
+     h('div', null, h('strong', {text: t('c.conn.summary', {connected: okCount, total: sorted.length})}), h('p', {class: 'muted small', text: t('c.conn.summaryHint', {ready: ready.length})})),
+     h('meter', {min: 0, max: Math.max(sorted.length, 1), value: okCount, 'aria-label': t('c.conn.summary', {connected: okCount, total: sorted.length})})),
+    !aiConnected && aiTarget && canConnect ? h('div', {class: 'notice conn-next row-between', role: 'status'}, h('span', {text: t('c.conn.nextAi')}), button(t('c.conn.nextAiAction'), {variant: 'primary', onClick: () => grid.querySelector(`[data-provider=${aiTarget.slug}]`)?.scrollIntoView({behavior: 'smooth', block: 'center'})})) : null,
+    linked.length ? h('section', {class: 'stack'}, h('h2', {class: 'conn-group', text: t('c.conn.group.linked', {n: linked.length})}), cards(linked)) : null,
+    ready.length ? h('section', {class: 'stack'}, h('h2', {class: 'conn-group', text: t('c.conn.group.ready', {n: ready.length})}), cards(ready)) : null,
+    later.length ? h('details', {class: 'conn-later', open: true}, h('summary', {text: t('c.conn.group.later', {n: later.length})}), cards(later)) : null);
   } catch (error) { grid.replaceChildren(errorState(error, load)); }
  }
  async function connectModal(i) {

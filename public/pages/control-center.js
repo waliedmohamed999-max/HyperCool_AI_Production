@@ -144,19 +144,28 @@ function renderKpis(){
  * blocked/partial agent (from evaluateAgentReadiness) or an unhealthy real connection. */
 function renderAttention(){
  const section=$('#cc-attention'),list=$('#cc-attention-list');
- const items=[];
+ const items=[],blockedByReason=new Map();
  if(onboardingStatus && onboardingStatus.status!=='COMPLETED')items.push({text:t('controlCenter.attentionOnboardingIncomplete'),jump:()=>{location.hash='#onboarding';}});
  for(const agent of summary.agents.items){
-  if(agent.status==='BLOCKED')items.push({text:t('controlCenter.attentionAgentBlocked',{agent:agent.name,reason:agent.blockers[0]?BLOCKER_LABEL(agent.blockers[0]):''}),jump:()=>openAgentDrawer(agent.id)});
+  if(agent.status==='BLOCKED'){const code=agent.blockers[0]||'';(blockedByReason.get(code)||blockedByReason.set(code,[]).get(code)).push(agent);}
   else if(agent.status==='PARTIAL')for(const slug of agent.optionalMissing)items.push({text:t('controlCenter.attentionAgentPartial',{agent:agent.name,tool:slug}),jump:()=>openAgentDrawer(agent.id)});
  }
+ // Many agents blocked by the SAME reason (typically: no AI provider yet) are one problem with one fix — show one row, not one per agent.
+ const blockedRows=[];
+ for(const [code,agents] of blockedByReason){
+  const reason=code?BLOCKER_LABEL(code):'';
+  if(agents.length<3){for(const agent of agents)blockedRows.push({text:t('controlCenter.attentionAgentBlocked',{agent:agent.name,reason}),jump:()=>openAgentDrawer(agent.id)});continue;}
+  const aiFix=code==='AI_NOT_CONFIGURED'||code==='AI_CONNECTION_UNHEALTHY';
+  blockedRows.push({text:t('controlCenter.attentionAgentsBlockedGroup',{count:agents.length,reason}),jump:aiFix?()=>selectTab(2):()=>openAgentDrawer(agents[0].id),label:aiFix?t('controlCenter.connectAiProvider'):null});
+ }
+ items.splice(onboardingStatus&&onboardingStatus.status!=='COMPLETED'?1:0,0,...blockedRows);
  for(const provider of summary.integrations.providers)for(const c of provider.connections)if(!['CONNECTED','DEGRADED'].includes(c.status))items.push({text:t('controlCenter.attentionConnection',{name:c.name,provider:provider.nameAr,status:t('controlCenter.status.'+c.status)}),jump:()=>selectTab(1)});
  section.hidden=items.length===0;
  list.innerHTML='';
  for(const item of items){
   const row=document.createElement('div');row.className='audit-row row-between';
   const text=document.createElement('span');text.textContent=item.text;
-  const go=button(t('controlCenter.configure'),{variant:'ghost',iconName:'arrow'});go.onclick=item.jump;
+  const go=button(item.label||t('controlCenter.configure'),{variant:item.label?'primary':'ghost',iconName:'arrow'});go.onclick=item.jump;
   row.append(text,go);list.append(row);
  }
 }
