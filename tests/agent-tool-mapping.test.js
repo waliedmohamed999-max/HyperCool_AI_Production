@@ -5,7 +5,7 @@ import {openStore} from '../src/store.js';
 import {createAuth} from '../src/auth.js';
 import {installTenancy,createTenant,resolveActiveTenantId,getTenant,setMaxAgentLevel} from '../src/tenancy.js';
 import {installKnowledge} from '../src/knowledge.js';
-import {installCRM,createLead} from '../src/crm.js';
+import {installCRM,createLead,updateLead} from '../src/crm.js';
 import {installPlanning} from '../src/planning.js';
 import {installCompliance} from '../src/compliance.js';
 import {installAutonomy,setAutonomy} from '../src/autonomy.js';
@@ -28,6 +28,7 @@ import {installToolDefinitions,listToolDefinitions,getToolDefinition} from '../s
 import {installAgentToolAssignments,upsertAssignment,resolveToolConnection} from '../src/runtime/tool-assignments.js';
 import {evaluateAgentReadiness,evaluateToolReadiness} from '../src/runtime/agent-readiness.js';
 import {installWebhookEvents,processSallaWebhook} from '../src/runtime/salla-webhooks.js';
+import {installWorkflowEngine} from '../src/runtime/workflow-engine.js';
 
 const key32=randomBytes(32).toString('hex');
 const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',INTEGRATION_ENCRYPTION_KEY:key32,ENABLE_L2_AUTONOMY:'true'};
@@ -40,7 +41,7 @@ function fixture(){
  installEvents(store.db);installApprovals(store.db);installEscalations(store.db);installGate(store.db);
  installCredentials(store.db);installContent(store.db);installAuditLog(store.db);
  installIntegrationDefinitions(store.db);installIntegrationConnections(store.db);installCredentialsVault(store.db);installOAuthStates(store.db);installWebhookEvents(store.db);
- installToolDefinitions(store.db);installTenantAgentConfigs(store.db);installAgentToolAssignments(store.db);
+ installToolDefinitions(store.db);installTenantAgentConfigs(store.db);installAgentToolAssignments(store.db);installWorkflowEngine(store.db);
  seedRegistry(store.db);
  const tenantId=resolveActiveTenantId(store.db);
  seedTenantAgentConfigs(store.db,tenantId);
@@ -463,6 +464,59 @@ test('Secret boundary: the tool execution context never carries a vault secret �
   assert.equal(seenCtx.connectionId,salla.id);
   assert.equal(JSON.stringify(seenCtx).includes('sk-super-secret-token'),false);
   assert.equal('accessToken' in seenCtx,false);
+ }finally{store.close();}
+});
+
+// --- update_lead / create_lead: inputSchema must actually match what crm.js requires --------
+// Regression guard for a real bug: the schema used to omit fields crm.js's own updateLead()/
+// createLead() throw 400 without, so the model never learned to supply them and every real
+// call failed (update_lead is a REQUIRED tool for the sales agent — agent-readiness.js).
+
+test('update_lead: the tool\'s real required shape (leadId, stage, reason, temperature) succeeds through a real agent run',async()=>{
+ const {store,tenantA}=twoTenants();try{
+  setAutonomy(store,'sales',{level:'L1',reason:'promote',expectedVersion:0},user,env,tenantA);
+  const lead=createLead(store,{name:'Test Lead',customerType:'B2C',sourceType:'INBOUND',phone:'+966500000009'},user,tenantA);
+  const runtime=createAgentRuntime({store,env,fetcher:sequencedFetcher([toolUseTurn('update_lead',{leadId:lead.id,stage:'QUALIFIED',reason:'رد العميل وأكد الاهتمام',temperature:'HOT',expectedVersion:lead.version}),textTurn(salesDecision())])});
+  const run=await runtime.run('sales',{triggerType:'TEST',input:{scenario:'price'},user,tenantId:tenantA});
+  const call=listToolCalls(store.db,run.id).find(c=>c.tool==='update_lead');
+  assert.ok(call,'update_lead must actually have run');
+  assert.equal(call.output.stage,'QUALIFIED');
+  assert.equal(call.output.temperature,'HOT');
+  assert.equal(call.output.lastChangeReason,'رد العميل وأكد الاهتمام');
+ }finally{store.close();}
+});
+
+test('update_lead: calling it WITHOUT reason/temperature (the old, broken schema shape) still fails at the crm.js layer — proves these fields are genuinely required, not optional',()=>{
+ const {store,tenantA}=twoTenants();try{
+  const lead=createLead(store,{name:'Test Lead',customerType:'B2C',sourceType:'INBOUND',phone:'+966500000010'},user,tenantA);
+  assert.throws(()=>updateLead(store,lead.id,{stage:'QUALIFIED',expectedVersion:lead.version},user,tenantA),/سبب/);
+ }finally{store.close();}
+});
+
+test('create_lead: a RESEARCH-sourced B2B lead succeeds through a real agent run with its real required fields',async()=>{
+ const {store,tenantA}=twoTenants();try{
+  setAutonomy(store,'sales',{level:'L1',reason:'promote',expectedVersion:0},user,env,tenantA);
+  const researchInput={name:'Acme Corp',customerType:'B2B',sourceType:'RESEARCH',company:'Acme Corp',sourceUrl:'https://example.com/news/acme-expansion',trigger:'وسّعوا نشاطهم مؤخرًا',triggerDate:'2020-01-01T00:00:00.000Z',fitScore:4,sourceChecked:true,routeIn:'LinkedIn'};
+  const runtime=createAgentRuntime({store,env,fetcher:sequencedFetcher([toolUseTurn('create_lead',researchInput),textTurn(salesDecision())])});
+  const run=await runtime.run('sales',{triggerType:'TEST',input:{scenario:'price'},user,tenantId:tenantA});
+  const call=listToolCalls(store.db,run.id).find(c=>c.tool==='create_lead');
+  assert.ok(call,'create_lead must actually have run');
+  assert.equal(call.output.sourceType,'RESEARCH');
+  assert.equal(call.output.research.fitScore,4);
+ }finally{store.close();}
+});
+
+// Regression: nameEn used to be accepted by the handler (a real, stored name_en column) but
+// missing from the schema, so the model could never actually supply it.
+test('create_workflow_draft: nameEn is now part of the schema and actually persists through a real agent run',async()=>{
+ const {store,tenantA}=twoTenants();try{
+  setAutonomy(store,'sales',{level:'L1',reason:'promote',expectedVersion:0},user,env,tenantA);
+  const draftInput={nameAr:'متابعة العملاء الجدد',nameEn:'New lead follow-up',trigger:{type:'MANUAL'},steps:[{id:'step1',type:'NOTIFY_INTERNAL'}]};
+  const runtime=createAgentRuntime({store,env,fetcher:sequencedFetcher([toolUseTurn('create_workflow_draft',draftInput),textTurn(salesDecision())])});
+  const run=await runtime.run('sales',{triggerType:'TEST',input:{scenario:'price'},user,tenantId:tenantA});
+  const call=listToolCalls(store.db,run.id).find(c=>c.tool==='create_workflow_draft');
+  assert.ok(call,'create_workflow_draft must actually have run');
+  assert.equal(call.output.nameEn,'New lead follow-up');
  }finally{store.close();}
 });
 

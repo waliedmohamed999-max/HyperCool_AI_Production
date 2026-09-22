@@ -111,9 +111,24 @@ const TOOL_METADATA={
   category:'Memory',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'memory.read'},
  get_metrics:{description:'Get the current live weekly operations report (internal metrics only).',inputSchema:obj({}),minLevel:'L0',
   category:'Analytics',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'analytics.read'},
- create_lead:{description:'Create a new CRM lead record.',inputSchema:obj({name:string,customerType:string,sourceType:string},['name','customerType','sourceType']),minLevel:'L0',
+ // Fixed: the schema used to omit fields src/crm.js actually requires (RESEARCH-sourced leads
+ // need sourceUrl/trigger/triggerDate/fitScore/sourceChecked/routeIn — createLead() throws 400
+ // without them), so the model never knew to supply them and every RESEARCH-sourced create_lead
+ // call failed. INBOUND (no research fields needed) always worked.
+ create_lead:{description:'Create a new CRM lead record. For sourceType RESEARCH (B2B only), trigger/triggerDate/fitScore/sourceChecked/routeIn are also required.',inputSchema:obj({
+   name:string,customerType:string,sourceType:string,email:string,phone:string,company:string,
+   city:string,productNeed:string,productUrl:string,quantity:{type:'integer'},valueSAR:{type:'number'},timeline:string,budgetBand:string,
+   sourceUrl:string,trigger:string,triggerDate:string,fitScore:{type:'integer'},sourceChecked:{type:'boolean'},routeIn:string
+  },['name','customerType','sourceType']),minLevel:'L0',
   category:'CRM',riskLevel:'LOW',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'crm.write'},
- update_lead:{description:'Update an existing lead qualification/stage.',inputSchema:obj({leadId:string,stage:string,expectedVersion:{type:'integer'}},['leadId']),minLevel:'L0',
+ // Fixed: the schema used to omit `reason` and `temperature` — both required by
+ // src/crm.js's updateLead() (throws 400 without them) — so every real update_lead call from
+ // an agent failed. This is a REQUIRED tool for the sales agent (agent-readiness.js), so this
+ // bug silently blocked a core part of that agent's job.
+ update_lead:{description:'Update an existing lead qualification/stage. reason and temperature are both required.',inputSchema:obj({
+   leadId:string,stage:string,reason:string,temperature:string,expectedVersion:{type:'integer'},
+   nextCheckAt:string,assignedTo:string,city:string,productNeed:string,productUrl:string,quantity:{type:'integer'},valueSAR:{type:'number'},timeline:string,budgetBand:string
+  },['leadId','stage','reason','temperature']),minLevel:'L0',
   category:'CRM',riskLevel:'MEDIUM',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'crm.write'},
  save_message:{description:'Record an inbound conversation message against a lead.',inputSchema:obj({leadId:string,channel:string,text:string,intent:string,eventKey:string},['leadId','channel','text','intent','eventKey']),minLevel:'L0',
   category:'CRM',riskLevel:'LOW',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'crm.write'},
@@ -252,8 +267,10 @@ const TOOL_METADATA={
  // no-approval because it only ever produces an unpublished DRAFT (spec item 27); activating
  // or manually running an already-created workflow are real automations and go through the
  // exact same approval gate every other automation-trigger tool already uses.
+ // Fixed: nameEn was accepted by the handler (createWorkflowDraft stores it in a real name_en
+ // column) but missing from the schema, so the model could never actually supply it.
  create_workflow_draft:{description:'Create a new Workflow as a DRAFT from a structured plan (trigger + steps) — never activates it. The human must review and explicitly activate it afterward.',
-  inputSchema:obj({nameAr:string,description:string,trigger:{type:'object'},steps:{type:'array',items:{type:'object'}}},['nameAr','trigger','steps']),minLevel:'L0',
+  inputSchema:obj({nameAr:string,nameEn:string,description:string,trigger:{type:'object'},steps:{type:'array',items:{type:'object'}}},['nameAr','trigger','steps']),minLevel:'L0',
   category:'Command',riskLevel:'LOW',actionType:'INTERNAL_WRITE',integrationSlug:null,requiresConnection:false,isReadOnly:false,capability:'command.workflow.draft'},
  list_workflows:{description:'List real workflows for this tenant with their status (DRAFT/ACTIVE/PAUSED/ARCHIVED).',inputSchema:obj({status:string},[]),minLevel:'L0',
   category:'Command',riskLevel:'LOW',actionType:'READ',integrationSlug:null,requiresConnection:false,isReadOnly:true,capability:'command.workflow.read'},

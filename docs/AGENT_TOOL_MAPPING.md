@@ -107,7 +107,7 @@ history is touched by this phase.
 
 ## I. Real tool inventory (from `TOOL_METADATA`, `src/runtime/tools.js`)
 
-28 tools total, every one of them real (`isAvailable:false` no longer applies to any tool).
+51 tools total, every one of them real (`isAvailable:false` no longer applies to any tool).
 `salla_syncOrders` reads the Salla webhook ledger (order.created/order.status.updated/
 order.completed) through ConnectorRuntime; Salla's own order-list REST endpoint has no
 verified implementation here, so this is not a live poll. `generate_visual_asset` (formerly

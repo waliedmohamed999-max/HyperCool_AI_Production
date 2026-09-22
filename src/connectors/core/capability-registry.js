@@ -28,6 +28,7 @@ export const CANONICAL_CAPABILITIES=Object.freeze([
  {id:'commerce.customers.read',category:'COMMERCE',descriptionEn:'Read store customers',descriptionAr:'قراءة عملاء المتجر'},
  {id:'messaging.read',category:'MESSAGING',descriptionEn:'Read inbound messages',descriptionAr:'قراءة الرسائل الواردة'},
  {id:'messaging.send',category:'MESSAGING',descriptionEn:'Send an outbound message',descriptionAr:'إرسال رسالة صادرة'},
+ {id:'messaging.campaign_send',category:'MESSAGING',descriptionEn:'Send a bulk campaign message to multiple contacts',descriptionAr:'إرسال رسالة حملة جماعية لعدة جهات اتصال'},
  {id:'mail.read',category:'PRODUCTIVITY',descriptionEn:'Read mailbox items',descriptionAr:'قراءة عناصر البريد'},
  {id:'mail.send',category:'PRODUCTIVITY',descriptionEn:'Send an email',descriptionAr:'إرسال بريد إلكتروني'},
  {id:'calendar.read',category:'PRODUCTIVITY',descriptionEn:'Read calendar availability/events',descriptionAr:'قراءة التقويم/المواعيد'},

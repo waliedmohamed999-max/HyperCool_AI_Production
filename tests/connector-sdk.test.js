@@ -15,6 +15,7 @@ import {canonicalizeCapability,isKnownCapability,CANONICAL_CAPABILITIES} from '.
 import {listConnectorManifests,getConnector,getConnectorManifest} from '../src/connectors/registry.js';
 import {executeConnectorAction} from '../src/connectors/core/runtime.js';
 import {CONNECTOR_CATEGORY,CONNECTOR_AVAILABILITY,CONNECTION_MODE,AUTH_TYPE,ACTION_TYPE,RISK_LEVEL} from '../src/connectors/core/enums.js';
+import {connectionGrantsCapability} from '../src/runtime/capability-map.js';
 
 // Phase 6A — Universal Connector Framework. Real DB/harness, same shape as every prior phase's
 // own test file.
@@ -49,6 +50,12 @@ test('canonicalizeCapability resolves every real legacy alias found by the Phase
 test('isKnownCapability is true for every canonical id and false for a genuinely unknown one',()=>{
  for(const c of CANONICAL_CAPABILITIES)assert.equal(isKnownCapability(c.id),true);
  assert.equal(isKnownCapability('made.up.capability'),false);
+});
+// Regression: whatsapp_campaign_send's capability used to match nothing in the scope table —
+// a connection with the real granted scope now genuinely grants it, same as whatsapp_send.
+test('whatsapp_campaign_send\'s capability is registered and satisfied by the real WhatsApp scope',()=>{
+ assert.equal(connectionGrantsCapability('whatsapp','messaging.campaign_send',['whatsapp_business_messaging']),true);
+ assert.equal(connectionGrantsCapability('whatsapp','messaging.campaign_send',['some_other_scope']),false);
 });
 
 // --- Manifest validation ---------------------------------------------------------------------

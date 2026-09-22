@@ -25,7 +25,9 @@ const CAPABILITY_SCOPES = {
  // — there is no separate Salla scope for price or stock, so all three tool capabilities are
  // satisfied by the one real scope actually requested (salla-oauth.js DEFAULT_SCOPES).
  salla:{'commerce.products.read':['products.read'],'commerce.price.read':['products.read'],'commerce.stock.read':['products.read'],'orders.read':['orders.read']},
- whatsapp:{'messaging.send':['whatsapp_business_messaging']},
+ // whatsapp_campaign_send is the same underlying WhatsApp Business send call as whatsapp_send,
+ // just bounded to a list of leads — no separate scope exists for it, same as whatsapp_send.
+ whatsapp:{'messaging.send':['whatsapp_business_messaging'],'messaging.campaign_send':['whatsapp_business_messaging']},
  // meta-oauth.js's DEFAULT_SCOPES requests instagram_content_publish and
  // pages_manage_metadata but never pages_manage_posts — Meta's own docs list
  // pages_manage_posts as the real requirement for a Facebook Page /feed post. That is a

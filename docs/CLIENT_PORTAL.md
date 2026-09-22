@@ -106,7 +106,7 @@ Every route declared in `src/application.js` has an explicit access class in `sr
 | `/api/invitations/…` | 2 | public | — |
 | `/api/login/…` | 1 | public | — |
 | `/api/logout/…` | 1 | public | — |
-| `/api/marketing/…` | 28 | workspace_member | owner, operator |
+| `/api/marketing/…` | 35 | workspace_member | owner, operator |
 | `/api/memory/…` | 4 | workspace_member | owner, operator |
 | `/api/onboarding/…` | 3 | workspace_member | owner, operator |
 | `/api/partners/…` | 1 | platform_admin | — |
