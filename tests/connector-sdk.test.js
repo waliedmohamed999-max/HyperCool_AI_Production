@@ -103,15 +103,20 @@ test('validateAdapter requires healthCheck, requires executeAction when actions 
 
 // --- Registry: the 3 real, wrapped providers load without throwing ---------------------------
 
-test('The connector registry loads Salla/Anthropic/OpenAI/Zid as real Connectors with validated manifests+adapters',()=>{
+test('The connector registry loads Salla/Anthropic/OpenAI/Zid/Canva as real Connectors with validated manifests+adapters',()=>{
  const manifests=listConnectorManifests();
- assert.equal(manifests.length,4);
+ assert.equal(manifests.length,5);
  assert.ok(getConnectorManifest('salla'));
  assert.ok(getConnectorManifest('anthropic'));
  assert.ok(getConnectorManifest('openai'));
  assert.ok(getConnectorManifest('zid'));
+ assert.ok(getConnectorManifest('canva'));
  assert.equal(getConnector('salla').manifest.connectionMode,'MULTI');
  assert.equal(getConnector('zid').manifest.connectionMode,'MULTI');
+ // Canva declares zero actions (no confirmed API for "generate from a brief") — healthCheck
+ // only, no executeAction, matching the adapter contract for an action-less connector.
+ assert.equal(getConnector('canva').manifest.actions.length,0);
+ assert.equal(typeof getConnector('canva').adapter.executeAction,'undefined');
  assert.equal(getConnector('does-not-exist'),null);
 });
 

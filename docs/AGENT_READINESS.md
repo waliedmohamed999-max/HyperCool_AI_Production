@@ -21,7 +21,7 @@ because it exists").
 | `CONNECTION_REQUIRED` | `CONNECTION_NOT_FOUND`, `CONNECTION_PROVIDER_MISMATCH`, `CONNECTION_SELECTION_REQUIRED`, or the legacy static path is genuinely unconfigured |
 | `CONNECTION_UNHEALTHY` | An explicitly assigned connection exists but is not `CONNECTED`/`DEGRADED` |
 | `CONNECTION_CAPABILITY_MISSING` | *(Phase 4B.1)* The connection is the right provider and healthy, but its real granted OAuth scopes don't cover what this tool needs — see `docs/CONNECTION_AWARE_RUNTIME.md`'s capability enforcement section. Never folded into `CONNECTION_REQUIRED`: an operator needs to know "reconnect with more permissions" is different from "connect something at all" |
-| `DISABLED` | The tool's own assignment is disabled, or `ToolDefinition.isAvailable=false` (Canva, `salla_syncOrders`) |
+| `DISABLED` | The tool's own assignment is disabled, or `ToolDefinition.isAvailable=false` (Canva only — `salla_syncOrders` is real) |
 | `PERMISSION_BLOCKED` | *(reserved — permission-level blocking is reported at the agent run level via `FORBIDDEN`/`WAITING_APPROVAL`, not duplicated here)* |
 
 ## AgentReadiness states

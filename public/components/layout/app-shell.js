@@ -2,7 +2,7 @@ import {icon,button,header,drawer,escape,dropdown,tooltip,initials} from '../ui/
 import {t,onLocaleChange,getLocale,setLocale} from '../../i18n.js';
 // Route metadata: only the icon is fixed — title/description are always looked up live from
 // the current locale's navigation.json so a language switch relabels every page instantly.
-const ROUTE_ICONS={overview:'grid','command-center':'agent',workflows:'clock',marketing:'chart',whatsapp:'plug',partnerships:'users',customers:'users',crm:'users',planning:'calendar',reports:'chart',content:'file',agents:'agent',knowledge:'book',integrations:'plug','control-center':'plug',onboarding:'check',audit:'clock',users:'users',account:'info',platform:'grid','integration-builder':'plug'};
+const ROUTE_ICONS={overview:'grid','command-center':'agent',workflows:'clock',marketing:'chart',whatsapp:'plug',partnerships:'users',customers:'users',crm:'users',planning:'calendar',reports:'chart',content:'file',agents:'agent',knowledge:'book','control-center':'plug',onboarding:'check',audit:'clock',users:'users',account:'info',platform:'grid','integration-builder':'plug'};
 const ROUTE_KEYS=Object.keys(ROUTE_ICONS);
 function routeTitle(key){return t(`navigation.${key}.title`);}
 function routeDescription(key){return t(`navigation.${key}.description`);}
@@ -16,7 +16,7 @@ let currentUser=null,cache=new Map(),apiClient,closeMobile=()=>{};
 // The three real nav-group boundaries (already used for the section labels below) become
 // the icon rail — one icon per group, jumping to its first page. Not a decorative repeat
 // of the panel list: it is the only quick way to jump straight to a group from anywhere.
-const RAIL_GROUPS=[['overview','grid','navigation.operationsGroup'],['content','agent','navigation.aiOperationsGroup'],['integrations','plug','navigation.systemGroup']];
+const RAIL_GROUPS=[['overview','grid','navigation.operationsGroup'],['content','agent','navigation.aiOperationsGroup'],['control-center','plug','navigation.systemGroup']];
 const MOBILE_TABS=[['overview','grid'],['crm','users'],['content','file'],['agents','agent']];
 function railGroupIndex(route){
  const order=ROUTE_KEYS;const at=key=>order.indexOf(key);
@@ -32,7 +32,7 @@ export function installShell(){
  // Each anchor key is the FIRST route of its cluster in the actual DOM order (index.html) —
  // purely a label insertion point, never touched by ROUTE_ICONS/RAIL_GROUPS/railGroupIndex,
  // which key off the unchanged ROUTE_KEYS array order and are deliberately left alone here.
- for(const [key] of [['overview'],['command-center'],['marketing'],['crm'],['content'],['integrations'],['audit']]){const el=document.createElement('span');el.className='nav-group';nav.querySelector(`[href="#${key}"]`).before(el);groupSpans.set(key,el);}
+ for(const [key] of [['overview'],['command-center'],['marketing'],['crm'],['content'],['knowledge'],['audit']]){const el=document.createElement('span');el.className='nav-group';nav.querySelector(`[href="#${key}"]`).before(el);groupSpans.set(key,el);}
  const rail=document.createElement('div');rail.className='sidebar-rail';
  rail.innerHTML='<div class="rail-brand">F</div>'+RAIL_GROUPS.map(([key])=>`<button type="button" class="rail-icon" data-rail="${key}"></button>`).join('');
  rail.querySelectorAll('[data-rail]').forEach(b=>b.onclick=()=>navigate(b.dataset.rail));
@@ -60,7 +60,7 @@ export function installShell(){
  const notificationTip=tooltip(document.querySelector('#notifications'),'');
  const accountDropdown=dropdown('',[
   ['',()=>document.querySelector('#profile-button').click()],
-  ['',()=>navigate(currentUser?.role==='owner'?'users':'integrations')],
+  ['',()=>navigate(currentUser?.role==='owner'?'users':currentUser?.role==='operator'?'control-center':'overview')],
   ['',()=>document.querySelector('#logout').click()]
  ]);
  const langSwitch=document.createElement('div');langSwitch.className='lang-switch';langSwitch.setAttribute('role','group');
@@ -68,14 +68,14 @@ export function installShell(){
  langSwitch.querySelectorAll('[data-locale]').forEach(b=>b.onclick=()=>changeLocale(b.dataset.locale));
  top.querySelector('.topbar-tools').append(langSwitch,accountDropdown);
  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'&&currentUser){e.preventDefault();openSearch();}});
- document.querySelector('#profile-button').onclick=()=>{const node=document.createElement('div');node.innerHTML=`<span class="avatar">${escape(initials(currentUser?.name))}</span><h3>${escape(currentUser?.name)}</h3><p dir="ltr">${escape(currentUser?.username)}</p><p>${escape(roleName(currentUser?.role))}</p>`;const settings=button(t('navigation.workspaceSettings'));settings.onclick=()=>{node.closest('dialog').close();navigate(currentUser?.role==='owner'?'users':'integrations');};node.append(settings);drawer(t('navigation.accountProfile'),node,{restore:true});};
+ document.querySelector('#profile-button').onclick=()=>{const node=document.createElement('div');node.innerHTML=`<span class="avatar">${escape(initials(currentUser?.name))}</span><h3>${escape(currentUser?.name)}</h3><p dir="ltr">${escape(currentUser?.username)}</p><p>${escape(roleName(currentUser?.role))}</p>`;const settings=button(t('navigation.workspaceSettings'));settings.onclick=()=>{node.closest('dialog').close();navigate(currentUser?.role==='owner'?'users':currentUser?.role==='operator'?'control-center':'overview');};node.append(settings);drawer(t('navigation.accountProfile'),node,{restore:true});};
  document.querySelector('#notifications').onclick=()=>{const node=document.createElement('div');const approvals=cache.get('/api/approvals?status=PENDING')||[],escalations=cache.get('/api/escalations?status=OPEN')||[],content=(cache.get('/api/state')?.content||[]).filter(c=>['DRAFT','REVIEWED'].includes(c.status));node.innerHTML=`<p>${approvals.length+escalations.length} · ${content.length}</p>`;for(const item of [...approvals,...escalations]){const p=document.createElement('p');p.textContent=item.reason;node.append(p);}const b=button(t('navigation.pendingDecisions'));b.onclick=()=>{node.closest('dialog').close();navigate('agents');};const c=button(routeTitle('content'));c.onclick=()=>{node.closest('dialog').close();navigate('content');};node.append(b,c);drawer(t('navigation.pendingDecisions'),node,{restore:true});};
  window.addEventListener('resize',()=>{if(window.innerWidth>1000)closeMobile();});
 
  function refreshShellText(){
   aside.setAttribute('aria-label',t('navigation.mainMenu'));
   nav.setAttribute('aria-label',t('navigation.appPages'));
-  const groupKeyByLabel={overview:'navigation.homeGroup','command-center':'navigation.aiOperationsGroup',marketing:'navigation.marketingGroup',crm:'navigation.businessGroup',content:'navigation.growthGroup',integrations:'navigation.platformGroup',audit:'navigation.accountGroup'};
+  const groupKeyByLabel={overview:'navigation.homeGroup','command-center':'navigation.aiOperationsGroup',marketing:'navigation.marketingGroup',crm:'navigation.businessGroup',content:'navigation.growthGroup',knowledge:'navigation.platformGroup',audit:'navigation.accountGroup'};
   for(const [key,el] of groupSpans)el.textContent=t(groupKeyByLabel[key]);
   // Integration Builder discoverability — `data-route-key` lets a SECOND nav link point at the same real page
   // (`href`, used for actual navigation/icon lookup) while showing its own distinct label

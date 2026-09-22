@@ -4,7 +4,7 @@ import {randomBytes} from 'node:crypto';
 import {openStore} from '../src/store.js';
 import {installTenancy,createTenant} from '../src/tenancy.js';
 import {createAuth} from '../src/auth.js';
-import {installIntegrationDefinitions,listIntegrationDefinitions,getIntegrationDefinition} from '../src/integrations/definitions.js';
+import {installIntegrationDefinitions,listIntegrationDefinitions,getIntegrationDefinition,connectionModeFor} from '../src/integrations/definitions.js';
 import {installIntegrationConnections,createConnection,listConnections,getConnection,getConnectionOrNull,updateConnection,setDefaultConnection,getDefaultConnection,resolveProviderAccount,disconnectConnection} from '../src/integrations/connections.js';
 import {installCredentialsVault,storeCredential,getCredentialForRuntime,hasCredential,getCredentialMeta,removeCredential} from '../src/integrations/vault.js';
 import {installOAuthStates,createOAuthState,consumeOAuthState,pruneExpiredOAuthStates} from '../src/integrations/oauth-state.js';
@@ -33,12 +33,14 @@ function twoTenants(store){
 
 // --- IntegrationDefinitions ------------------------------------------------------------
 
-test('IntegrationDefinitions: seeds exactly the 10 real providers, Canva correctly marked NOT_IMPLEMENTED (isAvailable:false)',()=>{
+test('IntegrationDefinitions: seeds exactly the 10 real providers, Canva now a real OAuth2 identity connector (isAvailable:true, SINGLE, zero capabilities)',()=>{
  const store=fixture();try{
   const defs=listIntegrationDefinitions(store.db);
   assert.equal(defs.length,10);
   const canva=getIntegrationDefinition(store.db,'canva');
-  assert.equal(canva.authType,'NONE');assert.equal(canva.isAvailable,false);
+  assert.equal(canva.authType,'OAUTH2');assert.equal(canva.isAvailable,true);
+  assert.equal(connectionModeFor('canva'),'SINGLE');
+  assert.deepEqual(canva.capabilities,[]); // identity/health only — no confirmed generate/autofill call yet
   const salla=getIntegrationDefinition(store.db,'salla');
   assert.equal(salla.authType,'OAUTH2');assert.equal(salla.isAvailable,true);
   const anthropic=getIntegrationDefinition(store.db,'anthropic');

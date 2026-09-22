@@ -97,7 +97,7 @@ Every route declared in `src/application.js` has an explicit access class in `sr
 | `/api/escalations/…` | 2 | workspace_member | owner |
 | `/api/frost/…` | 2 | workspace_member | any member |
 | `/api/frost/…` | 3 | platform_operator | owner |
-| `/api/integrations/…` | 4 | workspace_member | owner, operator |
+| `/api/integrations/…` | 8 | workspace_member | owner, operator |
 | `/api/integrations/<provider>/… (legacy per-provider OAuth)` | 21 | workspace_member | owner, operator |
 | `/api/integrations/connections/…` | 24 | workspace_member | owner, operator |
 | `/api/integrations/custom-connectors/…` | 7 | workspace_member | owner |

@@ -45,7 +45,11 @@ export const INTEGRATIONS=[
  // and calendar are implemented; activity is read from crm_messages (channel=Email) and
  // webhook_events (source=microsoft365), not a separate log table.
  {id:'microsoft365',name:'Microsoft 365',category:'Productivity',description:'إرسال واستقبال البريد الإلكتروني وجدولة الاجتماعات.',envVars:['MICROSOFT_ACCESS_TOKEN'],webhookVar:'MICROSOFT_WEBHOOK_SECRET',authType:'OAuth Token',connectorImplemented:true,scopes:[{name:'Mail.Read',note:'قراءة البريد الوارد لالتقاط ردود العملاء'},{name:'Mail.Send',note:'إرسال بريد إلكتروني نيابة عن المستخدم'},{name:'User.Read',note:'قراءة الهوية المتصلة (الاسم والبريد)'},{name:'Calendars.ReadWrite',note:'إنشاء اجتماعات المبيعات والعروض التوضيحية (اختياري)'}]},
- {id:'canva',name:'Canva',category:'Productivity',description:'توليد الأصول البصرية للمحتوى.',envVars:['CANVA_API_KEY'],authType:'API Key',connectorImplemented:false,scopes:[{name:'design:content:write',note:'إنشاء تصاميم جديدة'}]}
+ // Real OAuth2+PKCE identity connector now exists (src/runtime/canva-oauth.js) — this legacy
+ // env-var monitor still only tracks the server-level static vars, never the per-tenant OAuth
+ // credential the real connector actually uses; real Canva activity/errors are visible in the
+ // Control Center's Integrations tab (the modern ConnectorRuntime path), not here.
+ {id:'canva',name:'Canva',category:'Productivity',description:'ربط حساب Canva للتحقق من الهوية — توليد التصاميم غير مبني بعد.',envVars:['CANVA_CLIENT_ID','CANVA_CLIENT_SECRET','CANVA_REDIRECT_URI'],authType:'OAuth 2.0 + PKCE',connectorImplemented:false,scopes:[{name:'profile:read',note:'التحقق من هوية الحساب المتصل'}]}
 ];
 export const ERROR_ACTIONS={
  CREDENTIALS_REJECTED:'تحقق من صحة المفتاح أو الرمز في إعدادات الخادم',

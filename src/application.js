@@ -135,6 +135,7 @@ import {testMicrosoftConnection,sendMail,getMessage,createMailSubscription,delet
 import {handleValidationHandshake,processMicrosoftNotifications} from './runtime/microsoft-webhooks.js';
 import {updateCredentialsMetadata,getCredentialsMeta} from './runtime/credentials.js';
 import {xOAuthConfigured,createXAuthorizeUrl,consumeXState,exchangeCodeForTokens as exchangeXCodeForTokens,resolveConnectedProfile as resolveXProfile,saveXConnection,xOAuthStatus,disconnectX} from './runtime/x-oauth.js';
+import {canvaOAuthConfigured,createCanvaAuthorizeUrl,consumeCanvaState,exchangeCodeForTokens as exchangeCanvaCodeForTokens,resolveConnectedProfile as resolveCanvaProfile,saveCanvaConnection,canvaOAuthStatus,disconnectCanva} from './runtime/canva-oauth.js';
 import {testXConnection} from './runtime/x-publishing.js';
 import {linkedInOAuthConfigured,createLinkedInAuthorizeUrl,consumeLinkedInState,exchangeCodeForTokens as exchangeLinkedInCodeForTokens,resolveConnectedProfile as resolveLinkedInProfile,resolveAdministeredOrganizations,saveLinkedInConnection,linkedInOAuthStatus,disconnectLinkedIn} from './runtime/linkedin-oauth.js';
 import {testLinkedInConnection} from './runtime/linkedin-publishing.js';
@@ -172,7 +173,8 @@ function validateEnv(env) {
   ['Microsoft 365',['MICROSOFT_ACCESS_TOKEN, or MICROSOFT_CLIENT_ID/SECRET/TENANT_ID/REDIRECT_URI for OAuth'],!!env.MICROSOFT_ACCESS_TOKEN||!!(env.MICROSOFT_CLIENT_ID&&env.MICROSOFT_CLIENT_SECRET&&env.MICROSOFT_REDIRECT_URI)],
   ['Microsoft 365 OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.MICROSOFT_CLIENT_ID||credentialsConfigured(env)],
   ['Microsoft 365 mail webhook',['MICROSOFT_WEBHOOK_SECRET'],!!env.MICROSOFT_WEBHOOK_SECRET],
-  ['Canva',['CANVA_API_KEY'],!!env.CANVA_API_KEY],
+  ['Canva',['CANVA_CLIENT_ID/CANVA_CLIENT_SECRET/CANVA_REDIRECT_URI for OAuth (identity/health check only — design generation is not built)'],!!(env.CANVA_CLIENT_ID&&env.CANVA_CLIENT_SECRET&&env.CANVA_REDIRECT_URI)],
+  ['Canva OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.CANVA_CLIENT_ID||credentialsConfigured(env)],
   ['Zid',['ZID_CLIENT_ID/ZID_CLIENT_SECRET/ZID_REDIRECT_URI for OAuth'],!!(env.ZID_CLIENT_ID&&env.ZID_CLIENT_SECRET&&env.ZID_REDIRECT_URI)],
   ['Zid OAuth token encryption',['INTEGRATION_ENCRYPTION_KEY'],!env.ZID_CLIENT_ID||credentialsConfigured(env)]
  ];
@@ -2241,6 +2243,34 @@ export async function createApp({env=process.env,dataDir=env.DATA_DIR||fileURLTo
         authorize(session,['owner']);
         disconnectX(store.db,session.tenantId);
         recordAudit(store.db,{id:crypto.randomUUID(),action:'X_DISCONNECTED',itemId:'x',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        return send(200,{disconnected:true});
+      }
+      // Canva OAuth (owner only, same bar as above). PKCE required, same shape as X — see
+      // src/runtime/canva-oauth.js's own caveat: this flow has never been exercised against a
+      // real Canva Developer Portal app from this codebase.
+      if(req.method==='GET' && url.pathname==='/api/integrations/canva/oauth/status') {
+        authorize(session,['owner']);
+        return send(200,canvaOAuthStatus(store.db,session.tenantId));
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/canva/oauth/start') {
+        authorize(session,['owner']);
+        res.writeHead(302,{Location:createCanvaAuthorizeUrl(env,session.user.id)});return res.end();
+      }
+      if(req.method==='GET' && url.pathname==='/api/integrations/canva/oauth/callback') {
+        authorize(session,['owner']);
+        const code=url.searchParams.get('code'),oauthState=url.searchParams.get('state');
+        if(!code||!oauthState)fail(400,'استجابة ربط Canva ناقصة (code/state)');
+        const codeVerifier=consumeCanvaState(oauthState,session.user.id);
+        const tokens=await exchangeCanvaCodeForTokens({env,fetcher,code,codeVerifier});
+        const profile=await resolveCanvaProfile({fetcher,accessToken:tokens.accessToken});
+        saveCanvaConnection(store.db,env,tokens,profile,session.user,session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CANVA_CONNECTED',itemId:'canva',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
+        res.writeHead(302,{Location:'/app#integrations'});return res.end();
+      }
+      if(req.method==='POST' && url.pathname==='/api/integrations/canva/disconnect') {
+        authorize(session,['owner']);
+        disconnectCanva(store.db,session.tenantId);
+        recordAudit(store.db,{id:crypto.randomUUID(),action:'CANVA_DISCONNECTED',itemId:'canva',actorId:session.user.id,actorName:session.user.name,at:new Date().toISOString()},session.tenantId);
         return send(200,{disconnected:true});
       }
       // LinkedIn OAuth (owner only, same bar as above). Organization resolution is a real,

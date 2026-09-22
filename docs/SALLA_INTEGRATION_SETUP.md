@@ -100,6 +100,11 @@ light read call. Returns `NOT_CONFIGURED`, `OK`, `AUTH_FAILED`, `RATE_LIMITED`, 
 
 ## What is NOT built yet (next increment, deliberately not rushed this pass)
 
+- **A live REST pull of Salla's order list.** No such call has ever been verified against a
+  real delivery from this codebase (see the caveats above). The agent tool `salla_syncOrders`
+  (`src/connectors/salla/adapter.js`, action `list_recent_orders`) deliberately does not guess
+  at this endpoint — it reads the real, already-working webhook ledger below instead, so it
+  only ever returns orders this store has already pushed a delivery for.
 - **Order/customer sync into the CRM.** The webhook infrastructure real-time-emits
   `ORDER_CREATED`/`ORDER_UPDATED`/`ORDER_COMPLETED` with the raw Salla payload, and the
   event bus is ready for a handler — but no code yet turns an order into a CRM lead/customer

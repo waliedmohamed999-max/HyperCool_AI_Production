@@ -40,8 +40,8 @@ gate (`docs/WORKSPACE_SELECTION.md`) before ever reaching this page, unchanged.
   registry fallback `runtime.js` itself uses) and `status` from the real
   `evaluateAgentReadiness` (Phase 4B) — **never** `enabled=true => READY`. Counts:
   `total/enabled/ready/partial/blocked/disabled`.
-- **tools**: the real `ToolDefinition` catalog count (`available`/`unavailable` — Canva and
-  `salla_syncOrders` are honestly `unavailable`), plus a live tally of every
+- **tools**: the real `ToolDefinition` catalog count (`available`/`unavailable` — only Canva is
+  honestly `unavailable`; `salla_syncOrders` is real), plus a live tally of every
   `ToolReadinessService` status (`evaluateAllToolsReadiness`, Phase 4B.1) across all 12 agents
   — this is what "how many tool assignments have a capability/connection problem right now"
   actually means, since readiness is inherently per-`(agent, tool)`, not tool-global.

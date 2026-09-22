@@ -16,6 +16,6 @@ try{
  const base=`http://127.0.0.1:${app.server.address().port}`;
  await page.goto(base+'/app');await page.locator('#auth-form [name=name]').fill('مالك اختبار الواجهة');await page.locator('#auth-form [name=username]').fill('ui_owner');await page.locator('#auth-form [name=password]').fill(QA_PASSWORD);await page.locator('#auth-form button').click();await page.locator('#protected').waitFor({state:'visible'});await page.waitForTimeout(1000);
  await mkdir('artifacts/ui/smoke',{recursive:true});
- for(const route of ['overview','crm','agents','integrations']){await page.locator(`nav a[href="#${route}"]`).click();await page.screenshot({path:`artifacts/ui/smoke/${route}.png`,fullPage:true});}
+ for(const route of ['overview','crm','agents','control-center']){await page.locator(`nav a[href="#${route}"]`).click();await page.screenshot({path:`artifacts/ui/smoke/${route}.png`,fullPage:true});}
  console.log('Smoke screenshots captured using isolated test database');
 }finally{await browser?.close();await new Promise(resolve=>app.server.close(resolve));app.scheduler?.stop?.();app.store.close();await rm(dataDir,{recursive:true,force:true});}

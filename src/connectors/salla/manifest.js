@@ -20,7 +20,7 @@ export const sallaManifest=validateManifest({
   pkce:false,
   scopes:['offline_access','products.read','orders.read','customers.read']
  },
- capabilities:['commerce.products.read'],
+ capabilities:['commerce.products.read','commerce.orders.read'],
  actions:[{
   id:'salla.sync_products',slug:'sync_products',
   nameAr:'مزامنة المنتجات',nameEn:'Sync Products',
@@ -30,6 +30,21 @@ export const sallaManifest=validateManifest({
   inputSchema:{type:'object',properties:{},additionalProperties:false},
   outputSchema:{type:'object',properties:{count:{type:'number'},products:{type:'array'}}},
   timeoutMs:45000
+ },{
+  id:'salla.list_recent_orders',slug:'list_recent_orders',
+  nameAr:'أحدث الطلبات',nameEn:'Recent Orders',
+  // Salla's REST order-list endpoint has never been called/verified from this codebase (see
+  // docs/SALLA_INTEGRATION_SETUP.md), so this action deliberately does NOT guess at one. It
+  // reads the real, already-working webhook ledger instead (order.created/order.status.updated/
+  // order.completed deliveries this tenant's Salla app has already pushed to /api/webhooks/salla
+  // — src/runtime/salla-webhooks.js) — genuinely real data, honestly scoped to "what has arrived
+  // so far", never a live poll of an unconfirmed endpoint.
+  description:'Lists recent order events (created/updated/completed) this store has pushed via the Salla webhook — not a live poll, since Salla\'s REST order-list endpoint has no verified implementation here yet.',
+  method:'LOCAL',requiredCapability:'commerce.orders.read',
+  riskLevel:RISK_LEVEL.LOW,actionType:ACTION_TYPE.READ,
+  inputSchema:{type:'object',properties:{limit:{type:'number'}},additionalProperties:false},
+  outputSchema:{type:'object',properties:{count:{type:'number'},orders:{type:'array'},source:{type:'string'}}},
+  timeoutMs:5000
  }],
  triggers:[],
  webhooks:{path:'/api/webhooks/salla',authType:'HMAC_OR_SHARED_SECRET',externalEventIdPath:'order.id'},

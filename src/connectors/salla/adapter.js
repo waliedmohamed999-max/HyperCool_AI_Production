@@ -4,6 +4,27 @@
 // calling shape changes to match the generic Connector Adapter contract (src/connectors/core/adapter.js).
 import {testSallaConnection,importSalla,ConnectorError} from '../../connectors.js';
 import {CONNECTOR_ERROR_CODE} from '../core/enums.js';
+import {listWebhookEvents} from '../../runtime/webhook-events.js';
+
+const ORDER_EVENT_TYPES=new Set(['order.created','order.status.updated','order.completed']);
+// Real data straight from the already-working, verified webhook ledger (src/runtime/salla-webhooks.js)
+// — see the manifest's own comment on this action for why this reads stored deliveries rather than
+// polling an unconfirmed REST endpoint.
+function recentOrdersFromWebhookLedger(db,tenantId,limit) {
+ const events=listWebhookEvents(db,{source:'salla',limit:Math.max(limit*4,100)},tenantId)
+  .filter(row=>ORDER_EVENT_TYPES.has(row.type))
+  .slice(0,limit);
+ return events.map(row=>{
+  const payload=JSON.parse(row.payload);
+  return {
+   webhookEventId:row.id,sallaEvent:row.type,receivedAt:row.received_at,
+   orderId:payload?.data?.id??null,status:payload?.data?.status?.name??payload?.data?.status??null,
+   total:payload?.data?.amounts?.total?.amount??payload?.data?.total?.amount??null,
+   currency:payload?.data?.amounts?.total?.currency??payload?.data?.currency??null,
+   customer:payload?.data?.customer?.first_name?[payload.data.customer.first_name,payload.data.customer.last_name].filter(Boolean).join(' '):null
+  };
+ });
+}
 
 function mapError(code) {
  return {
@@ -25,8 +46,12 @@ export const sallaAdapter={
   if(result.result==='OK')return {status:'OK'};
   return {status:result.result,errorCode:mapError(result.code)};
  },
- async executeAction({action,env,fetcher,credential}) {
+ async executeAction({action,input,env,fetcher,credential,db,connection}) {
   const accessToken=credential?.payload?.accessToken||null;
+  if(action.slug==='list_recent_orders') {
+   const orders=recentOrdersFromWebhookLedger(db,connection.tenantId,Math.min(Math.max(input?.limit||25,1),100));
+   return {status:'OK',output:{count:orders.length,orders,source:'webhook_ledger'}};
+  }
   if(action.slug!=='sync_products')return {status:'ERROR',errorCode:CONNECTOR_ERROR_CODE.CAPABILITY_MISSING};
   try {
    const products=await importSalla({env:ownCredentialOnly(env),fetcher,accessToken});

@@ -27,6 +27,7 @@ import {installTenantAgentConfigs,getTenantAgentConfig,updateTenantAgentConfig,s
 import {installToolDefinitions,listToolDefinitions,getToolDefinition} from '../src/runtime/tool-definitions.js';
 import {installAgentToolAssignments,upsertAssignment,resolveToolConnection} from '../src/runtime/tool-assignments.js';
 import {evaluateAgentReadiness,evaluateToolReadiness} from '../src/runtime/agent-readiness.js';
+import {installWebhookEvents,processSallaWebhook} from '../src/runtime/salla-webhooks.js';
 
 const key32=randomBytes(32).toString('hex');
 const env={ANTHROPIC_API_KEY:'test-secret',ANTHROPIC_MODEL:'test-model',INTEGRATION_ENCRYPTION_KEY:key32,ENABLE_L2_AUTONOMY:'true'};
@@ -38,7 +39,7 @@ function fixture(){
  installAutonomy(store.db);installReporting(store.db);installRegistry(store.db);installRuntimeTables(store.db);
  installEvents(store.db);installApprovals(store.db);installEscalations(store.db);installGate(store.db);
  installCredentials(store.db);installContent(store.db);installAuditLog(store.db);
- installIntegrationDefinitions(store.db);installIntegrationConnections(store.db);installCredentialsVault(store.db);installOAuthStates(store.db);
+ installIntegrationDefinitions(store.db);installIntegrationConnections(store.db);installCredentialsVault(store.db);installOAuthStates(store.db);installWebhookEvents(store.db);
  installToolDefinitions(store.db);installTenantAgentConfigs(store.db);installAgentToolAssignments(store.db);
  seedRegistry(store.db);
  const tenantId=resolveActiveTenantId(store.db);
@@ -64,14 +65,14 @@ const salesDecision=(over={})=>({status:'OK',action:'REPLY',rationale:'ok',verif
 
 // --- ToolDefinition ----------------------------------------------------------------------
 
-test('ToolDefinition: seeded exclusively from the real Tool Registry — 51 tools, Canva/salla_syncOrders honestly NOT_IMPLEMENTED',()=>{
+test('ToolDefinition: seeded exclusively from the real Tool Registry — 51 tools, Canva honestly NOT_IMPLEMENTED, salla_syncOrders real',()=>{
  const {store}=fixture();try{
   const tools=listToolDefinitions(store.db);
   assert.equal(tools.length,51); // ...; Phase 7B added 5 more; Phase 7C added 6 Workflow Engine chat tools (create_workflow_draft, list_workflows, explain_workflow_failure, activate_workflow, run_workflow_now, pause_workflow_now); Phase MKT-2 Part I/J added meta_message_send; WhatsApp Hub added whatsapp_campaign_send
   const canva=getToolDefinition(store.db,'canva_generateAsset');
   assert.equal(canva.isAvailable,false);
   const salla=getToolDefinition(store.db,'salla_syncOrders');
-  assert.equal(salla.isAvailable,false);
+  assert.equal(salla.isAvailable,true); // real handler now, reads the Salla webhook ledger through ConnectorRuntime
   const whatsapp=getToolDefinition(store.db,'whatsapp_send');
   assert.equal(whatsapp.requiresApprovalBelowLevel,'L2');assert.equal(whatsapp.minLevel,'L1');
   assert.equal(getToolDefinition(store.db,'not-a-real-tool'),null);
@@ -457,5 +458,44 @@ test('Secret boundary: the tool execution context never carries a vault secret �
   assert.equal(seenCtx.connectionId,salla.id);
   assert.equal(JSON.stringify(seenCtx).includes('sk-super-secret-token'),false);
   assert.equal('accessToken' in seenCtx,false);
+ }finally{store.close();}
+});
+
+// --- salla_syncOrders: real end-to-end, through a real agent run --------------------------
+
+test('salla_syncOrders: a real agent run reads genuine order events already pushed via the Salla webhook, tenant-scoped, through ConnectorRuntime',async()=>{
+ const {store,tenantA,tenantB}=twoTenants();try{
+  setAutonomy(store,'sales',{level:'L1',reason:'promote',expectedVersion:0},user,env,tenantA);
+  const salla=createConnection(store.db,{integrationDefinitionId:'salla',name:'Main Store'},tenantA);
+  updateConnection(store.db,salla.id,{status:'CONNECTED',scopes:['products.read','orders.read']},tenantA);
+  upsertAssignment(store.db,tenantA,'sales','salla_syncOrders',{connectionId:salla.id});
+  // A second tenant's own Salla store + order — must never leak into tenant A's result.
+  const sallaB=createConnection(store.db,{integrationDefinitionId:'salla',name:'Other Store'},tenantB);
+  updateConnection(store.db,sallaB.id,{status:'CONNECTED',scopes:['orders.read']},tenantB);
+  processSallaWebhook({db:store.db,body:{event:'order.created',data:{id:'o-B',status:{name:'جديد'}},merchant:'m-B'},tenantId:tenantB});
+  processSallaWebhook({db:store.db,body:{event:'order.created',data:{id:'o-A1',status:{name:'قيد التنفيذ'},amounts:{total:{amount:150,currency:'SAR'}}},merchant:'m-A'},tenantId:tenantA});
+  processSallaWebhook({db:store.db,body:{event:'order.status.updated',data:{id:'o-A1',status:{name:'مكتمل'},amounts:{total:{amount:150,currency:'SAR'}}},merchant:'m-A'},tenantId:tenantA});
+  processSallaWebhook({db:store.db,body:{event:'product.updated',data:{id:'p-1'},merchant:'m-A'},tenantId:tenantA}); // never counted as an order
+
+  const runtime=createAgentRuntime({store,env,fetcher:sequencedFetcher([toolUseTurn('salla_syncOrders',{limit:5}),textTurn(salesDecision())])});
+  const run=await runtime.run('sales',{triggerType:'TEST',input:{scenario:'price'},user,tenantId:tenantA});
+  const call=listToolCalls(store.db,run.id).find(c=>c.tool==='salla_syncOrders');
+  assert.ok(call,'salla_syncOrders must actually have run, not been skipped');
+  assert.equal(call.connection_id,salla.id);
+  assert.equal(call.output.source,'webhook_ledger');
+  assert.equal(call.output.count,2); // both o-A1 deliveries, never tenant B's, never the product event
+  assert.ok(call.output.orders.every(o=>o.orderId==='o-A1'));
+  assert.deepEqual(new Set(call.output.orders.map(o=>o.status)),new Set(['قيد التنفيذ','مكتمل']));
+ }finally{store.close();}
+});
+
+test('salla_syncOrders: with no connection assigned, fails closed as INTEGRATION_REQUIRED — never guesses a tenant\'s store',async()=>{
+ const {store,tenantA}=twoTenants();try{
+  setAutonomy(store,'sales',{level:'L1',reason:'promote',expectedVersion:0},user,env,tenantA);
+  const runtime=createAgentRuntime({store,env,fetcher:sequencedFetcher([toolUseTurn('salla_syncOrders',{}),textTurn(salesDecision())])});
+  const run=await runtime.run('sales',{triggerType:'TEST',input:{scenario:'price'},user,tenantId:tenantA});
+  const call=listToolCalls(store.db,run.id).find(c=>c.tool==='salla_syncOrders');
+  assert.ok(call);
+  assert.equal(call.output.status,'INTEGRATION_REQUIRED');
  }finally{store.close();}
 });

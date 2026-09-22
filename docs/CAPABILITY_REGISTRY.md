@@ -31,7 +31,7 @@ keeps working everywhere it's already used (`tool_definitions`, `agent_tool_assi
 | `publishing` | Meta's `meta_publish` tool | `social.publish` |
 | `publish` | X's `x_publish` tool | `social.publish` |
 | `organization.publish` | LinkedIn's `linkedin_publish` tool | `social.publish` |
-| `orders.read` | Salla's `salla_syncOrders` stub (still `isAvailable:false`) | `commerce.orders.read` |
+| `orders.read` | Salla's `salla_syncOrders` tool (real — reads the webhook ledger) | `commerce.orders.read` |
 | `commerce.stock.read` | Salla's `get_stock` tool | `commerce.inventory.read` |
 | `commerce.price.read` | Salla's `get_current_price` tool | `commerce.pricing.read` |
 

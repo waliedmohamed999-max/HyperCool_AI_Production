@@ -8,6 +8,7 @@
 import {escape,button,badge,empty,metric,skeleton,tabs,drawer,promptDrawer,table,toast as showToast} from '../components/ui/index.js';
 import {t,getLocale} from '../i18n.js';
 import {openConnectorWizardBySlug} from './platform.js';
+import {renderIntegrationMonitors} from '../integrations.js';
 
 const $=s=>document.querySelector('#control-center '+s);
 let apiClient,currentAuth,summary=null,onboardingStatus=null,catalogBySlug=new Map(),renderGeneration=0;
@@ -35,6 +36,12 @@ const BLOCKER_LABEL=code=>{
 // Generic OAuth2 Framework (docs/GENERIC_OAUTH2.md) — uses the exact same "Add Store"/OAuth-
 // start UI with zero frontend change per future provider.
 const isOAuth2Provider=provider=>!!provider.supportsGenericOAuth;
+// Built-in providers with their OWN dedicated OAuth start route (GET /api/integrations/:slug/oauth/start),
+// never the generic Salla/Zid-style one — a real, working "Add" needs to know which URL shape to use.
+// Meta/WhatsApp share one connection and already have a dedicated button on the WhatsApp page
+// (not this list); X/LinkedIn/Microsoft 365 had no "Add" entry point anywhere in this dashboard
+// before Canva's connector needed one, so this closes that gap for all of them at once.
+const DEDICATED_OAUTH_SLUGS=['x','linkedin','microsoft365','canva'];
 
 function statusBadge(status,map=AGENT_STATUS_VARIANT){return badge(t('controlCenter.status.'+status)||status,map[status]||status);}
 
@@ -376,6 +383,7 @@ function canAddConnection(provider){
  if(!provider.isAvailable||provider.status==='DISABLED')return false;
  if(isOAuth2Provider(provider))return true; // real MULTI-store OAuth providers (Salla, Zid) — always offer "add another store"
  if(['anthropic','openai'].includes(provider.slug))return true;
+ if(DEDICATED_OAUTH_SLUGS.includes(provider.slug))return provider.connections.length===0;
  return provider.connections.length===0 && provider.connectionMode!=='UNAVAILABLE';
 }
 /** Generic Connection UI (Phase 6D) — the ONE add-connection form every dynamic/Builder-
@@ -387,10 +395,10 @@ function startGenericConnect(provider){
  const catalogEntry=catalogBySlug.get(provider.slug);
  const authType=catalogEntry?.authType;
  // Only a real GENERIC_REST/Builder-published connector's auth type is handled by this generic
- // form (Part 5) — a built-in OAuth2 provider (whatsapp/meta/microsoft365/x/linkedin) with zero
- // connections yet has no generic "add" path in this pass (each has its own dedicated OAuth
- // start route, not surfaced from this particular button today) — say so honestly rather than
- // attempting a doomed generic-credential call that would just 400.
+ // form — a built-in OAuth2 provider with its own dedicated start route (see
+ // DEDICATED_OAUTH_SLUGS above) never reaches here; meta/whatsapp's shared connection has its
+ // own dedicated button on the WhatsApp page instead — say so honestly rather than attempting a
+ // doomed generic-credential call that would just 400.
  if(!['API_KEY','BEARER_TOKEN','BASIC','NONE'].includes(authType)){toastError(t('controlCenter.notAvailableNote'));return;}
  promptDrawer(t('controlCenter.addConnection'),node=>{
   const nameInput=document.createElement('input');nameInput.name='name';nameInput.required=true;nameInput.maxLength=100;nameInput.value=getLocale()==='en'?provider.nameEn:provider.nameAr;
@@ -434,13 +442,18 @@ function startAddConnection(provider){
   });
   return;
  }
+ if(DEDICATED_OAUTH_SLUGS.includes(provider.slug)){
+  window.location.href=`/api/integrations/${provider.slug}/oauth/start`;
+  return;
+ }
  if(['anthropic','openai'].includes(provider.slug)){
   promptDrawer(t('controlCenter.addConnection'),node=>{
    const nameInput=document.createElement('input');nameInput.name='name';nameInput.required=true;nameInput.maxLength=100;nameInput.value=provider.nameEn;
    const nameLabel=document.createElement('label');nameLabel.textContent=t('controlCenter.connectionNameLabel');nameLabel.append(nameInput);
    const keyInput=document.createElement('input');keyInput.name='apiKey';keyInput.type='password';keyInput.required=true;keyInput.autocomplete='off';
    const keyLabel=document.createElement('label');keyLabel.textContent=t('controlCenter.apiKeyLabel');keyLabel.append(keyInput);
-   node.append(nameLabel,keyLabel);
+   const hint=document.createElement('p');hint.className='kpi-context';hint.textContent=t('integrations.guide.aiStep1',{provider:provider.nameEn})+' '+t('integrations.guide.aiStep2');
+   node.append(hint,nameLabel,keyLabel);
    // Never keep the key around longer than the one synchronous read needed to submit it.
    return {value:()=>({name:nameInput.value.trim(),apiKey:keyInput.value}),focus:()=>nameInput.focus()};
   },{confirmLabel:t('common.save')}).then(async result=>{
@@ -448,17 +461,17 @@ function startAddConnection(provider){
    const {name,apiKey}=result;
    try{
     const connection=await api('/api/integrations/connections',{integrationDefinitionId:provider.slug,name});
-    await api(`/api/integrations/connections/${connection.id}/credential`,{apiKey},'PUT');
+    try{await api(`/api/integrations/connections/${connection.id}/credential`,{apiKey},'PUT');}
+    catch(error){try{await api(`/api/integrations/connections/${connection.id}/disconnect`,{});}catch{}throw new Error(/CREDENTIALS_REJECTED/.test(error.message)?t('integrations.guide.keyRejected'):error.message);}
     toastAndRefresh(t('controlCenter.connectionAdded'));
    }catch(error){toastError(error.message);}
   });
   return;
  }
- // Any other published connector — built-in (whatsapp/meta/microsoft365/x/linkedin keep their
- // own OAuth "Manage" flow already surfaced via openProviderDrawer once connected, so this only
- // ever fires for a provider with zero connections and no dedicated flow above) or a dynamic
- // Builder-published one — uses the ONE Generic Connection UI, keyed off the real authType the
- // catalog reports. Zero per-provider branch is added here for a new Builder connector.
+ // Any other published connector — meta/whatsapp (its own dedicated button lives on the
+ // WhatsApp page, sharing one Meta connection) or a dynamic Builder-published one — uses the
+ // ONE Generic Connection UI, keyed off the real authType the catalog reports. Zero
+ // per-provider branch is added here for a new Builder connector.
  startGenericConnect(provider);
 }
 
@@ -725,7 +738,11 @@ function renderHealthTab(){
  const connectionRows=summary.integrations.providers.flatMap(p=>p.connections.map(c=>[escape(getLocale()==='en'?p.nameEn:p.nameAr),escape(c.name),statusBadge(c.status,{CONNECTED:'CONNECTED',DEGRADED:'DEGRADED',ERROR:'ERROR',TOKEN_EXPIRED:'ERROR',PERMISSION_MISSING:'ERROR',DISCONNECTED:'DISCONNECTED',CONNECTING:'PENDING',NOT_CONFIGURED:'PENDING'}),escape(c.lastHealthCheck||'—'),escape(c.lastErrorMessageSafe||'—')]));
  const agentRows=summary.agents.items.map(a=>[escape(a.name),statusBadge(a.status),escape(a.enabled?t('controlCenter.enabled'):t('controlCenter.disabledLabel')),escape(a.blockers.join('، ')||'—')]);
  container.innerHTML=`<h4>${escape(t('controlCenter.integrationHealth'))}</h4>${connectionRows.length?table([t('controlCenter.provider'),t('controlCenter.connectionNameLabel'),t('common.field'),t('controlCenter.lastChecked'),t('controlCenter.lastError')],connectionRows):empty(t('controlCenter.noConnectionYet'))}
-  <h4>${escape(t('controlCenter.agentReadinessTable'))}</h4>${table([t('controlCenter.agent'),t('controlCenter.readinessLabel'),t('controlCenter.enabledLabel'),t('controlCenter.blockers')],agentRows)}`;
+  <h4>${escape(t('controlCenter.agentReadinessTable'))}</h4>${table([t('controlCenter.agent'),t('controlCenter.readinessLabel'),t('controlCenter.enabledLabel'),t('controlCenter.blockers')],agentRows)}
+  <h4>${escape(t('integrations.recentSyncActivity'))}</h4><div id="integrations-sync-log"></div>
+  <h4>${escape(t('integrations.integrationErrors'))}</h4><div id="integrations-errors"></div>
+  <h4>${escape(t('integrations.dependencyMap'))}</h4><p class="kpi-context">${escape(t('integrations.dependencyMapSubtitle'))}</p><div id="integrations-dependency-map"></div>`;
+ renderIntegrationMonitors(apiClient,summary.integrations.providers);
 }
 
 // --- Workspace Settings tab ---------------------------------------------------------------

@@ -4,7 +4,8 @@
 // each provider's REAL, already-implemented flow (src/runtime/*-oauth.js, whatsapp.js,
 // llmProvider.js) — never assumed. Only providers with a real, working implementation
 // somewhere in this codebase are listed; nothing here is a placeholder for a feature that
-// doesn't exist (Canva has no real implementation anywhere — see its own row below).
+// doesn't exist (Canva's own row below is honest about exactly what is and isn't real: a
+// working OAuth2 connect + identity check, but no design-generation capability yet).
 export function installIntegrationDefinitions(db) {
  db.exec(`CREATE TABLE IF NOT EXISTS integration_definitions (
   id TEXT PRIMARY KEY,
@@ -65,10 +66,14 @@ export function installIntegrationDefinitions(db) {
 // - Meta/WhatsApp (src/runtime/meta-oauth.js): real OAuth2 (Facebook Login for Business) —
 //   ONE connection resolves Page + Instagram + WhatsApp assets together (Meta's own asset
 //   model), which is why Meta and WhatsApp share one definition+flow rather than two.
-// - Canva: grepped the entire codebase — no real API call, OAuth flow, or connector exists
-//   anywhere for Canva; only an env var name (CANVA_API_KEY) is referenced as a placeholder
-//   in integration status displays. Listed as is_available=0 (NOT_IMPLEMENTED) rather than
-//   faking a connect flow for it, per this phase's explicit "no fake connected states" rule.
+// - Canva (src/runtime/canva-oauth.js): a real OAuth2 (PKCE) authorization-code flow now
+//   exists, so this row is listed as available/OAUTH2 — an operator can genuinely connect a
+//   Canva account and have it health-checked. Only the identity call (GET /v1/users/me) has
+//   any real code path today; the design-generation capability the `canva_generateAsset`
+//   agent TOOL promises has no confirmed API to call (see src/connectors/canva/manifest.js's
+//   own comment and docs/CANVA_CONNECTOR.md) — that tool stays isAvailable:false in
+//   src/runtime/tools.js until it does. This row deliberately does not claim more than the
+//   connector itself can do.
 const DEFINITIONS=[
  {slug:'anthropic',nameAr:'Anthropic (Claude)',nameEn:'Anthropic (Claude)',category:'ai',descAr:'مزوّد الذكاء الاصطناعي الأساسي للوكلاء (Claude).',descEn:'Primary AI provider for agents (Claude).',authType:'API_KEY',iconKey:'anthropic',capabilities:['llm.generate','llm.tools','llm.structured'],isAvailable:1,adapterType:'AI_PROVIDER'},
  {slug:'openai',nameAr:'OpenAI',nameEn:'OpenAI',category:'ai',descAr:'مزوّد ذكاء اصطناعي احتياطي أو بديل للوكلاء.',descEn:'Backup or alternate AI provider for agents.',authType:'API_KEY',iconKey:'openai',capabilities:['llm.generate','llm.tools','llm.structured'],isAvailable:1,adapterType:'AI_PROVIDER'},
@@ -78,7 +83,7 @@ const DEFINITIONS=[
  {slug:'microsoft365',nameAr:'مايكروسوفت 365',nameEn:'Microsoft 365',category:'productivity',descAr:'البريد الإلكتروني والتقويم عبر Microsoft Graph.',descEn:'Email and calendar via Microsoft Graph.',authType:'OAUTH2',iconKey:'microsoft365',capabilities:['mail.read','mail.send','calendar.read','calendar.write'],isAvailable:1,adapterType:'BUILT_IN'},
  {slug:'x',nameAr:'إكس (تويتر)',nameEn:'X (Twitter)',category:'social',descAr:'نشر ومتابعة أداء المنشورات على إكس.',descEn:'Publish to and track post performance on X.',authType:'OAUTH2',iconKey:'x',capabilities:['publish','analytics'],isAvailable:1,adapterType:'BUILT_IN'},
  {slug:'linkedin',nameAr:'لينكدإن',nameEn:'LinkedIn',category:'social',descAr:'نشر على صفحة الشركة في لينكدإن.',descEn:'Publish to a LinkedIn Company Page.',authType:'OAUTH2',iconKey:'linkedin',capabilities:['organization.publish','analytics'],isAvailable:1,adapterType:'BUILT_IN'},
- {slug:'canva',nameAr:'كانفا',nameEn:'Canva',category:'design',descAr:'تصميم الأصول البصرية — غير مُفعّل تقنيًا بعد.',descEn:'Visual asset design — not technically implemented yet.',authType:'NONE',iconKey:'canva',capabilities:[],isAvailable:0,adapterType:'BUILT_IN'},
+ {slug:'canva',nameAr:'كانفا',nameEn:'Canva',category:'design',descAr:'ربط حساب Canva للتحقق من الهوية — توليد التصاميم غير مبني بعد.',descEn:'Connect a Canva account to verify identity — design generation is not built yet.',authType:'OAUTH2',iconKey:'canva',capabilities:[],isAvailable:1,adapterType:'BUILT_IN'},
  // Phase 6E — a real, first-party connector to the official Zid Merchant API
  // (docs.zid.sa, reviewed 2026-09-12 — see docs/ZID_CONNECTOR.md). V1 is deliberately
  // read-only (orders, customers): Products/Inventory read is NOT implemented because the
@@ -97,8 +102,9 @@ const DEFINITIONS=[
 // OVERWRITES that single row rather than adding a second. Salla is the one non-AI provider
 // proven end-to-end with real multiple simultaneous connections (see
 // docs/AGENT_TOOL_MAPPING.md's Salla multi-store test); Anthropic/OpenAI likewise (AI
-// multi-connection test, same doc). Canva has no real implementation at all (see above).
-const CONNECTION_MODE={anthropic:'MULTI',openai:'MULTI',salla:'MULTI',whatsapp:'SINGLE',meta:'SINGLE',microsoft365:'SINGLE',x:'SINGLE',linkedin:'SINGLE',canva:'UNAVAILABLE',zid:'MULTI'};
+// multi-connection test, same doc). Canva's real OAuth flow (see above) is single-account per
+// workspace, same shape as X/LinkedIn/Meta/Microsoft — never MULTI without a proven need.
+const CONNECTION_MODE={anthropic:'MULTI',openai:'MULTI',salla:'MULTI',whatsapp:'SINGLE',meta:'SINGLE',microsoft365:'SINGLE',x:'SINGLE',linkedin:'SINGLE',canva:'SINGLE',zid:'MULTI'};
 export function connectionModeFor(slug) { return CONNECTION_MODE[slug]||'SINGLE'; }
 function seedIntegrationDefinitions(db) {
  const now=new Date().toISOString();

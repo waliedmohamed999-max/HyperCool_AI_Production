@@ -11,7 +11,6 @@ import {renderAgents,submitAutonomy,submitAgentTest,renderFrostControl,clickFros
 import {renderReports,clickSaveReport,clickReportAction,changeReportAction} from './reporting.js';
 import {renderContent,enrichContentCards,installContentInteractions,beginGeneration,endGeneration} from './content.js';
 import {renderMemory,installMemoryInteractions} from './memory.js';
-import {renderIntegrations,installIntegrationInteractions,checkAllIntegrations} from './integrations.js';
 import {renderTeam,installTeamInteractions,clickTeam} from './team.js';
 import {resolveActiveWorkspace,renderWorkspaceGate,hideWorkspaceGate,renderWorkspaceSwitcher} from './components/workspace-switcher.js';
 import {installControlCenter,renderControlCenter} from './pages/control-center.js';
@@ -63,13 +62,14 @@ installCustomersPage();
 installCRMInteractions();
 installContentInteractions();
 installMemoryInteractions();
-installIntegrationInteractions();
 installTeamInteractions();
 const navLinks=[...document.querySelectorAll('nav a')];
 const pages=[...document.querySelectorAll('[data-page]')].map(el=>el.dataset.page);
 let auth={};
 let accountLocaleApplied=false;
 function currentPage(){
+  // The old #integrations page was merged into the Control Center (also the target of the OAuth return redirects).
+  if(location.hash==='#integrations'){history.replaceState(null,'','#control-center');setTimeout(()=>document.querySelectorAll('#cc-tabs [role=tab]')[1]?.click(),50);}
   const id=location.hash.slice(1);
   if(id==='users' && auth.user?.role!=='owner')return 'overview';
   if(id==='partnerships' && !auth.partner?.isManager)return 'overview';
@@ -258,7 +258,6 @@ async function render(){
   enrichContentCards(state,escape);
   await renderKnowledge({api,auth,escape});
   await renderMemory({api,auth});
-  await renderIntegrations({api});
   await renderControlCenter({api,auth});
   await renderPlatformPage({api,auth});
   await renderCommandCenter({api,auth});
@@ -302,7 +301,6 @@ $('#save-report').addEventListener('click',async event=>{event.target.disabled=t
 document.addEventListener('click',async event=>{const target=event.target.closest('#report-refresh, #report-retry, #report-print, #report-export-xlsx, #report-export-pdf, [data-report-nav], [data-view-saved]');if(!target)return;try{await clickReportAction(target,api,escape);}catch(error){message(error.message,'error');}});
 document.addEventListener('change',async event=>{const target=event.target.closest('#report-week-select');if(!target)return;try{await changeReportAction(target,api,escape);}catch(error){message(error.message,'error');}});
 document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button||!['frost-pause','frost-resume','frost-run-now'].includes(button.id))return;button.disabled=true;try{const text=await clickFrost(button,api);await render();message(text);}catch(error){message(error.message,'error');}finally{button.disabled=false;}});
-document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button||button.id!=='integrations-check-all')return;button.disabled=true;try{await checkAllIntegrations(api,message);await render();}catch(error){message(error.message,'error');}finally{button.disabled=false;}});
 document.addEventListener('click',async event=>{const button=event.target.closest('[data-team-action]');if(!button)return;button.disabled=true;try{const result=await clickTeam(button);if(result){await render();message(result);}}catch(error){message(error.message,'error');}finally{button.disabled=false;}});
 document.addEventListener('team-refresh',async event=>{try{await render();message(event.detail);}catch(error){message(error.message,'error');}});
 document.addEventListener('click',async event=>{const button=event.target.closest('button');if(!button||!(button.dataset.approvalDecide||button.dataset.escalationResolve))return;button.disabled=true;try{const text=await clickApprovalCenter(button,api);await render();message(text);}catch(error){message(error.message,'error');}finally{button.disabled=false;}});

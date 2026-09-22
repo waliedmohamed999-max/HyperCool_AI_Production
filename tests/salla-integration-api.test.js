@@ -5,7 +5,8 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createApp} from '../src/application.js';
-import {resolveTenantForUser} from '../src/tenancy.js';
+import {resolveTenantForUser,createTenant} from '../src/tenancy.js';
+import {createAuth} from '../src/auth.js';
 
 const key32=randomBytes(32).toString('hex');
 
@@ -105,5 +106,51 @@ test('Salla OAuth: full connect flow (start -> callback) stores encrypted creden
   assert.equal((await call('/api/integrations/salla/disconnect',{},owner)).status,200);
   const statusAfterDisconnect=await call('/api/integrations/salla/oauth/status',undefined,owner,{method:'GET'});
   assert.equal(statusAfterDisconnect.data.connected,false);
+ }finally{await cleanup();}
+});
+
+test('Salla list_recent_orders action: reads real order events this store already pushed via webhook (never an unverified live poll), tenant-scoped',async()=>{
+ const {app,call,cleanup}=await harness({SALLA_WEBHOOK_SECRET:'a-real-webhook-secret'});
+ try{
+  const owner=await call('/api/setup',{username:'owner',name:'Owner',password:'a-long-test-password'});
+  const tenantId=resolveTenantForUser(app.store.db,owner.data.user.id);
+  const now=new Date().toISOString();
+  const connectionId=crypto.randomUUID();
+  app.store.db.prepare("INSERT INTO integration_connections (id,tenant_id,integration_definition_id,name,status,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").run(connectionId,tenantId,'salla','الاتصال الرئيسي','CONNECTED',1,now,now);
+
+  // A real Salla store pushes these deliveries before any "list orders" call ever happens.
+  const created=await call('/api/webhooks/salla',JSON.stringify({event:'order.created',data:{id:'o-1001',status:{name:'قيد التنفيذ'},amounts:{total:{amount:249.5,currency:'SAR'}},customer:{first_name:'سارة',last_name:'محمد'}},created_at:'2030-01-01T10:00:00Z',merchant:777}),null,{headers:{authorization:'Bearer a-real-webhook-secret'}});
+  assert.equal(created.status,200);
+  const updated=await call('/api/webhooks/salla',JSON.stringify({event:'order.status.updated',data:{id:'o-1000',status:{name:'مكتمل'},amounts:{total:{amount:99,currency:'SAR'}}},created_at:'2030-01-01T09:00:00Z',merchant:777}),null,{headers:{authorization:'Bearer a-real-webhook-secret'}});
+  assert.equal(updated.status,200);
+  // A non-order Salla event must never be counted as an order.
+  const productPush=await call('/api/webhooks/salla',JSON.stringify({event:'product.updated',data:{id:'p-1'},created_at:'2030-01-01T09:30:00Z',merchant:777}),null,{headers:{authorization:'Bearer a-real-webhook-secret'}});
+  assert.equal(productPush.status,200);
+
+  const run=await call(`/api/integrations/connections/${connectionId}/actions/list_recent_orders`,{input:{limit:5}},owner);
+  assert.equal(run.status,200);
+  assert.equal(run.data.status,'OK');
+  assert.equal(run.data.output.source,'webhook_ledger');
+  assert.equal(run.data.output.count,2);
+  assert.equal(run.data.output.orders.length,2);
+  // Most recently RECEIVED delivery first (order.status.updated for o-1000 arrived after
+  // order.created for o-1001, regardless of each payload's own created_at timestamp).
+  assert.equal(run.data.output.orders[0].orderId,'o-1000');
+  assert.equal(run.data.output.orders[0].status,'مكتمل');
+  assert.equal(run.data.output.orders[0].total,99);
+  assert.equal(run.data.output.orders[0].currency,'SAR');
+  assert.equal(run.data.output.orders[1].orderId,'o-1001');
+  assert.equal(run.data.output.orders[1].status,'قيد التنفيذ');
+  assert.equal(run.data.output.orders[1].total,249.5);
+  assert.equal(run.data.output.orders[1].customer,'سارة محمد');
+
+  // A second tenant's owner can never read the first tenant's connection or its orders (IDOR).
+  const auth=createAuth(app.store.db);
+  const userB=auth.createUser({username:'ownerb',name:'Owner B',password:'a-long-test-password'},'owner');
+  createTenant(app.store.db,{name:'Tenant B',slug:'tenant-b'},userB.id);
+  const loginB=auth.login({username:'ownerb',password:'a-long-test-password'},'127.0.0.1');
+  const otherOwner={cookie:'hc_session='+loginB.token,csrf:loginB.csrf};
+  const cross=await call(`/api/integrations/connections/${connectionId}/actions/list_recent_orders`,{input:{}},otherOwner);
+  assert.equal(cross.status,404);
  }finally{await cleanup();}
 });

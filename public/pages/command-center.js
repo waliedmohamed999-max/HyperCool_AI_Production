@@ -986,7 +986,7 @@ function renderHealthFrom(health) {
  const cards=[
   [metric(t('commandCenter.metricPendingApprovals'),health.pendingApprovals,t('commandCenter.metricPendingApprovalsHint'),'bell'),'agents'],
   [metric(t('commandCenter.metricOpenTasks'),health.openEscalations,t('commandCenter.metricOpenTasksHint'),'clock'),'agents'],
-  [metric(t('commandCenter.metricUnhealthyConnections'),health.unhealthyConnections.length,t('commandCenter.metricUnhealthyConnectionsHint'),'plug'),'integrations'],
+  [metric(t('commandCenter.metricUnhealthyConnections'),health.unhealthyConnections.length,t('commandCenter.metricUnhealthyConnectionsHint'),'plug'),'control-center'],
   [metric(t('commandCenter.metricNewLeads'),health.newLeadsThisWeek,t('commandCenter.metricNewLeadsHint'),'users'),'crm'],
   [metric(t('commandCenter.metricContentPlanned'),health.contentPlannedThisWeek,t('commandCenter.metricContentPlannedHint'),'file'),'content']
  ];

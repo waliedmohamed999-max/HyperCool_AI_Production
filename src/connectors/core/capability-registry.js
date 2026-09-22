@@ -65,7 +65,8 @@ export const CAPABILITY_ALIASES=Object.freeze({
  'publish':'social.publish',
  // LinkedIn's Company Page publish tool
  'organization.publish':'social.publish',
- // The salla_syncOrders stub tool (Part 84/85 — still isAvailable:false, unrelated to this rename)
+ // salla_syncOrders's TOOL_METADATA.capability string (kept for capability-map.js's existing
+ // scope table, unrelated to this rename) canonicalized to the manifest's real capability id.
  'orders.read':'commerce.orders.read',
  // Salla's get_stock tool used the narrower legacy name before this canonical registry existed
  'commerce.stock.read':'commerce.inventory.read',

@@ -84,9 +84,11 @@ const obj=(properties,required=Object.keys(properties))=>({type:'object',propert
  * see tool-assignments.js's `resolveToolConnection`); the hard "is this actually configured"
  * decision stays exactly where it already correctly lives: inside each handler's own
  * resolve*AccessToken/whatsappConfigured check, which already accounts for both paths.
- * `salla_syncOrders`/`canva_generateAsset` are the one exception — real stubs with zero
- * actual provider call (always `blocked()`), so `requiresConnection:true` there is inert
- * (never actually reached) rather than misleading.
+ * `canva_generateAsset` is the one remaining stub — zero actual provider call (always
+ * `blocked()`), so its `requiresConnection:true` is inert (never actually reached) rather
+ * than misleading, until a real Canva connector exists. `salla_syncOrders` now runs for
+ * real through the ConnectorRuntime pipeline (see its handler below) — `requiresConnection:
+ * true` is genuinely enforced for it.
  */
 const TOOL_METADATA={
  get_products:{description:'List all Salla-synced products with price/stock snapshot.',inputSchema:obj({}),minLevel:'L0',
@@ -157,10 +159,16 @@ const TOOL_METADATA={
   category:'Calendar',riskLevel:'MEDIUM',actionType:'EXTERNAL_SEND',integrationSlug:'microsoft365',requiresConnection:false,isReadOnly:false,capability:'calendar.write'},
  get_calendar_availability:{description:'Check free/busy for one or more Microsoft 365 mailboxes to propose a meeting time.',inputSchema:obj({emails:{type:'array',items:string},start:string,end:string,timezone:string},['emails','start','end']),minLevel:'L0',allowedAgents:['frost','sales','followup'],
   category:'Calendar',riskLevel:'LOW',actionType:'READ',integrationSlug:'microsoft365',requiresConnection:false,isReadOnly:true,capability:'calendar.read'},
+ // A real Canva OAuth2 connector now exists (src/connectors/canva/, src/runtime/canva-oauth.js)
+ // — an operator can genuinely connect a Canva account and have it health-checked. This TOOL
+ // still stays isAvailable:false: Canva's public Connect API has no confirmed endpoint for
+ // "generate a visual asset from a free-text brief" (see docs/CANVA_CONNECTOR.md) — the
+ // closest real capability, Autofill, fills named fields of a pre-existing Brand Template,
+ // a different, narrower shape than `brief` promises. Never wired to a guessed call.
  canva_generateAsset:{description:'Generate a visual asset via Canva Connect.',inputSchema:obj({brief:string},['brief']),minLevel:'L1',
   category:'Content',riskLevel:'LOW',actionType:'EXTERNAL_SEND',integrationSlug:'canva',requiresConnection:true,isReadOnly:false,capability:'design.generate',isAvailable:false},
- salla_syncOrders:{description:'Pull new orders / abandoned carts from Salla.',inputSchema:obj({}),minLevel:'L1',
-  category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:'salla',requiresConnection:true,isReadOnly:true,capability:'orders.read',isAvailable:false},
+ salla_syncOrders:{description:'List recent order events (created/updated/completed) this store has received via the Salla webhook — not a live poll of abandoned carts, since Salla has no verified order-list REST endpoint wired here.',inputSchema:obj({limit:{type:'number'}},[]),minLevel:'L1',
+  category:'Commerce',riskLevel:'LOW',actionType:'READ',integrationSlug:'salla',requiresConnection:true,isReadOnly:true,capability:'orders.read'},
  // Universal Integration Platform (Phase 6D, Part 59) — the real proof that a Tool can be
  // GENERIC (no fixed `integrationSlug`, resolved purely by capability — see
  // tool-assignments.js's resolveGenericCapabilityTool) and still discover ANY compatible
@@ -498,7 +506,19 @@ export function buildToolRegistry({store,env,eventBus,fetcher=fetch,runtimeRef=n
    return getCalendarAvailability({store,env,fetcher},input,ctx.tenantId);
   },
   canva_generateAsset:()=>blocked('canva','generate_asset'),
-  salla_syncOrders:()=>blocked('salla_webhooks','sync_orders'),
+  // Reads the real, already-working Salla webhook ledger (order.created/order.status.updated/
+  // order.completed deliveries) through the ConnectorRuntime pipeline — not a live REST poll,
+  // since Salla's order-list endpoint has no verified implementation in this codebase (see the
+  // 'salla.list_recent_orders' manifest action's own comment). Same shape as get_invoices/
+  // get_orders/get_customers above: needs a Salla connection assigned to this agent (Control
+  // Center → Agent Connections) since salla_syncOrders is requiresConnection:true.
+  salla_syncOrders:async(input,ctx)=>{
+   if(!ctx.connectionId)return {status:'INTEGRATION_REQUIRED'};
+   const connection=getConnectionOrNull(db,ctx.connectionId,ctx.tenantId);
+   if(!connection||connection.integrationDefinitionId!=='salla')return {status:'INTEGRATION_REQUIRED'};
+   const result=await executeConnectorAction({db,env,fetcher,tenantId:ctx.tenantId,connectorSlug:'salla',connectionId:connection.id,actionId:'list_recent_orders',input:{limit:input?.limit},actor:ctx.actor});
+   return result.status==='OK'?result.output:result;
+  },
 
   // --- Frost Command Center (Phase 7A) ---------------------------------------------------
   get_company_health:(input,ctx)=>computeCompanyHealth(store,ctx.tenantId),

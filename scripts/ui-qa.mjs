@@ -39,7 +39,7 @@ try{
  const auditContext=await browser.newContext({storageState:await context.storageState(),bypassCSP:true});
  const auditPage=await auditContext.newPage();await auditPage.goto(base+'/app');await auditPage.locator('#overview-dashboard').waitFor();
  // Capture every route at all requested viewports. Axe checks visible UI only.
- for(const width of [1440,1920,768,390]){await page.setViewportSize({width,height:1000});for(const route of ['overview','crm','planning','reports','content','agents','knowledge','integrations','audit','users']){
+ for(const width of [1440,1920,768,390]){await page.setViewportSize({width,height:1000});for(const route of ['overview','crm','planning','reports','content','agents','knowledge','control-center','audit','users']){
   await go(route);await page.evaluate(()=>document.querySelector('#message').replaceChildren());await page.screenshot({path:`artifacts/ui/after/${route}-${width}.png`,fullPage:true});
   const overflow=await page.evaluate(()=>({document:document.documentElement.scrollWidth,viewport:innerWidth}));await auditPage.setViewportSize({width,height:1000});await auditPage.evaluate(route=>document.querySelector(`nav a[href="#${route}"]`).click(),route);const axe=await new AxeBuilder({page:auditPage}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();report.screens.push({route,width,overflow,violations:axe.violations.map(v=>({id:v.id,impact:v.impact,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))}))});
  }}

@@ -30,7 +30,7 @@ try {
  assert.equal(await page.locator('[data-mobile-route="overview"]').getAttribute('aria-current'),'page');
  for(const width of [360,390,430]){
   await page.setViewportSize({width,height:844});
-  for(const route of ['overview','crm','content','agents','planning','reports','knowledge','integrations','audit','users']){
+  for(const route of ['overview','crm','content','agents','planning','reports','knowledge','control-center','audit','users']){
    await page.evaluate(route=>document.querySelector(`.app-sidebar nav a[href="#${route}"]`).click(),route);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${route} overflow at ${width}`);
    assert.equal(await page.locator('.mobile-tabbar').isVisible(),true);

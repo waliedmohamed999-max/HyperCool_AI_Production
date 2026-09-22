@@ -80,33 +80,9 @@
   "noErrorsForIntegration": "No errors recorded for this integration",
   "dashboardLoadFailed": "Could not load integration status",
   "checkAllNoneToTest": "No real integration is currently testable",
-  "connectNow": "Connect now",
-  "next": {
-    "pasteKey": "Paste an API key to enable your agents.",
-    "useControlCenter": "Connect your account from the Control Center in a few steps.",
-    "fixError": "Reconnect or test the connection.",
-    "notBuilt": "Automatic connection for this service is not available yet."
-  },
   "guide": {
-    "title": "Connect in a minute",
-    "stateConnected": "This integration is connected and working.",
-    "stateNotConnected": "{name} is not connected yet.",
     "aiStep1": "Get an API key from your {provider} account.",
     "aiStep2": "Paste it below and press \"Save and test\". It is encrypted and only used for your workspace.",
-    "connectionName": "Connection name",
-    "apiKey": "API key",
-    "saveAndTest": "Save and test connection",
-    "saving": "Saving and testing…",
-    "savedOk": "Saved and the connection works. Your agents can use it now.",
-    "savedTestFailed": "Saved, but the connection test failed. Check the key, then try \"Test connection\".",
-    "oauthStep1": "Open the Control Center.",
-    "oauthStep2": "On the {name} card press \"Add\" and sign in with the provider.",
-    "oauthStep3": "Come back here; the status will show \"Connected\" automatically.",
-    "openControlCenter": "Open the Control Center",
-    "workspaceConnections": "Your workspace connections",
-    "noConnections": "Your workspace has no connection for this integration yet.",
-    "serverTitle": "Server setup (operators only)",
-    "keyRejected": "The provider rejected this key. Check that it was copied in full and is still valid, then try again. Nothing was saved.",
-    "notBuilt": "Automatic connection for this service is not built in this version, so there are no connection steps yet."
+    "keyRejected": "The provider rejected this key. Check that it was copied in full and is still valid, then try again. Nothing was saved."
   }
 }
